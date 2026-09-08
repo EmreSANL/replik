@@ -55,6 +55,7 @@ export type Player = {
   role: number;
   ready: number;
   audio: boolean;
+  segments: number[];
 };
 export type Room = {
   serverNow: number;
@@ -64,3 +65,49 @@ export type Room = {
   playAt: number;
   players: Player[];
 };
+
+export type Cue = { id: number; start: number; end: number; text: string };
+const cueBounds = [
+  [0, 4.5, 9.5, 14.5, 20],
+  [0, 5, 10, 15, 20],
+  [0, 4, 7.5, 11, 15],
+];
+const cueLines = [
+  [
+    'Burası benim ormanım. Randevunuz var mı?',
+    'Ben sadece bir havuç istemiştim.',
+    'Sakin olun! Yavaşça uzaklaşalım.',
+    'Sıradan bir sabah… sandıkları kadar.',
+  ],
+  [
+    'Plan basit. Ben konuşacağım, siz başınızı sallayın.',
+    'Son planında ağaçta mahsur kalmıştık!',
+    'Sürpriz! Beni beklemiyordunuz, değil mi?',
+    'Herkesin bir planı vardı. Hiçbiri tutmadı.',
+  ],
+  [
+    'Bu mesele burada kapanmıştır.',
+    'Havuç konusunu da mı?',
+    'Dur! Kamera hâlâ açık!',
+    'İşte ormanda sıradan bir gün.',
+  ],
+];
+export function sceneCues(sceneId: number): Cue[] {
+  return cueLines[sceneId].map((text, id) => ({
+    id,
+    text,
+    start: cueBounds[sceneId][id],
+    end: cueBounds[sceneId][id + 1],
+  }));
+}
+export function playerCues(
+  sceneId: number,
+  playerIndex: number,
+  playerCount: number,
+) {
+  return sceneCues(sceneId).filter((c) => c.id % playerCount === playerIndex);
+}
+export function timeLabel(seconds: number) {
+  const ms = Math.round(seconds * 1000);
+  return `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
+}

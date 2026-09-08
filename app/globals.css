@@ -909,3 +909,306 @@ audio {
     font-size: 28px;
   }
 }
+.cue-editor {
+  padding-top: 18px;
+}
+.cue-timebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #a3ae94;
+}
+.cue-timebar strong {
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 0;
+  color: #f2f6e9;
+}
+.cue-timebar strong span {
+  color: #7c886d;
+}
+.cue-track {
+  position: relative;
+  height: 106px;
+  border: 1px solid #424b35;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #10130d;
+}
+.cue-track svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.cue-region {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border: 0;
+  border-left: 1px solid #424b35;
+  background: transparent;
+  text-align: left;
+  color: #97a286;
+}
+.cue-region span {
+  position: absolute;
+  left: 8px;
+  top: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.cue-region.selected {
+  background: #d8fb511a;
+  box-shadow:
+    inset 2px 0 #d8fb51,
+    inset -2px 0 #d8fb51;
+  color: #d8fb51;
+}
+.cue-region.other {
+  background: repeating-linear-gradient(
+    135deg,
+    #ffffff03,
+    #ffffff03 3px,
+    transparent 3px,
+    transparent 9px
+  );
+  opacity: 0.7;
+}
+.cue-region.own:hover {
+  background: #d8fb5115;
+}
+.cue-playhead {
+  position: absolute;
+  height: 100%;
+  width: 2px;
+  top: 0;
+  background: #fff;
+  box-shadow: 0 0 7px #fff8;
+  pointer-events: none;
+}
+.cue-ruler {
+  display: flex;
+  justify-content: space-between;
+  font-family: monospace;
+  font-size: 11px;
+  color: #9ba78b;
+  margin-top: 9px;
+}
+.cue-caption {
+  font-size: 13px;
+  color: #a9b49b;
+  text-align: center;
+  margin: 15px 0 20px;
+}
+.cue-script {
+  border: 1px solid #3a432e;
+  border-radius: 12px;
+  padding: 20px;
+  background: #1d2217;
+}
+.cue-script > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.cue-script > div > span {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--primary);
+}
+.cue-script strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-family: monospace;
+}
+.cue-script blockquote {
+  font-size: 22px;
+  line-height: 1.45;
+  letter-spacing: -0.3px;
+  margin: 20px 0 16px;
+}
+.cue-duration {
+  font-size: 13px;
+  color: #a5b095;
+}
+.cue-steps {
+  display: flex;
+  gap: 7px;
+  margin-top: 20px;
+}
+.cue-steps button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  background: #252c1e;
+  border: 1px solid #3c4630;
+  border-radius: 8px;
+  padding: 11px 5px;
+  color: #a4af95;
+}
+.cue-steps button.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px #d8fb5122;
+  color: var(--primary);
+}
+.cue-steps button.done {
+  background: #364721;
+  color: var(--primary);
+}
+.cue-steps button > span {
+  font-size: 12px;
+}
+.cue-steps button strong {
+  font-size: 10px;
+  font-family: monospace;
+}
+.cue-completion {
+  text-align: center;
+  letter-spacing: 2px;
+  color: #a2ae91;
+  font-size: 11px;
+  margin: 14px 0 18px;
+}
+.cue-completion strong {
+  color: #eff6e4;
+}
+.cue-record {
+  justify-content: center;
+  font-size: 17px;
+  padding: 19px 15px;
+}
+.cue-record > span {
+  margin-left: auto;
+  font-size: 12px;
+  font-family: monospace;
+}
+.cue-review {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #455333;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cue-review > span {
+  font-size: 13px;
+  color: #bdc9ad;
+}
+.cue-review audio {
+  width: 100%;
+}
+.cue-replay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  color: #bcc7ad;
+  width: 100%;
+  font-size: 14px;
+  padding: 16px;
+}
+.cue-countdown {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 15px 20px;
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  color: var(--primary);
+}
+.cue-countdown strong {
+  font-size: 40px;
+}
+.cue-countdown span {
+  font-size: 14px;
+}
+.cue-finished {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #293b1b;
+  padding: 18px;
+  border-radius: 10px;
+  color: var(--primary);
+  font-size: 14px;
+}
+.cue-record-progress {
+  height: 5px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #37382d;
+  margin: 0 0 12px;
+}
+.cue-record-progress > div {
+  height: 100%;
+  background: #f76b5f;
+  transition: width 0.1s linear;
+}
+.assigned-cues {
+  list-style: none;
+  margin: 20px 0;
+  padding: 0;
+}
+.assigned-cues li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  padding: 14px 0;
+  border-bottom: 1px solid #3a412e;
+  font-size: 14px;
+}
+.assigned-cues strong {
+  grid-row: 2;
+  font-size: 12px;
+  font-family: monospace;
+  color: #a3b18e;
+}
+.assigned-cues li > svg,
+.assigned-cues li > .waiting-dot {
+  grid-column: 2;
+  grid-row: 1/3;
+  align-self: center;
+  color: var(--primary);
+}
+@media (max-width: 650px) {
+  .cue-steps button strong {
+    display: none;
+  }
+  .cue-script > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .cue-script blockquote {
+    font-size: 19px;
+  }
+  .cue-timebar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .cue-ruler {
+    font-size: 9px;
+  }
+  .cue-record > span {
+    display: none;
+  }
+  .cue-steps button {
+    padding: 12px;
+  }
+  .cue-track {
+    height: 90px;
+  }
+}

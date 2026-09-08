@@ -3,8 +3,6 @@ import { useEffect, useRef, useState, useEffectEvent } from 'react';
 import {
   ArrowLeft,
   Copy,
-  Mic,
-  Square,
   Check,
   Play,
   Download,
@@ -12,7 +10,14 @@ import {
   Users,
   Volume2,
 } from 'lucide-react';
-import { scenes, type Room } from '@/lib/scenes';
+import SegmentRecorder from './segment-recorder';
+import {
+  scenes,
+  sceneCues,
+  playerCues,
+  timeLabel,
+  type Room,
+} from '@/lib/scenes';
 export type Session = { code: string; token: string; id: string };
 export async function request(path: string, token?: string, body?: unknown) {
   const r = await fetch(path, {
@@ -45,18 +50,11 @@ export default function Studio({
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
-    [recording, setRecording] = useState(false),
-    [recordUrl, setRecordUrl] = useState(''),
-    [recordBlob, setRecordBlob] = useState<Blob | null>(null),
-    [elapsed, setElapsed] = useState(0),
     [playing, setPlaying] = useState(false),
     [exporting, setExporting] = useState(false),
     [countdown, setCountdown] = useState(0),
     [audioLoaded, setAudioLoaded] = useState(false);
   const video = useRef<HTMLVideoElement>(null),
-    recorder = useRef<MediaRecorder | null>(null),
-    stream = useRef<MediaStream | null>(null),
-    recordTimer = useRef<ReturnType<typeof setInterval> | null>(null),
     ctx = useRef<AudioContext | null>(null),
     buffers = useRef<Map<string, AudioBuffer>>(new Map()),
     sources = useRef<AudioBufferSourceNode[]>([]),
@@ -72,7 +70,6 @@ export default function Studio({
   }, [initial.serverNow]);
   const scene = scenes[room.scene],
     me = room.players.find((p) => p.id === session.id)!,
-    slot = room.players.findIndex((p) => p.id === session.id),
     slotDuration = scene.duration / room.players.length;
   const api = `/api/rooms/${session.code}`;
   useEffect(() => {
@@ -93,9 +90,6 @@ export default function Studio({
     return () => {
       mounted.current = false;
       clearInterval(t);
-      if (recordTimer.current) clearInterval(recordTimer.current);
-      if (recorder.current?.state === 'recording') recorder.current.stop();
-      stream.current?.getTracks().forEach((t) => t.stop());
       sources.current.forEach((s) => {
         try {
           s.stop();
@@ -109,107 +103,12 @@ export default function Studio({
       cancelAnimationFrame(frame.current);
     };
   }, [api, session.token]);
-  useEffect(
-    () => () => {
-      if (recordUrl) URL.revokeObjectURL(recordUrl);
-    },
-    [recordUrl],
-  );
   async function act(action: string, extra = {}) {
     setBusy(true);
     setError('');
     try {
       const d = await request(api, session.token, { action, ...extra });
       setRoom(d.room);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  function stopRecording() {
-    if (recorder.current?.state === 'recording') recorder.current.stop();
-    if (recordTimer.current) clearInterval(recordTimer.current);
-    video.current?.pause();
-    stream.current?.getTracks().forEach((t) => t.stop());
-    setRecording(false);
-  }
-  async function record() {
-    setError('');
-    setBusy(true);
-    try {
-      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
-        throw new Error(
-          'Bu tarayıcı mikrofon kaydını desteklemiyor. Güncel Chrome veya Safari ile aç.',
-        );
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      stream.current = s;
-      if (!mounted.current) {
-        s.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      const type = [
-        'audio/webm;codecs=opus',
-        'audio/mp4',
-        'audio/ogg;codecs=opus',
-      ].find((t) => MediaRecorder.isTypeSupported(t));
-      const r = new MediaRecorder(s, type ? { mimeType: type } : undefined);
-      const parts: BlobPart[] = [];
-      r.ondataavailable = (e) => {
-        if (e.data.size) parts.push(e.data);
-      };
-      r.onstop = () => {
-        const blob = new Blob(parts, { type: r.mimeType });
-        if (mounted.current) {
-          setRecordBlob(blob);
-          setRecordUrl(URL.createObjectURL(blob));
-        }
-        s.getTracks().forEach((t) => t.stop());
-      };
-      recorder.current = r;
-      const v = video.current!;
-      v.currentTime = scene.start + slot * slotDuration;
-      await v.play();
-      r.start();
-      setElapsed(0);
-      setRecording(true);
-      const start = Date.now();
-      recordTimer.current = setInterval(() => {
-        const e = (Date.now() - start) / 1000;
-        setElapsed(Math.min(e, slotDuration));
-        if (e >= slotDuration) stopRecording();
-      }, 80);
-    } catch (e) {
-      stream.current?.getTracks().forEach((t) => t.stop());
-      const err = e as Error;
-      setError(
-        err.name === 'NotAllowedError'
-          ? 'Mikrofon izni verilmedi. Adres çubuğundan mikrofon iznini açıp tekrar dene.'
-          : err.message,
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function save() {
-    if (!recordBlob) return;
-    setBusy(true);
-    setError('');
-    try {
-      const r = await fetch(`${api}/audio/${session.id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-          'Content-Type': recordBlob.type,
-        },
-        body: recordBlob,
-      });
-      const d = (await r.json()) as { room: Room; error?: string };
-      if (!r.ok) throw new Error(d.error);
-      setRoom(d.room);
-      setNotice('Kaydın tamam! Diğer oyuncuların sesleri finalde açılacak.');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -223,16 +122,24 @@ export default function Studio({
       ctx.current ??= new AudioContext();
       await ctx.current.resume();
       await Promise.all(
-        room.players.map(async (p) => {
-          if (buffers.current.has(p.id)) return;
-          const r = await fetch(`${api}/audio/${p.id}`, {
-            headers: { Authorization: `Bearer ${session.token}` },
+        room.players.flatMap((p) => {
+          const tracks = p.segments.length
+            ? p.segments.map((id) => ({
+                key: `${p.id}:${id}`,
+                url: `${api}/audio/${p.id}?segment=${id}`,
+              }))
+            : [{ key: p.id, url: `${api}/audio/${p.id}` }];
+          return tracks.map(async (track) => {
+            if (buffers.current.has(track.key)) return;
+            const r = await fetch(track.url, {
+              headers: { Authorization: `Bearer ${session.token}` },
+            });
+            if (!r.ok) throw new Error('Sesler yüklenemedi. Tekrar dene.');
+            buffers.current.set(
+              track.key,
+              await ctx.current!.decodeAudioData(await r.arrayBuffer()),
+            );
           });
-          if (!r.ok) throw new Error('Sesler yüklenemedi. Tekrar dene.');
-          buffers.current.set(
-            p.id,
-            await ctx.current!.decodeAudioData(await r.arrayBuffer()),
-          );
         }),
       );
       setAudioLoaded(true);
@@ -264,17 +171,27 @@ export default function Studio({
     const audio = ctx.current;
     const now = audio.currentTime;
     room.players.forEach((p, i) => {
-      const buffer = buffers.current.get(p.id);
-      if (!buffer) return;
-      const at = i * slotDuration;
-      const skip = Math.max(0, late - at);
-      const duration = Math.min(buffer.duration, slotDuration) - skip;
-      if (duration <= 0) return;
-      const source = audio.createBufferSource();
-      source.buffer = buffer;
-      source.connect(destination || audio.destination);
-      source.start(now + Math.max(0, at - late), skip, duration);
-      sources.current.push(source);
+      const tracks = p.segments.length
+        ? sceneCues(room.scene)
+            .filter((c) => p.segments.includes(c.id))
+            .map((c) => ({
+              key: `${p.id}:${c.id}`,
+              at: c.start,
+              length: c.end - c.start,
+            }))
+        : [{ key: p.id, at: i * slotDuration, length: slotDuration }];
+      tracks.forEach((track) => {
+        const buffer = buffers.current.get(track.key);
+        if (!buffer) return;
+        const skip = Math.max(0, late - track.at),
+          duration = Math.min(buffer.duration, track.length) - skip;
+        if (duration <= 0) return;
+        const source = audio.createBufferSource();
+        source.buffer = buffer;
+        source.connect(destination || audio.destination);
+        source.start(now + Math.max(0, track.at - late), skip, duration);
+        sources.current.push(source);
+      });
     });
     setPlaying(true);
     playStop.current = setTimeout(
@@ -436,61 +353,53 @@ export default function Studio({
       </div>
       <div className="studio-grid">
         <div>
-          <div className="video-wrap">
-            <video
-              ref={video}
-              src={scene.video}
-              poster={scene.poster}
-              muted
-              playsInline
-              preload="auto"
-              onLoadedMetadata={() => {
-                if (video.current) video.current.currentTime = scene.start;
-              }}
-              onError={() =>
-                setError(
-                  'Sahne videosu yüklenemedi. Bağlantını kontrol edip sayfayı yenile.',
-                )
-              }
-              onTimeUpdate={() => {
-                if (
-                  !recording &&
-                  !playing &&
-                  video.current &&
-                  video.current.currentTime > scene.start + scene.duration
-                )
-                  video.current.pause();
-              }}
-            />
-            {countdown > 0 && (
-              <div className="countdown">
-                {countdown}
-                <span>Final başlıyor…</span>
-              </div>
-            )}
-            {recording && (
-              <span className="record-indicator">
-                ● KAYIT {elapsed.toFixed(1)} / {slotDuration.toFixed(1)} sn
-              </span>
-            )}
-          </div>
-          <div className="timeline">
-            {room.players.map((p, i) => (
-              <div key={p.id} className={p.id === me.id ? 'mine' : ''}>
-                <span>{(i * slotDuration).toFixed(0)} sn</span>
-                <strong>{p.name}</strong>
-                <span>
-                  {p.audio
-                    ? '✓ Kayıt hazır'
-                    : room.status === 'lobby'
-                      ? 'Rol bekleniyor'
-                      : p.id === me.id
-                        ? scene.roles[p.role]
-                        : 'Sürpriz rol'}
-                </span>
-              </div>
-            ))}
-          </div>
+          {room.status !== 'recording' && (
+            <div className="video-wrap">
+              <video
+                ref={video}
+                src={scene.video}
+                poster={scene.poster}
+                muted
+                playsInline
+                preload="auto"
+                onLoadedMetadata={() => {
+                  if (video.current) video.current.currentTime = scene.start;
+                }}
+                onError={() =>
+                  setError(
+                    'Sahne videosu yüklenemedi. Bağlantını kontrol edip sayfayı yenile.',
+                  )
+                }
+                onTimeUpdate={() => {
+                  if (
+                    !playing &&
+                    video.current &&
+                    video.current.currentTime > scene.start + scene.duration
+                  )
+                    video.current.pause();
+                }}
+              />
+              {countdown > 0 && (
+                <div className="countdown">
+                  {countdown}
+                  <span>Final başlıyor…</span>
+                </div>
+              )}
+            </div>
+          )}
+          {room.status === 'recording' ? (
+            <SegmentRecorder room={room} session={session} onRoom={setRoom} />
+          ) : (
+            <div className="timeline">
+              {sceneCues(room.scene).map((c) => (
+                <div key={c.id}>
+                  <span>BÖLÜM {c.id + 1}</span>
+                  <strong>{timeLabel(c.start)}</strong>
+                  <span>Bitiş {timeLabel(c.end)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <p className="credit">
             Sahne:{' '}
             <a
@@ -566,53 +475,33 @@ export default function Studio({
               <div className="eyebrow">SENİN KARAKTERİN</div>
               <h2 className="role-name">{scene.roles[me.role]}</h2>
               <p>{scene.mood}</p>
-              <blockquote>“{scene.prompts[me.role]}”</blockquote>
               <p>
-                Bu replik bir fikir. İstersen tamamen doğaçla! Sana ayrılan
-                süre: {slotDuration.toFixed(1)} saniye.
+                İşaretli bölümü izle, geri sayımdan sonra seslendir. Her kaydı
+                dinleyip onayladığında sıradaki repliğin açılır.
               </p>
-              {me.audio ? (
-                <div className="saved">
-                  <Check /> Kaydın hazır.
-                  <p>Herkes bitirdiğinde final açılacak.</p>
-                </div>
-              ) : (
-                <>
-                  {recording ? (
-                    <button className="record-button" onClick={stopRecording}>
-                      <Square size={18} /> Kaydı durdur
-                    </button>
-                  ) : (
-                    <button
-                      className="primary"
-                      disabled={busy}
-                      onClick={record}
-                    >
-                      <Mic size={18} />
-                      {recordBlob ? 'Yeniden kaydet' : 'Kayda başla'}
-                    </button>
-                  )}
-                  {recordUrl && !recording && (
-                    <>
-                      {/* User-created recordings have no transcript until a transcription service is connected. */}
-                      {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                      <audio
-                        controls
-                        aria-label="Kendi kaydını dinle"
-                        src={recordUrl}
-                        className="record-preview"
-                      />
-                      <button
-                        className="secondary"
-                        onClick={save}
-                        disabled={busy}
-                      >
-                        Bu kaydı kullan <Check size={17} />
-                      </button>
-                    </>
-                  )}
-                </>
-              )}
+              <ul className="assigned-cues">
+                {playerCues(
+                  room.scene,
+                  room.players.findIndex((p) => p.id === me.id),
+                  room.players.length,
+                ).map((c) => (
+                  <li key={c.id}>
+                    <span>Bölüm {c.id + 1}</span>
+                    <strong>
+                      {timeLabel(c.start)} — {timeLabel(c.end)}
+                    </strong>
+                    {me.segments.includes(c.id) ? (
+                      <Check size={16} />
+                    ) : (
+                      <span className="waiting-dot" />
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Repliğin bitiş noktasında kayıt kendiliğinden durur. Kaydı
+                göndermeden önce istediğin kadar tekrar deneyebilirsin.
+              </p>
               <span className="microcopy">
                 <Headphones size={14} /> Kayıtta kulaklık kullan.
               </span>

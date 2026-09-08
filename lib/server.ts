@@ -37,9 +37,21 @@ export async function snapshot(code: string) {
     )
     .bind(code)
     .all<Omit<Player, 'audio'> & { audio: string | null }>();
+  const recordings = await db()
+    .prepare(
+      'SELECT recordings.player, recordings.segment FROM recordings INNER JOIN players ON players.id = recordings.player WHERE players.room = ?',
+    )
+    .bind(code)
+    .all<{ player: string; segment: number }>();
   return {
     ...r,
     serverNow: Date.now(),
-    players: ps.results.map((p) => ({ ...p, audio: !!p.audio })),
+    players: ps.results.map((p) => ({
+      ...p,
+      audio: !!p.audio,
+      segments: recordings.results
+        .filter((x) => x.player === p.id)
+        .map((x) => x.segment),
+    })),
   };
 }

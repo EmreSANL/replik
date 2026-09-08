@@ -1,4 +1,10 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  primaryKey,
+} from 'drizzle-orm/sqlite-core';
 export const rooms = sqliteTable('rooms', {
   code: text('code').primaryKey(),
   scene: integer('scene').notNull(),
@@ -22,4 +28,16 @@ export const players = sqliteTable(
     joinedAt: integer('joined_at').notNull(),
   },
   (t) => [index('idx_players_room').on(t.room)],
+);
+
+export const recordings = sqliteTable(
+  'recordings',
+  {
+    player: text('player')
+      .notNull()
+      .references(() => players.id),
+    segment: integer('segment').notNull(),
+    objectKey: text('object_key').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.player, t.segment] })],
 );
