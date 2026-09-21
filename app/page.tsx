@@ -106,55 +106,57 @@ export default function Home() {
   }
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <Link href="/" className="brand" aria-label="Replik ana sayfa">
-          <span className="brand-icon">
-            <AudioLines size={25} />
-          </span>
-          replik<span className="brand-dot">®</span>
-        </Link>
-        <nav>
-          <button
-            className="active"
-            onClick={() => {
-              if (game) leave();
-              else
-                document
-                  .getElementById('sahneler')
-                  ?.scrollIntoView({ behavior: 'smooth' });
-            }}
-          >
-            Oyun alanı
-          </button>
-          <Link
-            href="/editor"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: 'rgba(216, 251, 81, 0.12)',
-              border: '1px solid rgba(216, 251, 81, 0.35)',
-              color: '#d8fb51',
-              fontSize: '13px',
-              fontWeight: 600,
-              textDecoration: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            <Sparkles size={14} /> Sahne Editörü 🎬
+      {!game && (
+        <header className="topbar">
+          <Link href="/" className="brand" aria-label="Replik ana sayfa">
+            <span className="brand-icon">
+              <AudioLines size={25} />
+            </span>
+            replik<span className="brand-dot">®</span>
           </Link>
-          <button onClick={() => setHelp(true)}>Nasıl oynanır?</button>
-          {!game && parked && (
-            <button onClick={() => setGame(parked)}>Odana dön ↗</button>
-          )}
-        </nav>
-        <span className="top-note">
-          <span className="live-dot" /> Tarayıcında, arkadaşlarınla.
-        </span>
-      </header>
-      <main>
+          <nav>
+            <button
+              className="active"
+              onClick={() => {
+                if (game) leave();
+                else
+                  document
+                    .getElementById('sahneler')
+                    ?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
+              Oyun alanı
+            </button>
+            <Link
+              href="/editor"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                background: 'rgba(216, 251, 81, 0.12)',
+                border: '1px solid rgba(216, 251, 81, 0.35)',
+                color: '#d8fb51',
+                fontSize: '13px',
+                fontWeight: 600,
+                textDecoration: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              <Sparkles size={14} /> Sahne Editörü 🎬
+            </Link>
+            <button onClick={() => setHelp(true)}>Nasıl oynanır?</button>
+            {!game && parked && (
+              <button onClick={() => setGame(parked)}>Odana dön ↗</button>
+            )}
+          </nav>
+          <span className="top-note">
+            <span className="live-dot" /> Tarayıcında, arkadaşlarınla.
+          </span>
+        </header>
+      )}
+      <main className={game ? 'game-mode-main' : ''}>
         {game ? (
           <Studio session={game.session} initial={game.room} onExit={leave} />
         ) : (
