@@ -129,6 +129,9 @@ export default function EditorPage() {
 
   // AI Otomatik Altyazı
   const whisper = useWhisper();
+  const [whisperModel, setWhisperModel] = useState<
+    'onnx-community/whisper-base' | 'onnx-community/whisper-tiny'
+  >('onnx-community/whisper-base');
 
   const handleAutoSubtitle = useCallback(async () => {
     if (!videoUrl) {
@@ -136,19 +139,38 @@ export default function EditorPage() {
       return;
     }
     try {
-      showToast('🤖 Video sesi analiz ediliyor ve Türkçe konuşmalar tanınıyor...');
-      const result = await whisper.transcribe(videoUrl, roles, duration, 'turkish');
+      const modelLabel = whisperModel.includes('base')
+        ? 'Whisper Base (Yüksek Doğruluk)'
+        : 'Whisper Tiny (Hızlı)';
+      showToast(`🤖 ${modelLabel} ile ses analiz ediliyor ve Türkçe konuşmalar tanınıyor...`);
+      const result = await whisper.transcribe(videoUrl, roles, duration, 'turkish', whisperModel);
       if (result.cues && result.cues.length > 0) {
         setCues(result.cues);
         setSelectedCueId(result.cues[0].id);
-        showToast(`🎉 ${result.cues.length} replik yapay zeka ile otomatik oluşturuldu!`);
+        showToast(`🎉 ${result.cues.length} replik ses dalgasına (VAD) kilitlenerek eksiksiz oluşturuldu!`);
       } else {
         showToast('ℹ️ Videoda belirgin bir konuşma sesi bulunamadı.');
       }
     } catch (err) {
       showToast(`❌ Hata: ${(err as Error).message}`);
     }
-  }, [videoUrl, roles, duration, whisper, showToast]);
+  }, [videoUrl, roles, duration, whisper, whisperModel, showToast]);
+
+  // Mevcut repliklerin başlangıç ve bitişlerini ses dalgasına (VAD) göre otomatik hizala
+  const handleAlignCues = useCallback(async () => {
+    if (!videoUrl || cues.length === 0) {
+      showToast('⚠️ Lütfen önce bir video ve en az bir replik ekleyin.');
+      return;
+    }
+    try {
+      showToast('🪄 Replik başlangıç ve bitişleri ses dalgasına (VAD) göre hizalanıyor...');
+      const aligned = await whisper.alignExistingCues(cues, videoUrl, duration);
+      setCues(aligned);
+      showToast(`✨ ${aligned.length} repliğin zamanlamaları ses dalgasına göre milisaniyelik hizalandı!`);
+    } catch (err) {
+      showToast(`⚠️ Hizalama hatası: ${(err as Error).message}`);
+    }
+  }, [videoUrl, cues, duration, whisper, showToast]);
 
   // Video zaman güncellemesi
   const handleTimeUpdate = () => {
@@ -792,11 +814,37 @@ export default function EditorPage() {
                   className="hidden"
                   onChange={handleFileUpload}
                 />
+                {/* Whisper Model Seçici (Base vs Tiny) */}
+                <div className="hidden sm:flex items-center bg-[#181a13] border border-[#2e3124] rounded-lg p-0.5 text-xs">
+                  <button
+                    onClick={() => setWhisperModel('onnx-community/whisper-base')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      whisperModel.includes('base')
+                        ? 'bg-[#d8fb51] text-[#12130e] font-bold shadow-sm'
+                        : 'text-[#8e9182] hover:text-[#f4f4e9]'
+                    }`}
+                    title="Whisper Base: Türkçe için çok daha yüksek doğruluk ve eksiksiz replik tanıma (Önerilen)"
+                  >
+                    🎯 Hassas (Base)
+                  </button>
+                  <button
+                    onClick={() => setWhisperModel('onnx-community/whisper-tiny')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      whisperModel.includes('tiny')
+                        ? 'bg-[#d8fb51] text-[#12130e] font-bold shadow-sm'
+                        : 'text-[#8e9182] hover:text-[#f4f4e9]'
+                    }`}
+                    title="Whisper Tiny: Hızlı model"
+                  >
+                    ⚡ Hızlı (Tiny)
+                  </button>
+                </div>
+
                 <button
                   onClick={handleAutoSubtitle}
                   disabled={whisper.isProcessing}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-[#d8fb51] to-[#bbf438] text-[#12130e] hover:brightness-110 flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-[#d8fb51]/10"
-                  title="Videodaki Türkçe konuşmaları yapay zeka ile otomatik zamanlayıp altyazıya dönüştür"
+                  title="Videodaki Türkçe konuşmaları yapay zeka ile otomatik zamanlayıp ses dalgasına (VAD) göre altyazıya dönüştür"
                 >
                   {whisper.isProcessing ? (
                     <>
@@ -810,6 +858,19 @@ export default function EditorPage() {
                     </>
                   )}
                 </button>
+
+                {/* Ses Dalgasına Göre Zamanları Düzelt (VAD) Butonu */}
+                {cues.length > 0 && (
+                  <button
+                    onClick={handleAlignCues}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#222818] hover:bg-[#2d361f] text-[#d8fb51] border border-[#3e4a24] flex items-center gap-1.5 transition cursor-pointer"
+                    title="Repliklerin başlangıç ve bitişlerini videodaki gerçek ses dalgasına (VAD) göre milisaniyelik otomatik hizala ve çakışmaları temizle"
+                  >
+                    <Sparkles size={13} />
+                    <span className="hidden md:inline">Zamanları Düzelt (VAD)</span>
+                    <span className="md:hidden">Düzelt</span>
+                  </button>
+                )}
               </div>
 
               {/* Sağ Taraf: Supabase Sahneleri ve Durum */}
@@ -1318,6 +1379,18 @@ export default function EditorPage() {
                     +0.1s
                   </button>
                 </div>
+
+                {/* Ses Dalgasına Göre Zamanları Düzelt (VAD) */}
+                {cues.length > 0 && (
+                  <button
+                    onClick={handleAlignCues}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#1e2418] hover:bg-[#2c3720] text-[#d8fb51] border border-[#405225] flex items-center gap-1.5 transition cursor-pointer ml-1"
+                    title="Tüm repliklerin başlangıç ve bitişlerini videodaki gerçek insan sesi dalgasına göre milisaniyelik otomatik hizalar ve çakışmaları çözer"
+                  >
+                    <Sparkles size={13} />
+                    <span>Zamanları Düzelt (VAD)</span>
+                  </button>
+                )}
               </div>
 
               {/* Seçili Repliği Dinle */}
@@ -1464,6 +1537,16 @@ export default function EditorPage() {
                 Altyazılar ve Replikler ({cues.length})
               </h2>
               <div className="flex items-center gap-2">
+                {cues.length > 0 && (
+                  <button
+                    onClick={handleAlignCues}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#222818] hover:bg-[#2d361f] text-[#d8fb51] border border-[#3e4a24] flex items-center gap-1.5 transition cursor-pointer"
+                    title="Tüm repliklerin başlangıç ve bitiş zamanlarını videodaki gerçek ses dalgasına (VAD) göre otomatik hizala"
+                  >
+                    <Sparkles size={13} />
+                    <span>Zamanları Düzelt (VAD)</span>
+                  </button>
+                )}
                 <button
                   onClick={handleAutoSubtitle}
                   disabled={whisper.isProcessing}
