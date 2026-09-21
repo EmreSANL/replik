@@ -11,6 +11,7 @@ export const rooms = sqliteTable('rooms', {
   status: text('status').notNull().default('lobby'),
   createdAt: integer('created_at').notNull(),
   playAt: integer('play_at').notNull().default(0),
+  maxPlayers: integer('max_players').notNull().default(4),
 });
 export const players = sqliteTable(
   'players',

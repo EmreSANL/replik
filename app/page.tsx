@@ -6,11 +6,13 @@ import {
   ArrowUpRight,
   ArrowRight,
   Users,
+  User,
   Headphones,
   Play,
   Sparkles,
   AudioLines,
   Check,
+  Plus,
 } from 'lucide-react';
 import {
   Dialog,
@@ -19,14 +21,17 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import Studio, { request, type Session } from './studio';
-import { scenes, type Room } from '@/lib/scenes';
+import { scenes, getAllScenes, type Scene, type Room } from '@/lib/scenes';
+import { getScenesFromSupabase } from '@/lib/supabase';
 export default function Home() {
+  const [allScenes, setAllScenes] = useState<Scene[]>(scenes);
   const [parked, setParked] = useState<{ session: Session; room: Room } | null>(
       null,
     ),
     [help, setHelp] = useState(false),
     [modal, setModal] = useState<'create' | 'join' | null>(null),
     [selected, setSelected] = useState(0),
+    [maxPlayers, setMaxPlayers] = useState(4),
     [preview, setPreview] = useState<number | null>(null),
     [name, setName] = useState(''),
     [code, setCode] = useState(''),
@@ -34,6 +39,18 @@ export default function Home() {
     [error, setError] = useState(''),
     [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
   const clip = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    void getScenesFromSupabase().then((dbScenes) => {
+      if (dbScenes && dbScenes.length > 0) {
+        setAllScenes([...dbScenes, ...scenes]);
+      } else {
+        setAllScenes(getAllScenes());
+      }
+    });
+  }, []);
+  const activeScene = allScenes[selected] || allScenes[0] || scenes[0];
+  const previewScene =
+    preview !== null ? allScenes[preview] || allScenes[0] : null;
   useEffect(() => {
     try {
       const cached = sessionStorage.getItem('replik-session');
@@ -63,7 +80,7 @@ export default function Home() {
         path,
         undefined,
         modal === 'create'
-          ? { name, scene: selected }
+          ? { name, scene: selected, maxPlayers }
           : { action: 'join', name },
       );
       const session = { code: data.room.code, token: data.token, id: data.id };
@@ -102,6 +119,25 @@ export default function Home() {
           >
             Oyun alanı
           </button>
+          <Link
+            href="/editor"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              background: 'rgba(216, 251, 81, 0.12)',
+              border: '1px solid rgba(216, 251, 81, 0.35)',
+              color: '#d8fb51',
+              fontSize: '13px',
+              fontWeight: 600,
+              textDecoration: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <Sparkles size={14} /> Sahne Editörü 🎬
+          </Link>
           <button onClick={() => setHelp(true)}>Nasıl oynanır?</button>
           {!game && parked && (
             <button onClick={() => setGame(parked)}>Odana dön ↗</button>
@@ -135,26 +171,28 @@ export default function Home() {
               <div
                 className="featured"
                 style={{
-                  backgroundImage: `linear-gradient(0deg,#0b160df5 2%,#08130b00 90%),url('${scenes[selected].poster}')`,
+                  backgroundImage: `linear-gradient(0deg,#0b160df5 2%,#08130b00 90%),url('${activeScene.poster}')`,
                 }}
               >
                 <div className="feature-top">
                   <span className="pill">
                     <Sparkles size={14} /> SEÇİLİ SAHNENİZ
                   </span>
-                  <span className="outline-pill">ANİMASYON</span>
+                  <span className="outline-pill">
+                    {activeScene.category.toUpperCase()}
+                  </span>
                 </div>
                 <div className="feature-bottom">
                   <span className="eyebrow">
-                    BİRAZ DOĞAÇLAMA, BOLCA KAHKAHA
+                    {activeScene.mood.toUpperCase()}
                   </span>
-                  <h2>{scenes[selected].title}.</h2>
+                  <h2>{activeScene.title}.</h2>
                   <div className="feature-meta">
                     <span>
-                      <Users size={16} /> 1–4 oyuncu
+                      <Users size={16} /> 1–{activeScene.roles.length} oyuncu
                     </span>
-                    <span>00:{scenes[selected].duration}</span>
-                    <span>Big Buck Bunny</span>
+                    <span>00:{activeScene.duration}</span>
+                    <span>{activeScene.roles.join(', ')}</span>
                   </div>
                 </div>
                 <button
@@ -220,7 +258,7 @@ export default function Home() {
                 <span>Özgürce doğaçla.</span>
               </div>
               <div className="scene-grid">
-                {scenes.map((s, i) => (
+                {allScenes.map((s, i) => (
                   <button
                     key={s.id}
                     className={
@@ -231,11 +269,39 @@ export default function Home() {
                       setPreview(i);
                     }}
                   >
-                    <div className={'scene-art art-' + i}>
+                    <div
+                      className={'scene-art art-' + (i % 4)}
+                      style={
+                        s.poster && !s.poster.startsWith('/scene-')
+                          ? {
+                              backgroundImage: `url('${s.poster}')`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }
+                          : undefined
+                      }
+                    >
                       <span className="scene-num">0{i + 1}</span>
                       {selected === i && (
                         <span className="selected-label">
                           <Check size={12} /> SEÇİLİ
+                        </span>
+                      )}
+                      {s.isCustom && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: '8px',
+                            left: '8px',
+                            background: '#d8fb51',
+                            color: '#10110d',
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          MEME / ÖZEL
                         </span>
                       )}
                       <span className="duration">00:{s.duration}</span>
@@ -243,10 +309,59 @@ export default function Home() {
                     <div className="scene-info">
                       <h3>{s.title}</h3>
                       <ArrowUpRight size={19} />
-                      <span>Animasyon · 1–4 oyuncu</span>
+                      <span>{s.category} · {s.roles.length} karakter</span>
                     </div>
                   </button>
                 ))}
+
+                {/* Yeni Sahne / Meme Ekle Kartı */}
+                <Link
+                  href="/editor"
+                  className="scene-card"
+                  style={{
+                    border: '2px dashed #3e4133',
+                    background: 'rgba(25, 27, 20, 0.6)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '24px',
+                    textAlign: 'center',
+                    textDecoration: 'none',
+                    minHeight: '180px',
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div
+                    style={{
+                      background: '#d8fb51',
+                      color: '#10110d',
+                      borderRadius: '50%',
+                      width: '42px',
+                      height: '42px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <Plus size={22} />
+                  </div>
+                  <h3
+                    style={{
+                      color: '#f4f4e9',
+                      fontSize: '15px',
+                      fontWeight: 700,
+                      margin: '0 0 4px',
+                    }}
+                  >
+                    Kendi Meme Sahnini Yap
+                  </h3>
+                  <span style={{ color: '#8c8e82', fontSize: '12px' }}>
+                    Video yükle & altyazı zamanla 🎬
+                  </span>
+                </Link>
               </div>
             </section>
             <div className="how-strip">
@@ -270,7 +385,7 @@ export default function Home() {
         )}
         <footer>
           <span>Sesler sizin. Eğlence hepimizin.</span>
-          <span>REPLİK / BİRLİKTE OYNA</span>
+          <span>REPLİK / DUBLAJ.IO DENEYİMİ</span>
         </footer>
         <div className="source-credit">
           Sahneler:{' '}
@@ -285,7 +400,7 @@ export default function Home() {
           >
             CC BY 3.0
           </a>{' '}
-          · Kesitler alınmış, ses kapatılmıştır.
+          · Sesler oyuncuların doğaçlamasıdır.
         </div>
       </main>
       <Dialog open={help} onOpenChange={setHelp}>
@@ -301,15 +416,15 @@ export default function Home() {
             </li>
             <li>
               <strong>Rolünü keşfet.</strong> Herkes hazır olduğunda kurucu
-              başlatır. Karakterler rastgele dağıtılır.
+              başlatır. Karakterler renkli kartlarla tanıtılır.
             </li>
             <li>
               <strong>Kendi bölümünü kaydet.</strong> Önerilen repliği kullan
-              veya doğaçla. Beğenmezsen kaydı göndermeden tekrar dene.
+              veya doğaçla. Kırmızı parlayan kayıt çerçevesi ve altyazı sana rehberlik eder.
             </li>
             <li>
-              <strong>Finali birlikte izle.</strong> Herkes sesleri yükleyip
-              hazır olsun. Kurucu başlattığında geri sayım hepinizde görünür.
+              <strong>Finali birlikte izle.</strong> Herkes sesleri yüklediğinde senkronize
+              sinema başlar. Reaksiyonlar ver ve aynı ekiple yeni sahnelere geç!
             </li>
           </ol>
           <p className="microcopy">
@@ -325,13 +440,22 @@ export default function Home() {
       >
         <DialogContent>
           <DialogTitle>
-            {modal === 'create' ? 'Sahnedeki adın ne?' : 'Ekibine katıl.'}
+            {modal === 'create' ? 'ODANI KUR' : 'EKİBİNE KATIL'}
           </DialogTitle>
           <DialogDescription>
             {modal === 'create'
-              ? `${scenes[selected].title} · 1–4 oyuncu`
-              : 'Arkadaşının paylaştığı oda koduyla katıl.'}
+              ? `${activeScene.title} · ${activeScene.category} · ${maxPlayers} kişilik oda`
+              : 'Arkadaşının paylaştığı 6 haneli oda koduyla katıl.'}
           </DialogDescription>
+
+          {modal === 'create' && (
+            <div className="lobby-scene-preview" style={{ margin: '8px 0 16px' }}>
+              <span className="lobby-scene-label">Seçili Sahne:</span>
+              <strong>{activeScene.title}</strong>
+              <small>{activeScene.roles.length} Karakter · 00:{activeScene.duration} sn · {activeScene.roles.join(', ')}</small>
+            </div>
+          )}
+
           <form onSubmit={enter} className="entry-form">
             <label htmlFor="name">Oyuncu adın</label>
             <input
@@ -344,6 +468,71 @@ export default function Home() {
               placeholder="Sahnede sana ne diyelim?"
               autoComplete="off"
             />
+
+            {modal === 'create' && (
+              <div className="player-count-picker">
+                <div className="player-count-title">
+                  <Users size={14} /> KİŞİ SAYISI SEÇENEĞİ
+                </div>
+                <div className="player-count-grid">
+                  {[
+                    {
+                      count: 1,
+                      label: '1 Kişi',
+                      badge: 'Solo',
+                      desc: '4 repliğin hepsi sana ait',
+                      icon: User,
+                    },
+                    {
+                      count: 2,
+                      label: '2 Kişi',
+                      badge: 'Düet',
+                      desc: "2'şer replik paylaşırsınız",
+                      icon: Users,
+                    },
+                    {
+                      count: 3,
+                      label: '3 Kişi',
+                      badge: 'Trio',
+                      desc: '1-2 replik paylaşırsınız',
+                      icon: Users,
+                    },
+                    {
+                      count: 4,
+                      label: '4 Kişi',
+                      badge: 'Ekip',
+                      desc: "1'er replik tam kadro",
+                      icon: Users,
+                    },
+                  ].map((opt) => {
+                    const Icon = opt.icon;
+                    const isSelected = maxPlayers === opt.count;
+                    return (
+                      <button
+                        type="button"
+                        key={opt.count}
+                        className={`player-count-card ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setMaxPlayers(opt.count)}
+                      >
+                        <div className="player-count-card-header">
+                          <span className="count-badge-icon">
+                            <Icon size={14} />
+                          </span>
+                          <span className="count-badge-type">{opt.badge}</span>
+                        </div>
+                        <strong className="count-val">{opt.label}</strong>
+                        <span className="count-subdesc">{opt.desc}</span>
+                        {isSelected && (
+                          <span className="count-selected-check">
+                            <Check size={11} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {modal === 'join' && (
               <>
                 <label htmlFor="join-code">Oda kodu</label>
@@ -387,34 +576,34 @@ export default function Home() {
         }}
       >
         <DialogContent className="preview-dialog">
-          <DialogTitle>{scenes[preview ?? 0].title}</DialogTitle>
+          <DialogTitle>{previewScene?.title}</DialogTitle>
           <DialogDescription>
-            {scenes[preview ?? 0].duration} saniye · 1–4 oyuncu · Sessiz
+            {previewScene?.duration} saniye · {previewScene?.roles.length} oyuncu · Sessiz
             önizleme
           </DialogDescription>
-          {preview !== null && (
+          {previewScene && (
             <video
-              key={preview}
+              key={previewScene.id}
               ref={clip}
-              src={scenes[preview].video}
-              poster={scenes[preview].poster}
+              src={previewScene.video}
+              poster={previewScene.poster}
               muted
               playsInline
               autoPlay
               controls
               onLoadedMetadata={() => {
                 if (clip.current)
-                  clip.current.currentTime = scenes[preview].start;
+                  clip.current.currentTime = previewScene.start;
               }}
               onTimeUpdate={() => {
                 const v = clip.current;
                 if (
                   v &&
                   v.currentTime >=
-                    scenes[preview].start + scenes[preview].duration
+                    previewScene.start + previewScene.duration
                 ) {
                   v.pause();
-                  v.currentTime = scenes[preview].start;
+                  v.currentTime = previewScene.start;
                 }
               }}
             />

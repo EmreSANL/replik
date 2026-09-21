@@ -1,5 +1,5 @@
 import { playerCues } from '@/lib/scenes';
-import { db, files, fail, member, snapshot } from '@/lib/server';
+import { db, files, fail, member, snapshot, logActivity } from '@/lib/server';
 type C = { params: Promise<{ code: string; player: string }> };
 export async function PUT(req: Request, { params }: C) {
   const { code, player } = await params;
@@ -82,6 +82,11 @@ export async function PUT(req: Request, { params }: C) {
       .bind(code, code),
   );
   await db().batch(operations);
+  logActivity(
+    code,
+    `${me.name} bir replik seslendirdi ${segment !== null ? `(Bölüm ${segment + 1})` : ''} ✓`,
+    'record',
+  );
   return Response.json({ room: await snapshot(code) });
 }
 export async function GET(req: Request, { params }: C) {

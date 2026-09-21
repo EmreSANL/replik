@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Check, Mic, Square, RotateCcw, ArrowRight } from 'lucide-react';
+import { Check, Mic, Square, RotateCcw, ArrowRight, Play, Pause } from 'lucide-react';
 import {
   playerCues,
   sceneCues,
@@ -44,6 +44,7 @@ export default function SegmentRecorder({
     [waves, setWaves] = useState<Record<number, number[]>>({}),
     [recording, setRecording] = useState(false),
     [previewing, setPreviewing] = useState(false),
+    [playingSegment, setPlayingSegment] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [countdown, setCountdown] = useState(0),
     [position, setPosition] = useState(0),
@@ -64,12 +65,19 @@ export default function SegmentRecorder({
     mounted = useRef(true),
     urls = useRef<string[]>([]),
     loaded = useRef(new Set<number>()),
-    savedAudio = useRef<HTMLAudioElement>(null);
+    savedAudio = useRef<HTMLAudioElement>(null),
+    segmentAudio = useRef<HTMLAudioElement | null>(null);
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
   function stop() {
     previewEnd.current = null;
     video.current?.pause();
+    if (segmentAudio.current) {
+      segmentAudio.current.pause();
+      segmentAudio.current.currentTime = 0;
+    }
+    savedAudio.current?.pause();
     setPreviewing(false);
+    setPlayingSegment(null);
     if (timer.current) clearInterval(timer.current);
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -94,6 +102,7 @@ export default function SegmentRecorder({
       mounted.current = false;
       v?.removeEventListener('timeupdate', tick);
       v?.pause();
+      if (segmentAudio.current) segmentAudio.current.pause();
       if (timer.current) clearInterval(timer.current);
       if (recorder.current?.state === 'recording') recorder.current.stop();
       stream.current?.getTracks().forEach((t) => t.stop());
@@ -182,6 +191,71 @@ export default function SegmentRecorder({
     setError('');
     setPosition(cues[id].start);
     if (video.current) video.current.currentTime = scene.start + cues[id].start;
+  }
+  async function playSegment(id: number) {
+    if (locked && playingSegment !== id) return;
+    if (playingSegment === id) {
+      stop();
+      return;
+    }
+    savedAudio.current?.pause();
+    stop();
+    const c = cues[id];
+    let audioUrl = takes[id]?.url ?? savedUrls[id];
+    if (!audioUrl && me.segments.includes(id)) {
+      setBusy(true);
+      try {
+        const r = await fetch(`${api}?segment=${id}`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (r.ok) {
+          const blob = await r.blob();
+          audioUrl = URL.createObjectURL(blob);
+          urls.current.push(audioUrl);
+          setSavedUrls((prev) => ({ ...prev, [id]: audioUrl }));
+        }
+      } catch {
+        // ignore
+      }
+      setBusy(false);
+    }
+    if (!audioUrl) return;
+
+    setSelected(id);
+    setPlayingSegment(id);
+    setBusy(true);
+    setError('');
+
+    try {
+      const v = await seek(scene.start + c.start);
+      if (!mounted.current) return;
+
+      const a = segmentAudio.current;
+      if (a) {
+        a.src = audioUrl;
+        a.currentTime = 0;
+        await a.play();
+      }
+      previewEnd.current = scene.start + c.end;
+      setPosition(c.start);
+      await v.play();
+
+      timer.current = setInterval(() => {
+        if (!v || !mounted.current) return;
+        const currentPos = v.currentTime - scene.start;
+        setPosition(currentPos);
+        if (v.currentTime >= scene.start + c.end || (a && a.ended)) {
+          stop();
+          v.currentTime = scene.start + c.start;
+          setPosition(c.start);
+        }
+      }, 25);
+    } catch (e) {
+      stop();
+      setError((e as Error).message);
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
   }
   async function record() {
     setError('');
@@ -309,7 +383,15 @@ export default function SegmentRecorder({
   );
   return (
     <div className="cue-stage">
-      <div className="video-wrap">
+      {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio
+        ref={segmentAudio}
+        playsInline
+        onEnded={stop}
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+      <div className={`video-wrap ${recording ? 'recording-active-glow' : ''}`}>
         <video
           ref={video}
           src={scene.video}
@@ -327,204 +409,333 @@ export default function SegmentRecorder({
             )
           }
         />
+
+        {/* Video Altyazı Kutusu - Karakter adı ve replik metni */}
+        <div className="video-subtitle-overlay">
+          <span
+            className="video-char-badge"
+            style={{ backgroundColor: current.roleColor }}
+          >
+            {current.roleName}
+            {mine.length > 1
+              ? ` · Replik ${mine.findIndex((c) => c.id === selected) + 1}/${mine.length}`
+              : ''}
+          </span>
+          <p className="video-subtitle-line">“{current.text}”</p>
+        </div>
+
         {countdown > 0 && (
-          <div className="countdown">
-            {countdown}
-            <span>Hazırlan, kayıt başlıyor…</span>
+          <div className="recording-countdown-overlay">
+            <div className="countdown-number">{countdown}</div>
+            <span className="countdown-sub">Hazırlan, kayıt başlıyor!</span>
           </div>
         )}
+
         {recording && (
-          <span className="record-indicator">
-            ● KAYIT · BÖLÜM {selected + 1} · {timeLabel(position)}
-          </span>
+          <div className="active-recording-pill">
+            <span className="recording-dot" />
+            <span>KAYIT · {current.roleName.toUpperCase()} · {timeLabel(position)}</span>
+          </div>
         )}
       </div>
+
       <div className="cue-editor">
-        <div className="cue-timebar">
-          <span>SAHNE ZAMAN ÇİZELGESİ</span>
-          <strong>
-            {timeLabel(position)} <span>/ {timeLabel(scene.duration)}</span>
-          </strong>
-        </div>
-        <div className="cue-track">
-          <svg
-            viewBox="0 0 1000 100"
-            preserveAspectRatio="none"
-            aria-label="Kayıtların ses dalgası"
-          >
-            <line
-              x1="0"
-              y1="50"
-              x2="1000"
-              y2="50"
-              stroke="#4c5444"
-              strokeWidth="1"
-            />
-            {cues.map((c) => (
-              <g key={c.id}>
-                {(waves[c.id] ?? []).map((peak, i) => (
-                  <line
-                    key={i}
-                    x1={
-                      ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                        scene.duration) *
-                      1000
-                    }
-                    x2={
-                      ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                        scene.duration) *
-                      1000
-                    }
-                    y1={50 - peak * 44}
-                    y2={50 + peak * 44}
-                    stroke={c.id === selected ? '#d8fb51' : '#839776'}
-                    strokeWidth="2"
-                  />
-                ))}
-              </g>
-            ))}
-          </svg>
-          {cues.map((c) => {
-            const own = mine.some((x) => x.id === c.id);
-            return (
-              <button
-                key={c.id}
-                className={`cue-region ${c.id === selected ? 'selected' : ''} ${own ? 'own' : 'other'}`}
-                style={{
-                  left: `${(c.start / scene.duration) * 100}%`,
-                  width: `${((c.end - c.start) / scene.duration) * 100}%`,
-                }}
-                onClick={() => select(c.id)}
-                disabled={!own || locked}
-                aria-label={`Bölüm ${c.id + 1}: ${timeLabel(c.start)}–${timeLabel(c.end)}${own ? ', senin repliğin' : ', diğer oyuncu'}`}
-                aria-pressed={c.id === selected}
-              >
-                <span>
-                  {String(c.id + 1).padStart(2, '0')}
-                  {me.segments.includes(c.id) && ' ✓'}
-                </span>
-              </button>
-            );
-          })}
-          <div
-            className="cue-playhead"
-            style={{
-              left: `${Math.min(100, (position / scene.duration) * 100)}%`,
-            }}
-          />
-        </div>
-        <div className="cue-ruler">
-          {[0, 0.25, 0.5, 0.75, 1].map((n) => (
-            <span key={n}>{timeLabel(scene.duration * n)}</span>
-          ))}
-        </div>
-        <p className="cue-caption">
-          İşaretli alan senin seçili repliğin. Ses dalgası kaydından sonra
-          görünür.
-        </p>
-        <div className="cue-script">
-          <div>
-            <span>
-              BÖLÜM {selected + 1} / {cues.length}
-            </span>
-            <strong>
-              {timeLabel(current.start)} <ArrowRight size={14} />{' '}
-              {timeLabel(current.end)}
-            </strong>
-          </div>
-          <blockquote>“{current.text}”</blockquote>
-          <span className="cue-duration">
-            {duration.toFixed(1)} saniye · {scene.roles[me.role]} · İstersen
-            doğaçla.
-          </span>
-        </div>
-        <div className="cue-steps">
-          {mine.map((c, i) => (
-            <button
-              disabled={locked}
-              key={c.id}
-              onClick={() => select(c.id)}
-              className={`${c.id === selected ? 'active' : ''} ${me.segments.includes(c.id) ? 'done' : ''}`}
-              aria-label={`${i + 1}. repliğin, bölüm ${c.id + 1}`}
-            >
-              <span>
-                {me.segments.includes(c.id) ? <Check size={14} /> : i + 1}
+        {/* Eğer oyuncu tüm repliklerini tamamladıysa Dublaj.io "Sıra Kimde?" Paneli göster */}
+        {completed >= mine.length && !recording && !countdown ? (
+          <div className="turn-tracker-card">
+            <div className="turn-tracker-header">
+              <span className="turn-tracker-badge">
+                <span className="pulse-dot" /> CANLI DURUM
               </span>
-              <strong>
-                {timeLabel(c.start)} — {timeLabel(c.end)}
-              </strong>
-            </button>
-          ))}
-        </div>
-        <div className="cue-completion">
-          <strong>
-            {completed} / {mine.length}
-          </strong>{' '}
-          REPLİĞİN TAMAMLANDI
-        </div>
-        {countdown > 0 ? (
-          <div className="cue-countdown">
-            <strong>{countdown}</strong>
-            <span>
-              Hazırlan. {timeLabel(current.start)} konumunda kayıt başlayacak.
-            </span>
-          </div>
-        ) : recording ? (
-          <>
-            <div className="cue-record-progress">
-              <div style={{ width: `${progress}%` }} />
+              <h3>SIRA KİMDE?</h3>
+              <p>Tüm oyuncuların repliklerini tamamlaması bekleniyor. Final çok yakında başlayacak!</p>
             </div>
-            <button className="record-button" onClick={stop}>
-              <Square size={18} /> Kaydı bitir · Kalan{' '}
-              {Math.max(0, current.end - position).toFixed(1)} sn
-            </button>
-          </>
-        ) : me.audio ? (
-          <div className="cue-finished">
-            <Check size={19} /> Bütün repliklerin hazır. Ekibin tamamlaması
-            bekleniyor.
+
+            <div className="turn-players-list">
+              {room.players.map((p, pIdx) => {
+                const pAssigned = playerCues(room.scene, pIdx, room.players.length);
+                const pDone = p.audio || p.segments.length >= pAssigned.length;
+                const pPct = pDone
+                  ? 100
+                  : Math.round((p.segments.length / Math.max(1, pAssigned.length)) * 100);
+
+                return (
+                  <div key={p.id} className={`turn-player-item ${pDone ? 'done' : 'waiting'}`}>
+                    <div className="turn-player-info">
+                      <span className="avatar">
+                        {p.name[0].toLocaleUpperCase('tr')}
+                      </span>
+                      <div>
+                        <strong>
+                          {p.name} {p.id === me.id && <small>(Sen)</small>}
+                        </strong>
+                        <span>
+                          {pDone
+                            ? 'Bütün replikleri tamamladı'
+                            : `${p.segments.length}/${pAssigned.length} replik kaydetti`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="turn-player-progress-wrap">
+                      <div className="turn-progress-bar">
+                        <div
+                          className={`turn-progress-fill ${pDone ? 'complete' : ''}`}
+                          style={{ width: `${pPct}%` }}
+                        />
+                      </div>
+                      <span className={`turn-status-badge ${pDone ? 'ready' : 'in-progress'}`}>
+                        {pDone ? (
+                          <>
+                            <Check size={13} /> Tamamlandı
+                          </>
+                        ) : p.segments.length > 0 ? (
+                          'Kaydediyor…'
+                        ) : (
+                          'Bekleniyor'
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="turn-listen-box">
+              <h4>Kaydettiğin Replikleri Dinle</h4>
+              <div className="cue-steps">
+                {mine.map((c, i) => (
+                  <button
+                    disabled={locked}
+                    key={c.id}
+                    onClick={() => select(c.id)}
+                    className={`${c.id === selected ? 'active' : ''} done`}
+                    aria-label={`${i + 1}. repliğin`}
+                  >
+                    <span><Check size={14} /></span>
+                    <strong>{timeLabel(c.start)} — {timeLabel(c.end)}</strong>
+                  </button>
+                ))}
+              </div>
+
+              {(take || savedUrls[selected]) && (
+                <div className="cue-review">
+                  <span>Bölüm {selected + 1} Kaydın</span>
+                  {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+                  <audio
+                    controls
+                    ref={savedAudio}
+                    src={take?.url ?? savedUrls[selected]}
+                    aria-label={`Bölüm ${selected + 1} kaydını dinle`}
+                  />
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      // Allow re-recording
+                      setTakes((t) => {
+                        const copy = { ...t };
+                        delete copy[selected];
+                        return copy;
+                      });
+                      record();
+                    }}
+                  >
+                    <RotateCcw size={16} /> Bu Bölümü Yeniden Kaydet
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
-          <button
-            className="primary cue-record"
-            onClick={record}
-            disabled={busy}
-          >
-            <Mic size={19} />
-            {take || me.segments.includes(selected)
-              ? 'Bu bölümü yeniden kaydet'
-              : 'Şimdi seslendir'}
-            <span>
-              {timeLabel(current.start)} → {timeLabel(current.end)}
-            </span>
-          </button>
-        )}
-        {(take || savedUrls[selected]) && !recording && !countdown && (
-          <div className="cue-review">
-            <span>Son kaydın — Bölüm {selected + 1}</span>
-            {/* Player-created speech has no automatic transcript. */}
-            {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-            <audio
-              controls
-              ref={savedAudio}
-              src={take?.url ?? savedUrls[selected]}
-              aria-label={`Bölüm ${selected + 1} kaydını dinle`}
-            />
-            {take && !me.audio && (
-              <button className="primary" disabled={busy} onClick={save}>
-                Kaydı kullan ve devam et <ArrowRight size={17} />
+          <>
+            <div className="cue-timebar">
+              <span>SAHNE ZAMAN ÇİZELGESİ</span>
+              <strong>
+                {timeLabel(position)} <span>/ {timeLabel(scene.duration)}</span>
+              </strong>
+            </div>
+            <div className="cue-track">
+              <svg
+                viewBox="0 0 1000 100"
+                preserveAspectRatio="none"
+                aria-label="Kayıtların ses dalgası"
+              >
+                <line
+                  x1="0"
+                  y1="50"
+                  x2="1000"
+                  y2="50"
+                  stroke="#4c5444"
+                  strokeWidth="1"
+                />
+                {cues.map((c) => (
+                  <g key={c.id}>
+                    {(waves[c.id] ?? []).map((peak, i) => (
+                      <line
+                        key={i}
+                        x1={
+                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
+                            scene.duration) *
+                          1000
+                        }
+                        x2={
+                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
+                            scene.duration) *
+                          1000
+                        }
+                        y1={50 - peak * 44}
+                        y2={50 + peak * 44}
+                        stroke={c.id === selected ? '#d8fb51' : '#839776'}
+                        strokeWidth="2"
+                      />
+                    ))}
+                  </g>
+                ))}
+              </svg>
+              {cues.map((c) => {
+                const own = mine.some((x) => x.id === c.id);
+                const hasRecorded =
+                  own &&
+                  Boolean(
+                    takes[c.id] ||
+                      savedUrls[c.id] ||
+                      me.segments.includes(c.id),
+                  );
+                const isPlayingThis = playingSegment === c.id;
+
+                return (
+                  <div
+                    key={c.id}
+                    role="button"
+                    tabIndex={own && !locked ? 0 : -1}
+                    className={`cue-region ${c.id === selected ? 'selected' : ''} ${own ? 'own' : 'other'} ${hasRecorded ? 'has-recording' : ''}`}
+                    style={{
+                      left: `${(c.start / scene.duration) * 100}%`,
+                      width: `${((c.end - c.start) / scene.duration) * 100}%`,
+                    }}
+                    onClick={() => {
+                      if (own && !locked) select(c.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (own && !locked && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        select(c.id);
+                      }
+                    }}
+                    aria-label={`Bölüm ${c.id + 1}: ${timeLabel(c.start)}–${timeLabel(c.end)}${own ? ', senin repliğin' : ', diğer oyuncu'}`}
+                    aria-pressed={c.id === selected}
+                  >
+                    <span className="cue-region-num">
+                      {String(c.id + 1).padStart(2, '0')}
+                      {hasRecorded && <span className="cue-region-check">✓</span>}
+                    </span>
+
+                    {hasRecorded && (
+                      <button
+                        type="button"
+                        className={`cue-track-play-btn ${isPlayingThis ? 'playing' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void playSegment(c.id);
+                        }}
+                        disabled={locked && !isPlayingThis}
+                        title={
+                          isPlayingThis
+                            ? 'Durdur'
+                            : `Bölüm ${c.id + 1} kaydını dinle`
+                        }
+                        aria-label={`Bölüm ${c.id + 1} kaydını ${isPlayingThis ? 'durdur' : 'dinle'}`}
+                      >
+                        {isPlayingThis ? (
+                          <Square size={11} fill="currentColor" />
+                        ) : (
+                          <Play size={11} fill="currentColor" />
+                        )}
+                        <span className="cue-track-play-text">
+                          {isPlayingThis ? 'Durdur' : 'Dinle'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <div
+                className="cue-playhead"
+                style={{
+                  left: `${Math.min(100, (position / scene.duration) * 100)}%`,
+                }}
+              />
+            </div>
+            <div className="cue-ruler">
+              {[0, 0.25, 0.5, 0.75, 1].map((n) => (
+                <span key={n}>{timeLabel(scene.duration * n)}</span>
+              ))}
+            </div>
+            {countdown > 0 ? (
+              <div className="cue-countdown">
+                <strong>{countdown}</strong>
+                <span>
+                  Hazırlan. {timeLabel(current.start)} konumunda kayıt başlayacak.
+                </span>
+              </div>
+            ) : recording ? (
+              <>
+                <div className="cue-record-progress">
+                  <div style={{ width: `${progress}%` }} />
+                </div>
+                <button className="record-button" onClick={stop}>
+                  <Square size={18} /> Kaydı bitir · Kalan{' '}
+                  {Math.max(0, current.end - position).toFixed(1)} sn
+                </button>
+              </>
+            ) : (
+              <button
+                className="primary cue-record"
+                onClick={record}
+                disabled={busy}
+              >
+                <Mic size={19} />
+                {take || me.segments.includes(selected)
+                  ? 'Bu bölümü yeniden kaydet'
+                  : mine.length > 1
+                    ? `Şimdi seslendir (Replik ${mine.findIndex((c) => c.id === selected) + 1}/${mine.length})`
+                    : 'Şimdi seslendir'}
+                <span>
+                  {timeLabel(current.start)} → {timeLabel(current.end)}
+                </span>
               </button>
             )}
-          </div>
+            {(take || savedUrls[selected]) && !recording && !countdown && (
+              <div className="cue-review">
+                <span>Son kaydın — Bölüm {selected + 1} ({current.roleName})</span>
+                {/* Player-created speech has no automatic transcript. */}
+                {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+                <audio
+                  controls
+                  ref={savedAudio}
+                  src={take?.url ?? savedUrls[selected]}
+                  aria-label={`Bölüm ${selected + 1} kaydını dinle`}
+                  onPlay={() => {
+                    if (playingSegment !== null) stop();
+                  }}
+                />
+                {take && !me.audio && (
+                  <button className="primary" disabled={busy} onClick={save}>
+                    Kaydı onayla ve sıradakine geç <ArrowRight size={17} />
+                  </button>
+                )}
+              </div>
+            )}
+            <button
+              className="cue-replay"
+              onClick={previewing ? stop : preview}
+              disabled={locked}
+            >
+              {previewing ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
+              {previewing ? 'Önizlemeyi durdur' : 'Seçili bölümü tekrar izle'}
+            </button>
+          </>
         )}
-        <button
-          className="cue-replay"
-          onClick={previewing ? stop : preview}
-          disabled={locked}
-        >
-          {previewing ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
-          {previewing ? 'Önizlemeyi durdur' : 'Seçili bölümü tekrar izle'}
-        </button>
         {error && (
           <p className="error" role="alert">
             {error}
