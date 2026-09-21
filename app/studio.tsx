@@ -181,6 +181,22 @@ export default function Studio({
         await ctx.current.resume().catch(() => {});
       }
 
+      // Sahnenin insan sesleri temizlenmiş enstrümantal / M&E parçasını preload et
+      if (scene.instrumental && !buffers.current.has('__scene_instrumental__')) {
+        try {
+          const r = await fetch(scene.instrumental);
+          if (r.ok) {
+            const buf = await r.arrayBuffer();
+            if (buf.byteLength > 0 && ctx.current) {
+              const decoded = await ctx.current.decodeAudioData(buf);
+              buffers.current.set('__scene_instrumental__', decoded);
+            }
+          }
+        } catch (instErr) {
+          console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
+        }
+      }
+
       await Promise.all(
         room.players.flatMap((p) => {
           const tracks = p.segments.length
@@ -356,6 +372,26 @@ export default function Studio({
       const now = audio ? audio.currentTime : 0;
 
       if (audio && masterGain.current) {
+        // 1. Orijinal arka plan müziği & ses efektleri (İnsan sesleri temizlenmiş M&E track)
+        if (scene.instrumental) {
+          const instBuffer = buffers.current.get('__scene_instrumental__');
+          if (instBuffer) {
+            const instSource = audio.createBufferSource();
+            instSource.buffer = instBuffer;
+            const instGain = audio.createGain();
+            // Arka plan müziğinin ses seviyesini oyuncuların seslerinin arkasında dengeli tutmak için 0.75 gain
+            instGain.gain.setValueAtTime(0.75, audio.currentTime);
+            instSource.connect(instGain);
+            instGain.connect(masterGain.current);
+            const instDuration = Math.max(0, Math.min(instBuffer.duration - late, scene.duration - late));
+            if (instDuration > 0) {
+              instSource.start(now, late, instDuration);
+              sources.current.push(instSource);
+            }
+          }
+        }
+
+        // 2. Oyuncuların mikrofondan kaydettiği dublaj parçaları
         room.players.forEach((p, i) => {
           const tracks = p.segments.length
             ? sceneCues(room.scene)

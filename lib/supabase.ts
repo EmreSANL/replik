@@ -27,6 +27,7 @@ export type DbCustomScene = {
   duration: number;
   roles: RoleInfo[];
   cues: Cue[];
+  instrumental_url?: string | null;
   created_at?: string;
 };
 
@@ -84,6 +85,7 @@ export async function saveSceneToSupabase(scene: Scene): Promise<void> {
         : r
     ),
     cues: scene.cues || [],
+    instrumental_url: scene.instrumental || null,
   };
 
   const { error } = await supabase
@@ -128,6 +130,7 @@ export async function getScenesFromSupabase(): Promise<Scene[]> {
     ),
     prompts: (item.cues || []).map((c) => c.text),
     cues: item.cues || [],
+    instrumental: item.instrumental_url || undefined,
     isCustom: true,
   }));
 }

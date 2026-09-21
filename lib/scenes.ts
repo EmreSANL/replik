@@ -18,6 +18,7 @@ export type Scene = {
   roleDetails: RoleInfo[];
   prompts: string[];
   cues?: Cue[];
+  instrumental?: string;
   isCustom?: boolean;
 };
 

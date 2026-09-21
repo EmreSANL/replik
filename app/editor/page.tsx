@@ -25,6 +25,7 @@ import {
   Loader2,
   Cloud,
   CloudUpload,
+  Music,
 } from 'lucide-react';
 import {
   type Scene,
@@ -36,6 +37,7 @@ import {
   timeLabel,
 } from '@/lib/scenes';
 import { useWhisper } from '@/lib/use-whisper';
+import { removeVocalsFromVideo } from '@/lib/vocal-remover';
 import {
   uploadVideoToSupabase,
   saveSceneToSupabase,
@@ -56,6 +58,7 @@ const COLOR_PALETTE = [
 
 export default function EditorPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const instrumentalAudioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +76,13 @@ export default function EditorPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+
+  // Vokal Kaldırma (İnsan Sesi Temizleme / M&E Track)
+  const [instrumentalUrl, setInstrumentalUrl] = useState<string>('');
+  const [isRemovingVocals, setIsRemovingVocals] = useState<boolean>(false);
+  const [vocalProgress, setVocalProgress] = useState<number>(0);
+  const [vocalStage, setVocalStage] = useState<string>('');
+  const [audioMode, setAudioMode] = useState<'original' | 'instrumental'>('instrumental');
 
   // Supabase bulut depolama ve veritabanı durumu
   const [isUploadingToSupabase, setIsUploadingToSupabase] = useState(false);
@@ -149,17 +159,30 @@ export default function EditorPage() {
     if (!videoRef.current) return;
     if (isPlaying) {
       videoRef.current.pause();
+      instrumentalAudioRef.current?.pause();
       setIsPlaying(false);
     } else {
+      if (audioMode === 'instrumental' && instrumentalUrl && instrumentalAudioRef.current) {
+        videoRef.current.muted = true;
+        instrumentalAudioRef.current.currentTime = videoRef.current.currentTime;
+        instrumentalAudioRef.current.muted = isMuted;
+        instrumentalAudioRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.muted = isMuted;
+        instrumentalAudioRef.current?.pause();
+      }
       videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
-  }, [isPlaying]);
+  }, [isPlaying, audioMode, instrumentalUrl, isMuted]);
 
   const seekTo = useCallback((time: number) => {
     if (!videoRef.current) return;
     const clamped = Math.max(0, Math.min(duration, time));
     videoRef.current.currentTime = clamped;
+    if (instrumentalAudioRef.current) {
+      instrumentalAudioRef.current.currentTime = clamped;
+    }
     setCurrentTime(clamped);
   }, [duration]);
 
@@ -403,6 +426,25 @@ export default function EditorPage() {
         .catch((err) => {
           showToast(`⚠️ Altyazı analizi: ${(err as Error).message}`);
         });
+
+      // 4. Videodaki insan seslerini (vokalleri) otomatik temizle (M&E Track)
+      setIsRemovingVocals(true);
+      setVocalProgress(15);
+      setVocalStage('Ses ayrıştırılıyor...');
+      removeVocalsFromVideo(file, file.name, (stage, pct) => {
+        setVocalStage(stage);
+        setVocalProgress(pct);
+      })
+        .then((res) => {
+          setInstrumentalUrl(res.url);
+          setIsRemovingVocals(false);
+          setAudioMode('instrumental');
+          showToast('🎵 Videodaki insan sesleri temizlendi! (Müzik ve efektler korundu)');
+        })
+        .catch((err) => {
+          setIsRemovingVocals(false);
+          console.warn('Vokal temizleme uyarısı:', err);
+        });
     },
     [duration, roles, whisper, showToast],
   );
@@ -411,6 +453,30 @@ export default function EditorPage() {
     const file = e.target.files?.[0];
     if (file) processVideoFile(file);
   };
+
+  const handleManualVocalRemoval = useCallback(async () => {
+    if (!videoUrl) {
+      showToast('⚠️ Lütfen önce bir video seçin veya yükleyin.');
+      return;
+    }
+    setIsRemovingVocals(true);
+    setVocalProgress(10);
+    setVocalStage('Ses ayrıştırılıyor...');
+    try {
+      showToast('🎙️ İnsan sesleri temizleniyor, arka plan müziği çıkarılıyor...');
+      const res = await removeVocalsFromVideo(videoUrl, title || 'instrumental', (stage, pct) => {
+        setVocalStage(stage);
+        setVocalProgress(pct);
+      });
+      setInstrumentalUrl(res.url);
+      setAudioMode('instrumental');
+      showToast('🎵 İnsan sesleri başarıyla temizlendi! Vokalsiz müzik hazır.');
+    } catch (err) {
+      showToast(`⚠️ Vokal temizleme hatası: ${(err as Error).message}`);
+    } finally {
+      setIsRemovingVocals(false);
+    }
+  }, [videoUrl, title, showToast]);
 
   // Supabase Sahnesi Yükle
   const loadSupabaseScene = (sc: Scene) => {
@@ -434,6 +500,13 @@ export default function EditorPage() {
     }
     if (sc.cues) setCues(sc.cues);
     setSelectedCueId(sc.cues?.[0]?.id ?? 0);
+    if (sc.instrumental) {
+      setInstrumentalUrl(sc.instrumental);
+      setAudioMode('instrumental');
+    } else {
+      setInstrumentalUrl('');
+      setAudioMode('original');
+    }
     showToast(`☁️ "${sc.title}" sahnesi Supabase'den yüklendi.`);
   };
 
@@ -476,6 +549,7 @@ export default function EditorPage() {
       roleDetails: roles,
       prompts: sortedCues.map((c) => c.text),
       cues: sortedCues,
+      instrumental: instrumentalUrl || undefined,
       isCustom: true,
     };
 
@@ -714,6 +788,62 @@ export default function EditorPage() {
                   </div>
                 )}
 
+                {/* Vokal Ayrıştırma / Dublaj Müziği Butonları */}
+                {isRemovingVocals ? (
+                  <span className="text-[11px] text-[#c084fc] bg-[#211432] border border-[#532b78] px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-pulse">
+                    <Loader2 size={12} className="animate-spin text-[#c084fc]" />
+                    <span>Vokal Temizleniyor... %{vocalProgress} ({vocalStage})</span>
+                  </span>
+                ) : instrumentalUrl ? (
+                  <div className="flex items-center gap-1 bg-[#1a1426] border border-[#3e275f] rounded-lg p-0.5">
+                    <button
+                      onClick={() => {
+                        setAudioMode('instrumental');
+                        if (videoRef.current) videoRef.current.muted = true;
+                        if (instrumentalAudioRef.current) {
+                          instrumentalAudioRef.current.currentTime = videoRef.current?.currentTime || 0;
+                          if (isPlaying) instrumentalAudioRef.current.play().catch(() => {});
+                        }
+                      }}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition flex items-center gap-1 ${
+                        audioMode === 'instrumental'
+                          ? 'bg-[#a855f7] text-white shadow'
+                          : 'text-[#a78bfa] hover:text-white'
+                      }`}
+                      title="Sadece arka plan müziği ve ses efektleri (insan sesleri silinmiş dublaj kanalı)"
+                    >
+                      <Music size={12} />
+                      Vokalsiz Müzik
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAudioMode('original');
+                        if (instrumentalAudioRef.current) instrumentalAudioRef.current.pause();
+                        if (videoRef.current) videoRef.current.muted = isMuted;
+                      }}
+                      className={`px-2 py-1 rounded-md text-[11px] font-bold transition ${
+                        audioMode === 'original'
+                          ? 'bg-[#374151] text-white'
+                          : 'text-[#9ca3af] hover:text-white'
+                      }`}
+                      title="Videonun orijinal konuşmalı sesi"
+                    >
+                      🎙️ Orijinal Ses
+                    </button>
+                  </div>
+                ) : (
+                  videoUrl && (
+                    <button
+                      onClick={handleManualVocalRemoval}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#2a173d] hover:bg-[#3d2059] text-[#c084fc] border border-[#582e80] flex items-center gap-1.5 transition cursor-pointer"
+                      title="Videodaki insan sesini kaldırıp sadece arka plan müziğini ve efektleri bırak"
+                    >
+                      <Music size={13} />
+                      İnsan Sesini Kaldır
+                    </button>
+                  )
+                )}
+
                 {videoUrl && (
                   <button
                     onClick={() => {
@@ -721,6 +851,7 @@ export default function EditorPage() {
                       setPoster('');
                       setCues([]);
                       setTitle('');
+                      setInstrumentalUrl('');
                       showToast('🗑️ Video kaldırıldı. Yeni bir video yükleyebilirsiniz.');
                     }}
                     className="px-2.5 py-1 rounded-lg text-xs bg-[#241a1a] hover:bg-[#382222] text-[#ff7878] border border-[#442828] flex items-center gap-1 transition"
@@ -786,13 +917,48 @@ export default function EditorPage() {
                     src={videoUrl}
                     poster={poster}
                     playsInline
-                    muted={isMuted}
+                    muted={audioMode === 'instrumental' && Boolean(instrumentalUrl) ? true : isMuted}
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={handleLoadedMetadata}
-                    onEnded={() => setIsPlaying(false)}
+                    onPlay={() => {
+                      if (audioMode === 'instrumental' && instrumentalUrl && instrumentalAudioRef.current) {
+                        instrumentalAudioRef.current.currentTime = videoRef.current?.currentTime || 0;
+                        instrumentalAudioRef.current.play().catch(() => {});
+                      }
+                      setIsPlaying(true);
+                    }}
+                    onPause={() => {
+                      if (instrumentalAudioRef.current) {
+                        instrumentalAudioRef.current.pause();
+                      }
+                      setIsPlaying(false);
+                    }}
+                    onSeeked={() => {
+                      if (instrumentalAudioRef.current && videoRef.current) {
+                        instrumentalAudioRef.current.currentTime = videoRef.current.currentTime;
+                      }
+                    }}
+                    onEnded={() => {
+                      setIsPlaying(false);
+                      if (instrumentalAudioRef.current) {
+                        instrumentalAudioRef.current.pause();
+                        instrumentalAudioRef.current.currentTime = 0;
+                      }
+                    }}
                     className="w-full h-full object-contain cursor-pointer"
                     onClick={togglePlay}
                   />
+
+                  {/* Senkronize Vokalsiz Dublaj / Karaoke Müziği */}
+                  {instrumentalUrl && (
+                    <audio
+                      ref={instrumentalAudioRef}
+                      src={instrumentalUrl}
+                      preload="auto"
+                      playsInline
+                      style={{ display: 'none' }}
+                    />
+                  )}
 
               {/* CANLI DUBLAJ / OYUN ALTYAZI KATMANI */}
               {currentActiveCue && (
