@@ -168,7 +168,12 @@ export function playerCues(
 ): Cue[] {
   const all = sceneCues(sceneId, customList);
   if (playerCount <= 1) return all;
-  return all.filter((c) => c.id % playerCount === playerIndex);
+  return all.filter((c, idx) => {
+    if (typeof c.roleIndex === 'number' && c.roleIndex >= 0) {
+      return c.roleIndex % playerCount === playerIndex;
+    }
+    return idx % playerCount === playerIndex;
+  });
 }
 
 export function timeLabel(seconds: number) {

@@ -7,6 +7,8 @@ import {
   getSceneById,
   timeLabel,
   type Room,
+  type Cue,
+  type Scene,
 } from '@/lib/scenes';
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl } from '@/lib/game-service';
@@ -27,36 +29,61 @@ export default function SegmentRecorder({
   room,
   session,
   onRoom,
+  customScenes,
 }: {
   room: Room;
   session: Session;
   onRoom: (room: Room) => void;
+  customScenes?: Scene[];
 }) {
-  const scene = getSceneById(room.scene),
-    me = room.players.find((p) => p.id === session.id)!,
-    index = room.players.findIndex((p) => p.id === session.id),
-    cues = sceneCues(room.scene),
-    mine = playerCues(room.scene, index, room.players.length);
-  const [selected, setSelected] = useState(
-      () => mine.find((c) => !me.segments.includes(c.id))?.id ?? mine[0]?.id ?? 0,
-    ),
-    [takes, setTakes] = useState<Record<number, Take>>({}),
-    [savedUrls, setSavedUrls] = useState<Record<number, string>>({}),
-    [waves, setWaves] = useState<Record<number, number[]>>({}),
-    [recording, setRecording] = useState(false),
-    [previewing, setPreviewing] = useState(false),
-    [playingSegment, setPlayingSegment] = useState<number | null>(null),
-    [busy, setBusy] = useState(false),
-    [countdown, setCountdown] = useState(0),
-    [position, setPosition] = useState(0),
-    [error, setError] = useState('');
-  const current = cues[selected],
-    duration = current.end - current.start,
-    completed = me.audio
-      ? mine.length
-      : mine.filter((c) => me.segments.includes(c.id)).length,
-    take = takes[selected],
-    locked = busy || recording || countdown > 0;
+  const scene = getSceneById(room.scene, customScenes);
+  const me = room.players.find((p) => p.id === session.id) || room.players[0] || {
+    id: session.id,
+    name: 'Oyuncu',
+    host: 1,
+    role: 0,
+    ready: 1,
+    audio: false,
+    segments: [],
+  };
+  const index = Math.max(0, room.players.findIndex((p) => p.id === session.id));
+  const cues = sceneCues(room.scene, customScenes);
+  const mine = playerCues(room.scene, index, room.players.length, customScenes);
+  const [selected, setSelected] = useState<number>(() => {
+    const unrecorded = mine.find((c) => !me.segments?.includes(c.id));
+    if (unrecorded) return unrecorded.id;
+    if (mine[0]) return mine[0].id;
+    if (cues[0]) return cues[0].id;
+    return 0;
+  });
+  const [takes, setTakes] = useState<Record<number, Take>>({});
+  const [savedUrls, setSavedUrls] = useState<Record<number, string>>({});
+  const [waves, setWaves] = useState<Record<number, number[]>>({});
+  const [recording, setRecording] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [playingSegment, setPlayingSegment] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [position, setPosition] = useState(0);
+  const [error, setError] = useState('');
+
+  const current: Cue =
+    cues.find((c) => Number(c.id) === Number(selected)) ||
+    cues[0] || {
+      id: 0,
+      roleIndex: 0,
+      roleName: scene.roles?.[0] || '1. Karakter',
+      roleColor: scene.roleDetails?.[0]?.color || '#d8fb51',
+      text: '',
+      start: 0,
+      end: scene.duration || 10,
+    };
+  const duration = Math.max(0.1, current.end - current.start);
+  const completed = me.audio
+    ? mine.length
+    : mine.filter((c) => me.segments?.includes(c.id)).length;
+  const take = takes[selected];
+  const locked = busy || recording || countdown > 0;
   const video = useRef<HTMLVideoElement>(null);
   const recorder = useRef<MediaRecorder | null>(null),
     stream = useRef<MediaStream | null>(null),
@@ -194,8 +221,11 @@ export default function SegmentRecorder({
     stop();
     setSelected(id);
     setError('');
-    setPosition(cues[id].start);
-    if (video.current) video.current.currentTime = scene.start + cues[id].start;
+    const target = cues.find((c) => Number(c.id) === Number(id));
+    if (target) {
+      setPosition(target.start);
+      if (video.current) video.current.currentTime = scene.start + target.start;
+    }
   }
   async function playSegment(id: number) {
     if (locked && playingSegment !== id) return;
@@ -205,9 +235,10 @@ export default function SegmentRecorder({
     }
     savedAudio.current?.pause();
     stop();
-    const c = cues[id];
+    const c = cues.find((item) => Number(item.id) === Number(id));
+    if (!c) return;
     let audioUrl = takes[id]?.url ?? savedUrls[id];
-    if (!audioUrl && me.segments.includes(id)) {
+    if (!audioUrl && me.segments?.includes(id)) {
       setBusy(true);
       try {
         let fetchedUrl = await getAudioRecordingUrl(room.code, session.id, id);
@@ -535,7 +566,7 @@ export default function SegmentRecorder({
                     disabled={locked}
                     key={c.id}
                     onClick={() => select(c.id)}
-                    className={`${c.id === selected ? 'active' : ''} done`}
+                    className={`${Number(c.id) === Number(selected) ? 'active' : ''} done`}
                     aria-label={`${i + 1}. repliğin`}
                   >
                     <span><Check size={14} /></span>
@@ -546,13 +577,13 @@ export default function SegmentRecorder({
 
               {(take || savedUrls[selected]) && (
                 <div className="cue-review">
-                  <span>Bölüm {selected + 1} Kaydın</span>
+                  <span>Replik {Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1} Kaydın</span>
                   {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
                   <audio
                     controls
                     ref={savedAudio}
                     src={take?.url ?? savedUrls[selected]}
-                    aria-label={`Bölüm ${selected + 1} kaydını dinle`}
+                    aria-label="Kaydını dinle"
                   />
                   <button
                     className="secondary"
@@ -601,31 +632,31 @@ export default function SegmentRecorder({
                         key={i}
                         x1={
                           ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                            scene.duration) *
+                            Math.max(1, scene.duration)) *
                           1000
                         }
                         x2={
                           ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                            scene.duration) *
+                            Math.max(1, scene.duration)) *
                           1000
                         }
                         y1={50 - peak * 44}
                         y2={50 + peak * 44}
-                        stroke={c.id === selected ? '#d8fb51' : '#839776'}
+                        stroke={Number(c.id) === Number(selected) ? '#d8fb51' : '#839776'}
                         strokeWidth="2"
                       />
                     ))}
                   </g>
                 ))}
               </svg>
-              {cues.map((c) => {
-                const own = mine.some((x) => x.id === c.id);
+              {cues.map((c, cIndex) => {
+                const own = mine.some((x) => Number(x.id) === Number(c.id));
                 const hasRecorded =
                   own &&
                   Boolean(
                     takes[c.id] ||
                       savedUrls[c.id] ||
-                      me.segments.includes(c.id),
+                      me.segments?.includes(c.id),
                   );
                 const isPlayingThis = playingSegment === c.id;
 
@@ -634,10 +665,10 @@ export default function SegmentRecorder({
                     key={c.id}
                     role="button"
                     tabIndex={own && !locked ? 0 : -1}
-                    className={`cue-region ${c.id === selected ? 'selected' : ''} ${own ? 'own' : 'other'} ${hasRecorded ? 'has-recording' : ''}`}
+                    className={`cue-region ${Number(c.id) === Number(selected) ? 'selected' : ''} ${own ? 'own' : 'other'} ${hasRecorded ? 'has-recording' : ''}`}
                     style={{
-                      left: `${(c.start / scene.duration) * 100}%`,
-                      width: `${((c.end - c.start) / scene.duration) * 100}%`,
+                      left: `${(c.start / Math.max(1, scene.duration)) * 100}%`,
+                      width: `${((c.end - c.start) / Math.max(1, scene.duration)) * 100}%`,
                     }}
                     onClick={() => {
                       if (own && !locked) select(c.id);
@@ -648,11 +679,11 @@ export default function SegmentRecorder({
                         select(c.id);
                       }
                     }}
-                    aria-label={`Bölüm ${c.id + 1}: ${timeLabel(c.start)}–${timeLabel(c.end)}${own ? ', senin repliğin' : ', diğer oyuncu'}`}
-                    aria-pressed={c.id === selected}
+                    aria-label={`Replik ${cIndex + 1}: ${timeLabel(c.start)}–${timeLabel(c.end)}${own ? ', senin repliğin' : ', diğer oyuncu'}`}
+                    aria-pressed={Number(c.id) === Number(selected)}
                   >
                     <span className="cue-region-num">
-                      {String(c.id + 1).padStart(2, '0')}
+                      {String(cIndex + 1).padStart(2, '0')}
                       {hasRecorded && <span className="cue-region-check">✓</span>}
                     </span>
 
@@ -668,9 +699,9 @@ export default function SegmentRecorder({
                         title={
                           isPlayingThis
                             ? 'Durdur'
-                            : `Bölüm ${c.id + 1} kaydını dinle`
+                            : `Replik ${cIndex + 1} kaydını dinle`
                         }
-                        aria-label={`Bölüm ${c.id + 1} kaydını ${isPlayingThis ? 'durdur' : 'dinle'}`}
+                        aria-label={`Replik ${cIndex + 1} kaydını ${isPlayingThis ? 'durdur' : 'dinle'}`}
                       >
                         {isPlayingThis ? (
                           <Square size={11} fill="currentColor" />
@@ -688,7 +719,7 @@ export default function SegmentRecorder({
               <div
                 className="cue-playhead"
                 style={{
-                  left: `${Math.min(100, (position / scene.duration) * 100)}%`,
+                  left: `${Math.min(100, (position / Math.max(1, scene.duration)) * 100)}%`,
                 }}
               />
             </div>
@@ -721,10 +752,10 @@ export default function SegmentRecorder({
                 disabled={busy}
               >
                 <Mic size={19} />
-                {take || me.segments.includes(selected)
-                  ? 'Bu bölümü yeniden kaydet'
+                {take || me.segments?.includes(selected)
+                  ? 'Bu repliği yeniden kaydet'
                   : mine.length > 1
-                    ? `Şimdi seslendir (Replik ${mine.findIndex((c) => c.id === selected) + 1}/${mine.length})`
+                    ? `Şimdi seslendir (Replik ${Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1}/${mine.length})`
                     : 'Şimdi seslendir'}
                 <span>
                   {timeLabel(current.start)} → {timeLabel(current.end)}
@@ -733,14 +764,14 @@ export default function SegmentRecorder({
             )}
             {(take || savedUrls[selected]) && !recording && !countdown && (
               <div className="cue-review">
-                <span>Son kaydın — Bölüm {selected + 1} ({current.roleName})</span>
+                <span>Son kaydın — Replik {Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1} ({current.roleName})</span>
                 {/* Player-created speech has no automatic transcript. */}
                 {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
                 <audio
                   controls
                   ref={savedAudio}
                   src={take?.url ?? savedUrls[selected]}
-                  aria-label={`Bölüm ${selected + 1} kaydını dinle`}
+                  aria-label="Kaydını dinle"
                   onPlay={() => {
                     if (playingSegment !== null) stop();
                   }}

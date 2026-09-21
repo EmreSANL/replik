@@ -872,7 +872,12 @@ export default function Studio({
           )}
 
           {room.status === 'recording' ? (
-            <SegmentRecorder room={room} session={session} onRoom={setRoom} />
+            <SegmentRecorder
+              room={room}
+              session={session}
+              onRoom={setRoom}
+              customScenes={customScenes}
+            />
           ) : (
             <div className="timeline">
               {sceneCues(room.scene, customScenes).map((c) => (
@@ -1016,11 +1021,11 @@ export default function Studio({
                 className="role-name"
                 style={{
                   color:
-                    scene.roleDetails[me.role >= 0 ? me.role : 0]?.color ||
+                    scene.roleDetails?.[me.role >= 0 ? me.role : 0]?.color ||
                     '#d8fb51',
                 }}
               >
-                {scene.roles[me.role >= 0 ? me.role : 0]}
+                {scene.roles?.[me.role >= 0 ? me.role : 0] || 'Karakter'}
               </h2>
               <p>{scene.mood}</p>
               <p>
@@ -1033,13 +1038,13 @@ export default function Studio({
                   room.players.findIndex((p) => p.id === me.id),
                   room.players.length,
                   customScenes,
-                ).map((c) => (
+                ).map((c, cIdx) => (
                   <li key={c.id}>
-                    <span>Bölüm {c.id + 1}</span>
+                    <span>Replik {cIdx + 1}</span>
                     <strong>
                       {timeLabel(c.start)} — {timeLabel(c.end)}
                     </strong>
-                    {me.segments.includes(c.id) ? (
+                    {me.segments?.includes(c.id) ? (
                       <Check size={16} />
                     ) : (
                       <span className="waiting-dot" />
