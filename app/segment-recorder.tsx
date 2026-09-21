@@ -4,7 +4,6 @@ import { Check, Mic, Square, RotateCcw, ArrowRight, Play, Pause } from 'lucide-r
 import {
   playerCues,
   sceneCues,
-  scenes,
   getSceneById,
   timeLabel,
   type Room,

@@ -22,10 +22,16 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import Studio, { request, type Session } from './studio';
-import { scenes, getAllScenes, type Scene, type Room } from '@/lib/scenes';
+import { getAllScenes, getCustomScenes, fallbackScene, type Scene, type Room } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
 export default function Home() {
-  const [allScenes, setAllScenes] = useState<Scene[]>(scenes);
+  const [allScenes, setAllScenes] = useState<Scene[]>(() => {
+    if (typeof window !== 'undefined') {
+      const local = getCustomScenes();
+      if (local.length > 0) return local;
+    }
+    return [];
+  });
   const [parked, setParked] = useState<{ session: Session; room: Room } | null>(
       null,
     ),
@@ -43,15 +49,15 @@ export default function Home() {
   useEffect(() => {
     void getScenesFromSupabase().then((dbScenes) => {
       if (dbScenes && dbScenes.length > 0) {
-        setAllScenes([...dbScenes, ...scenes]);
+        setAllScenes(dbScenes);
       } else {
-        setAllScenes(getAllScenes());
+        setAllScenes(getCustomScenes());
       }
     });
   }, []);
-  const activeScene = allScenes[selected] || allScenes[0] || scenes[0];
+  const activeScene = allScenes[selected] || allScenes[0] || fallbackScene;
   const previewScene =
-    preview !== null ? allScenes[preview] || allScenes[0] : null;
+    preview !== null ? allScenes[preview] || allScenes[0] || fallbackScene : null;
   useEffect(() => {
     try {
       const cached = sessionStorage.getItem('replik-session');
@@ -172,7 +178,9 @@ export default function Home() {
               <div
                 className="featured"
                 style={{
-                  backgroundImage: `linear-gradient(0deg,#0b160df5 2%,#08130b00 90%),url('${activeScene.poster}')`,
+                  backgroundImage: activeScene.poster
+                    ? `linear-gradient(0deg,#0b160df5 2%,#08130b00 90%),url('${activeScene.poster}')`
+                    : undefined,
                 }}
               >
                 <div className="feature-top">
@@ -282,7 +290,7 @@ export default function Home() {
                     <div
                       className={'scene-art art-' + (i % 4)}
                       style={
-                        s.poster && !s.poster.startsWith('/scene-')
+                        s.poster
                           ? {
                               backgroundImage: `url('${s.poster}')`,
                               backgroundSize: 'cover',
@@ -427,19 +435,7 @@ export default function Home() {
           <span>REPLİK / DUBLAJ.IO DENEYİMİ</span>
         </footer>
         <div className="source-credit">
-          Sahneler:{' '}
-          <a href="https://peach.blender.org/" target="_blank" rel="noreferrer">
-            Big Buck Bunny © Blender Foundation
-          </a>{' '}
-          ·{' '}
-          <a
-            href="https://creativecommons.org/licenses/by/3.0/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            CC BY 3.0
-          </a>{' '}
-          · Sesler oyuncuların doğaçlamasıdır.
+          Sahneler ve replikler kullanıcılar tarafından oluşturulmuştur · Sesler oyuncuların doğaçlamasıdır.
         </div>
       </main>
       <Dialog open={help} onOpenChange={setHelp}>

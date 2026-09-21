@@ -6,7 +6,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { scenes, type Room } from '@/lib/scenes';
+import { getSceneById, type Room } from '@/lib/scenes';
 
 export default function RoleRevealDialog({
   open,
@@ -19,11 +19,11 @@ export default function RoleRevealDialog({
   playerId: string;
   onStart: () => void;
 }) {
-  const scene = scenes[room.scene] || scenes[0];
+  const scene = getSceneById(room.scene);
   const me = room.players.find((p) => p.id === playerId);
   const roleIndex = me?.role !== undefined && me.role >= 0 ? me.role : 0;
-  const roleInfo = scene.roleDetails[roleIndex] || {
-    name: scene.roles[roleIndex] || 'Karakter',
+  const roleInfo = (scene.roleDetails && scene.roleDetails[roleIndex]) || {
+    name: (scene.roles && scene.roles[roleIndex]) || 'Karakter',
     color: '#d8fb51',
     description: 'Doğaçlama yaparak karakterine can ver!',
   };

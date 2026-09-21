@@ -37,7 +37,6 @@ import {
   type Scene,
   type Cue,
   type RoleInfo,
-  scenes,
   getAllScenes,
   sceneCues,
   saveCustomScene,

@@ -540,17 +540,19 @@ footer {
   }
 }
 .featured {
-  background-image:
-    linear-gradient(0deg, #0b160def 2%, #08130b00 90%), url('/scene-0.jpg');
+  background:
+    linear-gradient(135deg, #182214 0%, #10150d 100%);
+  background-size: cover;
+  background-position: center;
 }
 .art-0 {
-  background-image: url('/scene-0.jpg');
+  background-color: #242f20;
 }
 .art-1 {
-  background-image: url('/scene-1.jpg');
+  background-color: #352b22;
 }
 .art-2 {
-  background-image: url('/scene-2.jpg');
+  background-color: #222d35;
 }
 .selected-label {
   position: absolute;

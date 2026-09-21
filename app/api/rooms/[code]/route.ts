@@ -8,7 +8,6 @@ import {
   recordReaction,
   resetRoomState,
 } from '@/lib/server';
-import { scenes } from '@/lib/scenes';
 
 type C = { params: Promise<{ code: string }> };
 
@@ -82,20 +81,19 @@ export async function POST(req: Request, { params }: C) {
       .prepare('UPDATE rooms SET scene = ? WHERE code = ?')
       .bind(sceneId, code)
       .run();
-    const title = scenes[sceneId]?.title || `Sahne #${sceneId + 1}`;
+    const title = typeof b.title === 'string' ? b.title : `Sahne #${sceneId}`;
     logActivity(code, `Sahne "${title}" olarak değiştirildi.`, 'system');
   } else if (b.action === 'set_role') {
     if (room.status !== 'lobby') return fail('Roller yalnızca lobide seçilebilir.', 409);
     const roleId = Number(b.role);
-    const currentScene = scenes[room.scene] || { roles: ['1. Rol', '2. Rol', '3. Rol', '4. Rol'] };
-    if (!Number.isInteger(roleId) || roleId < 0 || (currentScene.roles && roleId >= currentScene.roles.length)) {
+    if (!Number.isInteger(roleId) || roleId < 0 || roleId > 10) {
       return fail('Geçersiz rol seçimi.');
     }
     await db()
       .prepare('UPDATE players SET role = ? WHERE id = ?')
       .bind(roleId, me.id)
       .run();
-    logActivity(code, `${me.name} rolünü seçti: ${currentScene.roles[roleId]}`, 'ready');
+    logActivity(code, `${me.name} ${roleId + 1}. Karakter rolünü seçti.`, 'ready');
   } else if (b.action === 'start') {
     if (!me.host) return fail('Oyunu oda kurucusu başlatabilir.', 403);
     if (room.status !== 'lobby') return fail('Oyun zaten başlamış.', 409);
@@ -138,14 +136,14 @@ export async function POST(req: Request, { params }: C) {
     recordReaction(code, emoji);
   } else if (b.action === 'restart') {
     if (!me.host) return fail('Yeni turu yalnızca oda kurucusu başlatabilir.', 403);
-    const newScene = typeof b.scene === 'number' && b.scene >= 0 && b.scene < scenes.length ? b.scene : room.scene;
+    const newScene = typeof b.scene === 'number' && b.scene >= 0 ? b.scene : room.scene;
     await db().batch([
       db().prepare('DELETE FROM recordings WHERE player IN (SELECT id FROM players WHERE room = ?)').bind(code),
       db().prepare('UPDATE players SET audio = NULL, ready = 0, role = -1 WHERE room = ?').bind(code),
       db().prepare("UPDATE rooms SET status = 'lobby', play_at = 0, scene = ? WHERE code = ?").bind(newScene, code),
     ]);
     resetRoomState(code);
-    logActivity(code, `Yeni tur için lobiye dönüldü (${scenes[newScene].title}).`, 'system');
+    logActivity(code, 'Yeni tur için lobiye dönüldü.', 'system');
   } else return fail('Geçersiz işlem.');
 
   return Response.json({ room: await snapshot(code) });

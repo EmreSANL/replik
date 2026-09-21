@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { scenes, getAllScenes, getCustomScenes, type Scene } from '@/lib/scenes';
+import { getAllScenes, getCustomScenes, type Scene } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
 
 export default function ScenePickerDialog({

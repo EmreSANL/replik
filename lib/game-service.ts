@@ -7,7 +7,7 @@
 
 import { supabase } from './supabase';
 import type { Room, Player, ActivityItem } from './scenes';
-import { scenes, sceneCues } from './scenes';
+import { getSceneById, sceneCues } from './scenes';
 
 export type PlayerWithToken = Player & {
   token: string;
@@ -269,11 +269,12 @@ export async function executeGameRoomAction(
     if (row.status !== 'lobby') throw new Error('Oyun başladıktan sonra sahne değiştirilemez.');
     const sceneId = Number(extra.scene);
     row.scene = sceneId;
-    const title = scenes[sceneId]?.title || `Sahne #${sceneId + 1}`;
+    const sceneObj = getSceneById(sceneId);
+    const title = typeof extra.title === 'string' ? extra.title : (sceneObj?.title || `Sahne #${sceneId}`);
     addLog(`Sahne "${title}" olarak değiştirildi.`, 'system');
   } else if (action === 'set_role') {
     player.role = Number(extra.role);
-    const sceneInfo = scenes[row.scene];
+    const sceneInfo = getSceneById(row.scene);
     const roleName = sceneInfo?.roles?.[player.role] || `${player.role + 1}. Karakter`;
     addLog(`${player.name} rolünü seçti: ${roleName}`, 'ready');
   } else if (action === 'start') {

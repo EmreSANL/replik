@@ -23,7 +23,6 @@ import MicTestDialog from '@/components/mic-test-dialog';
 import RoleRevealDialog from '@/components/role-reveal-dialog';
 import ScenePickerDialog from '@/components/scene-picker-dialog';
 import {
-  scenes,
   sceneCues,
   playerCues,
   timeLabel,
