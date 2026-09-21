@@ -57,7 +57,7 @@ export function getCustomScenes(): Scene[] {
 export function saveCustomScene(scene: Scene): Scene[] {
   if (typeof window === 'undefined') return [];
   const current = getCustomScenes();
-  const index = current.findIndex((s) => s.id === scene.id);
+  const index = current.findIndex((s) => Number(s.id) === Number(scene.id));
   let updated: Scene[];
   if (index >= 0) {
     updated = [...current];
@@ -72,7 +72,7 @@ export function saveCustomScene(scene: Scene): Scene[] {
 export function deleteCustomScene(sceneId: number): Scene[] {
   if (typeof window === 'undefined') return [];
   const current = getCustomScenes();
-  const updated = current.filter((s) => s.id !== sceneId);
+  const updated = current.filter((s) => Number(s.id) !== Number(sceneId));
   localStorage.setItem(CUSTOM_SCENES_STORAGE_KEY, JSON.stringify(updated));
   return updated;
 }
@@ -85,7 +85,7 @@ export function getAllScenes(customList?: Scene[]): Scene[] {
 
 export function getSceneById(sceneId: number, customList?: Scene[]): Scene {
   const all = getAllScenes(customList);
-  return all.find((s) => s.id === sceneId) || all[0] || fallbackScene;
+  return all.find((s) => Number(s.id) === Number(sceneId)) || all[0] || fallbackScene;
 }
 
 export type Player = {

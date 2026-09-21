@@ -30,7 +30,7 @@ export type GameRoomRow = {
 function rowToRoom(row: GameRoomRow): Room {
   return {
     code: row.code,
-    scene: row.scene,
+    scene: Number(row.scene),
     status: row.status,
     playAt: row.play_at,
     maxPlayers: row.max_players || 4,
@@ -81,7 +81,7 @@ export async function createGameRoom(
 
   const newRoom: GameRoomRow = {
     code,
-    scene: typeof scene === 'number' ? scene : 0,
+    scene: Number(scene) || 0,
     status: 'lobby',
     max_players: maxPlayers,
     play_at: 0,
@@ -313,7 +313,7 @@ export async function executeGameRoomAction(
     if (!player.host) throw new Error('Yeni turu yalnızca oda kurucusu başlatabilir.');
     row.status = 'lobby';
     row.play_at = 0;
-    if (typeof extra.scene === 'number') row.scene = extra.scene;
+    if (extra.scene !== undefined && !isNaN(Number(extra.scene))) row.scene = Number(extra.scene);
     row.recordings = [];
     row.players.forEach((p) => {
       p.audio = false;

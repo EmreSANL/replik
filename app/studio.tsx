@@ -47,7 +47,7 @@ export async function request(path: string, token?: string, body?: unknown) {
     // 1. Oda oluşturma: POST /api/rooms
     if (path === '/api/rooms' && body && typeof body === 'object') {
       const b = body as { name: string; scene: number; maxPlayers?: number };
-      return await createGameRoom(b.name, b.scene, b.maxPlayers ?? 4);
+      return await createGameRoom(b.name, Number(b.scene), b.maxPlayers ?? 4);
     }
 
     // 2. Odaya katılma, oda durumu alma veya aksiyon çalıştırma: /api/rooms/[code]
