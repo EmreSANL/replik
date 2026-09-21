@@ -29,10 +29,51 @@ import {
   timeLabel,
   type Room,
 } from '@/lib/scenes';
+import {
+  createGameRoom,
+  joinGameRoom,
+  getGameRoom,
+  executeGameRoomAction,
+  getAudioRecordingUrl,
+} from '@/lib/game-service';
 
 export type Session = { code: string; token: string; id: string };
 
 export async function request(path: string, token?: string, body?: unknown) {
+  try {
+    // 1. Oda oluşturma: POST /api/rooms
+    if (path === '/api/rooms' && body && typeof body === 'object') {
+      const b = body as { name: string; scene: number; maxPlayers?: number };
+      return await createGameRoom(b.name, b.scene, b.maxPlayers ?? 4);
+    }
+
+    // 2. Odaya katılma, oda durumu alma veya aksiyon çalıştırma: /api/rooms/[code]
+    if (path.startsWith('/api/rooms/')) {
+      const parts = path.split('?')[0].split('/');
+      const code = parts[3];
+      if (code && !parts[4]) {
+        // GET /api/rooms/[code] (Snapshot alma)
+        if (!body) {
+          const room = await getGameRoom(code);
+          return { room, token: token || '', id: '' };
+        }
+        // POST /api/rooms/[code] (Join veya Action)
+        const b = body as { action: string; name?: string; [key: string]: unknown };
+        if (b.action === 'join' && b.name) {
+          return await joinGameRoom(code, b.name);
+        }
+        if (token) {
+          const room = await executeGameRoomAction(code, token, b.action, b);
+          return { room, token, id: '' };
+        }
+      }
+    }
+  } catch (supabaseErr) {
+    console.warn('Game service request handler:', supabaseErr);
+    throw supabaseErr;
+  }
+
+  // Fallback: Standart fetch çağrısı
   const r = await fetch(path, {
     method: body ? 'POST' : 'GET',
     headers: {
@@ -41,14 +82,23 @@ export async function request(path: string, token?: string, body?: unknown) {
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  const data = (await r.json()) as {
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = 'Bağlantı kurulamadı. Tekrar dene.';
+    try {
+      const json = JSON.parse(text);
+      msg = json.error || msg;
+    } catch {
+      msg = `Sunucu hatası: ${text.slice(0, 60)}`;
+    }
+    throw new Error(msg);
+  }
+  return (await r.json()) as {
     room: Room;
     token: string;
     id: string;
     error?: string;
   };
-  if (!r.ok) throw new Error(data.error || 'Bağlantı kurulamadı. Tekrar dene.');
-  return data;
 }
 
 export default function Studio({
@@ -136,14 +186,21 @@ export default function Studio({
           const tracks = p.segments.length
             ? p.segments.map((id) => ({
                 key: `${p.id}:${id}`,
-                url: `${api}/audio/${p.id}?segment=${id}`,
+                segment: id,
+                playerId: p.id,
+                fallbackUrl: `${api}/audio/${p.id}?segment=${id}`,
               }))
-            : [{ key: p.id, url: `${api}/audio/${p.id}` }];
+            : [{ key: p.id, segment: null, playerId: p.id, fallbackUrl: `${api}/audio/${p.id}` }];
           return tracks.map(async (track) => {
             if (buffers.current.has(track.key)) return;
             try {
-              const r = await fetch(track.url, {
-                headers: { Authorization: `Bearer ${session.token}` },
+              let audioUrl = await getAudioRecordingUrl(session.code, track.playerId, track.segment);
+              if (!audioUrl) audioUrl = track.fallbackUrl;
+
+              const r = await fetch(audioUrl, {
+                headers: audioUrl.startsWith('http') && !audioUrl.includes('/api/rooms')
+                  ? {}
+                  : { Authorization: `Bearer ${session.token}` },
               });
               if (!r.ok) return;
               const buf = await r.arrayBuffer();

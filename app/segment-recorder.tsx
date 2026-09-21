@@ -9,6 +9,7 @@ import {
   type Room,
 } from '@/lib/scenes';
 import type { Session } from './studio';
+import { saveAudioRecording, getAudioRecordingUrl } from '@/lib/game-service';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 function peaksOf(buffer: AudioBuffer) {
@@ -118,8 +119,12 @@ export default function SegmentRecorder({
       loaded.current.add(id);
       void (async () => {
         try {
-          const r = await fetch(`${api}?segment=${id}`, {
-            headers: { Authorization: `Bearer ${session.token}` },
+          let audioUrl = await getAudioRecordingUrl(room.code, session.id, id);
+          if (!audioUrl) audioUrl = `${api}?segment=${id}`;
+          const r = await fetch(audioUrl, {
+            headers: audioUrl.startsWith('http') && !audioUrl.includes('/api/rooms')
+              ? {}
+              : { Authorization: `Bearer ${session.token}` },
           });
           if (!r.ok) throw new Error('Kayıt okunamadı');
           audioContext.current ??= new AudioContext();
@@ -205,8 +210,12 @@ export default function SegmentRecorder({
     if (!audioUrl && me.segments.includes(id)) {
       setBusy(true);
       try {
-        const r = await fetch(`${api}?segment=${id}`, {
-          headers: { Authorization: `Bearer ${session.token}` },
+        let fetchedUrl = await getAudioRecordingUrl(room.code, session.id, id);
+        if (!fetchedUrl) fetchedUrl = `${api}?segment=${id}`;
+        const r = await fetch(fetchedUrl, {
+          headers: fetchedUrl.startsWith('http') && !fetchedUrl.includes('/api/rooms')
+            ? {}
+            : { Authorization: `Bearer ${session.token}` },
         });
         if (r.ok) {
           const blob = await r.blob();
@@ -348,21 +357,38 @@ export default function SegmentRecorder({
     setBusy(true);
     setError('');
     try {
-      const r = await fetch(`${api}?segment=${selected}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-          'Content-Type': take.blob.type,
-        },
-        body: take.blob,
-      });
-      const data = (await r.json()) as { room: Room; error?: string };
-      if (!r.ok) throw new Error(data.error);
-      onRoom(data.room);
+      let updatedRoom: Room | null = null;
+      try {
+        const res = await saveAudioRecording(
+          room.code,
+          session.id,
+          selected,
+          take.blob,
+        );
+        updatedRoom = res.room;
+      } catch (err) {
+        console.warn('Direct Supabase save warning, trying API fallback:', err);
+      }
+
+      if (!updatedRoom) {
+        const r = await fetch(`${api}?segment=${selected}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+            'Content-Type': take.blob.type,
+          },
+          body: take.blob,
+        });
+        const data = (await r.json()) as { room: Room; error?: string };
+        if (!r.ok) throw new Error(data.error);
+        updatedRoom = data.room;
+      }
+
+      onRoom(updatedRoom);
       const next = mine.find(
         (c) =>
           c.id !== selected &&
-          !data.room.players
+          !updatedRoom!.players
             .find((p) => p.id === me.id)!
             .segments.includes(c.id),
       );
