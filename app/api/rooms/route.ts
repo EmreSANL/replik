@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     typeof b.scene !== 'number' ||
     !Number.isInteger(b.scene) ||
     b.scene < 0 ||
-    b.scene > 99999
+    b.scene > Number.MAX_SAFE_INTEGER
   )
     return fail('Bir oyuncu adı ve geçerli sahne seç.');
   const maxPlayers =

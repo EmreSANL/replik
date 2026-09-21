@@ -75,7 +75,7 @@ export async function POST(req: Request, { params }: C) {
     if (!me.host) return fail('Sahneyi yalnızca oda kurucusu değiştirebilir.', 403);
     if (room.status !== 'lobby') return fail('Oyun başladıktan sonra sahne değiştirilemez.', 409);
     const sceneId = Number(b.scene);
-    if (!Number.isInteger(sceneId) || sceneId < 0 || sceneId > 99999) {
+    if (!Number.isInteger(sceneId) || sceneId < 0 || sceneId > Number.MAX_SAFE_INTEGER) {
       return fail('Geçersiz sahne seçimi.');
     }
     await db()

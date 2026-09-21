@@ -13,6 +13,7 @@ import {
   AudioLines,
   Check,
   Plus,
+  Edit3,
 } from 'lucide-react';
 import {
   Dialog,
@@ -80,7 +81,7 @@ export default function Home() {
         path,
         undefined,
         modal === 'create'
-          ? { name, scene: selected, maxPlayers }
+          ? { name, scene: activeScene.id, maxPlayers }
           : { action: 'join', name },
       );
       const session = { code: data.room.code, token: data.token, id: data.id };
@@ -259,8 +260,10 @@ export default function Home() {
               </div>
               <div className="scene-grid">
                 {allScenes.map((s, i) => (
-                  <button
+                  <div
                     key={s.id}
+                    role="button"
+                    tabIndex={0}
                     className={
                       'scene-card ' + (selected === i ? 'selected' : '')
                     }
@@ -268,6 +271,13 @@ export default function Home() {
                       setSelected(i);
                       setPreview(i);
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelected(i);
+                        setPreview(i);
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
                   >
                     <div
                       className={'scene-art art-' + (i % 4)}
@@ -287,6 +297,35 @@ export default function Home() {
                           <Check size={12} /> SEÇİLİ
                         </span>
                       )}
+                      <Link
+                        href={`/editor?sceneId=${s.id}`}
+                        target="_blank"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        title="Bu sahneyi editörde düzenle"
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          background: 'rgba(16, 17, 13, 0.88)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#d8fb51',
+                          border: '1px solid rgba(216, 251, 81, 0.4)',
+                          borderRadius: '6px',
+                          padding: '3px 7px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                          zIndex: 3,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <Edit3 size={11} /> Düzenle ↗
+                      </Link>
                       {s.isCustom && (
                         <span
                           style={{
@@ -311,7 +350,7 @@ export default function Home() {
                       <ArrowUpRight size={19} />
                       <span>{s.category} · {s.roles.length} karakter</span>
                     </div>
-                  </button>
+                  </div>
                 ))}
 
                 {/* Yeni Sahne / Meme Ekle Kartı */}
@@ -608,16 +647,43 @@ export default function Home() {
               }}
             />
           )}
-          <button
-            className="primary"
-            onClick={() => {
-              const id = preview ?? 0;
-              setPreview(null);
-              openCreate(id);
-            }}
-          >
-            Bu sahneyle oda kur <ArrowUpRight size={18} />
-          </button>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+            <button
+              className="primary"
+              style={{ flex: 1 }}
+              onClick={() => {
+                const id = preview ?? 0;
+                setPreview(null);
+                openCreate(id);
+              }}
+            >
+              Bu sahneyle oda kur <ArrowUpRight size={18} />
+            </button>
+            {previewScene && (
+              <Link
+                href={`/editor?sceneId=${previewScene.id}`}
+                target="_blank"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '0 16px',
+                  background: 'rgba(216, 251, 81, 0.12)',
+                  color: '#d8fb51',
+                  border: '1px solid rgba(216, 251, 81, 0.35)',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Edit3 size={15} /> Editörde Düzenle ↗
+              </Link>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

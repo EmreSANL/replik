@@ -27,8 +27,12 @@ import {
   sceneCues,
   playerCues,
   timeLabel,
+  getSceneById,
+  getCustomScenes,
   type Room,
+  type Scene,
 } from '@/lib/scenes';
+import { getScenesFromSupabase } from '@/lib/supabase';
 import {
   createGameRoom,
   joinGameRoom,
@@ -151,10 +155,20 @@ export default function Studio({
     clockOffset.current = initial.serverNow - Date.now();
   }, [initial.serverNow]);
 
-  const scene = scenes[room.scene] || scenes[0],
+  const [customScenes, setCustomScenes] = useState<Scene[]>(() => {
+    if (typeof window !== 'undefined') return getCustomScenes();
+    return [];
+  });
+  useEffect(() => {
+    void getScenesFromSupabase().then((sc) => {
+      if (sc && sc.length > 0) setCustomScenes(sc);
+    });
+  }, []);
+
+  const scene = getSceneById(room.scene, customScenes),
     me = room.players.find((p) => p.id === session.id)!,
     slotDuration = scene.duration / Math.max(1, room.players.length),
-    cues = sceneCues(room.scene);
+    cues = sceneCues(room.scene, customScenes);
 
   const api = `/api/rooms/${session.code}`;
 
@@ -394,7 +408,7 @@ export default function Studio({
         // 2. Oyuncuların mikrofondan kaydettiği dublaj parçaları
         room.players.forEach((p, i) => {
           const tracks = p.segments.length
-            ? sceneCues(room.scene)
+            ? sceneCues(room.scene, customScenes)
                 .filter((c) => p.segments.includes(c.id))
                 .map((c) => ({
                   key: `${p.id}:${c.id}`,
@@ -862,7 +876,7 @@ export default function Studio({
             <SegmentRecorder room={room} session={session} onRoom={setRoom} />
           ) : (
             <div className="timeline">
-              {sceneCues(room.scene).map((c) => (
+              {sceneCues(room.scene, customScenes).map((c) => (
                 <div key={c.id}>
                   <span style={{ color: c.roleColor }}>{c.roleName}</span>
                   <strong>{timeLabel(c.start)}</strong>
@@ -1019,6 +1033,7 @@ export default function Studio({
                   room.scene,
                   room.players.findIndex((p) => p.id === me.id),
                   room.players.length,
+                  customScenes,
                 ).map((c) => (
                   <li key={c.id}>
                     <span>Bölüm {c.id + 1}</span>

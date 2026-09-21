@@ -26,11 +26,20 @@ import {
   Cloud,
   CloudUpload,
   Music,
+  Edit3,
+  FolderOpen,
+  Copy,
+  X,
+  Search,
+  FileVideo,
 } from 'lucide-react';
 import {
   type Scene,
   type Cue,
   type RoleInfo,
+  scenes,
+  getAllScenes,
+  sceneCues,
   saveCustomScene,
   getCustomScenes,
   deleteCustomScene,
@@ -99,6 +108,13 @@ export default function EditorPage() {
   const [selectedCueId, setSelectedCueId] = useState<number>(0);
   const [livePreview, setLivePreview] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Mevcut Sahne Düzenleme Modu ve Sahne Seçici Modal Durumu
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
+  const [editingSceneTitle, setEditingSceneTitle] = useState('');
+  const [isSceneModalOpen, setIsSceneModalOpen] = useState(false);
+  const [sceneSearch, setSceneSearch] = useState('');
+  const hasLoadedUrlScene = useRef(false);
 
   // Zaman Çizelgesi Mouse ile Sürükleme ve Genişletme Durumu
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -564,56 +580,164 @@ export default function EditorPage() {
     }
   }, [videoUrl, title, showToast]);
 
-  // Supabase Sahnesi Yükle
-  const loadSupabaseScene = (sc: Scene) => {
-    setSceneId(sc.id);
-    setTitle(sc.title);
-    setCategory(sc.category);
-    setMood(sc.mood || 'Meme');
-    setVideoUrl(sc.video);
-    setPoster(sc.poster || '');
-    if (sc.roleDetails && sc.roleDetails.length > 0) {
-      setRoles(sc.roleDetails);
-    } else if (sc.roles) {
-      setRoles(
-        sc.roles.map((r, i) => ({
-          id: i,
-          name: typeof r === 'string' ? r : (r as unknown as RoleInfo).name,
-          color: COLOR_PALETTE[i % COLOR_PALETTE.length],
-          description: '',
-        })),
-      );
-    }
-    if (sc.cues) setCues(sc.cues);
-    setSelectedCueId(sc.cues?.[0]?.id ?? 0);
-    if (sc.instrumental) {
-      setInstrumentalUrl(sc.instrumental);
-      setAudioMode('instrumental');
+  // Sahne Yükle (Hem Supabase / Meme hem de Hazır Oyun Sahneleri)
+  const loadScene = useCallback(
+    (sc: Scene) => {
+      setSceneId(sc.id);
+      setTitle(sc.title);
+      setCategory(sc.category || 'Meme & Mizah');
+      setMood(sc.mood || 'Doğaçlama komedi');
+      setVideoUrl(sc.video);
+      setPoster(sc.poster || '');
+      setDuration(sc.duration || 20);
+
+      // Karakterler / Roller
+      if (sc.roleDetails && sc.roleDetails.length > 0) {
+        setRoles(sc.roleDetails);
+      } else if (sc.roles && sc.roles.length > 0) {
+        setRoles(
+          sc.roles.map((r, i) => ({
+            id: i,
+            name: typeof r === 'string' ? r : (r as unknown as RoleInfo).name,
+            color: COLOR_PALETTE[i % COLOR_PALETTE.length],
+            description: '',
+          })),
+        );
+      }
+
+      // Replikler (Cue'lar): Varsa doğrudan al, yoksa varsayılan replik şablonunu üret
+      const loadedCues =
+        sc.cues && sc.cues.length > 0
+          ? sc.cues
+          : sceneCues(sc.id, supabaseScenes);
+      setCues(loadedCues);
+      if (loadedCues.length > 0) {
+        setSelectedCueId(loadedCues[0].id);
+      }
+
+      // Vokalsiz M&E müzik parçası
+      if (sc.instrumental) {
+        setInstrumentalUrl(sc.instrumental);
+        setAudioMode('instrumental');
+      } else {
+        setInstrumentalUrl('');
+        setAudioMode('original');
+      }
+
+      setIsEditingExisting(true);
+      setEditingSceneTitle(sc.title);
+      setIsSceneModalOpen(false);
+
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.pause();
+      }
+      setIsPlaying(false);
+
+      showToast(`✏️ "${sc.title}" sahnesi düzenleme için yüklendi!`);
+    },
+    [supabaseScenes, showToast],
+  );
+
+  // Geriye dönük uyumluluk için alias
+  const loadSupabaseScene = loadScene;
+
+  // Sıfırdan Yeni Sahneye Geç
+  const handleStartNewScene = useCallback(() => {
+    setSceneId(Date.now());
+    setTitle('');
+    setCategory('Meme & Mizah');
+    setMood('Rolleri paylaşın, en komik repliği patlatın.');
+    setVideoUrl('');
+    setPoster('');
+    setDuration(20);
+    setRoles([
+      { id: 0, name: '1. Karakter', color: '#ef4444', description: 'İlk konuşan karakter' },
+      { id: 1, name: '2. Karakter', color: '#38bdf8', description: 'İkinci karakter' },
+    ]);
+    setCues([]);
+    setInstrumentalUrl('');
+    setAudioMode('instrumental');
+    setIsEditingExisting(false);
+    setEditingSceneTitle('');
+    setIsSceneModalOpen(false);
+    showToast('✨ Yeni boş sahne oluşturma moduna geçildi.');
+  }, [showToast]);
+
+  // URL query parametresinden sceneId oku ve ilgili sahneyi otomatik yükle
+  useEffect(() => {
+    if (typeof window === 'undefined' || hasLoadedUrlScene.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const sceneIdParam = params.get('sceneId');
+    if (!sceneIdParam) return;
+
+    const targetId = Number(sceneIdParam);
+    if (isNaN(targetId)) return;
+
+    const all = getAllScenes(supabaseScenes);
+    const found = all.find((s) => s.id === targetId);
+    if (found) {
+      hasLoadedUrlScene.current = true;
+      loadScene(found);
     } else {
-      setInstrumentalUrl('');
-      setAudioMode('original');
+      void getScenesFromSupabase().then((scs) => {
+        const merged = getAllScenes(scs || []);
+        const f = merged.find((s) => s.id === targetId);
+        if (f) {
+          hasLoadedUrlScene.current = true;
+          loadScene(f);
+        }
+      });
     }
-    showToast(`☁️ "${sc.title}" sahnesi Supabase'den yüklendi.`);
-  };
+  }, [supabaseScenes, loadScene]);
+
+  // Tüm sahneler listesi (Arama ve Seçici için)
+  const allScenesList = useMemo(() => {
+    return getAllScenes(supabaseScenes);
+  }, [supabaseScenes]);
+
+  const filteredScenes = useMemo(() => {
+    if (!sceneSearch.trim()) return allScenesList;
+    const q = sceneSearch.toLowerCase();
+    return allScenesList.filter(
+      (s) =>
+        s.title?.toLowerCase().includes(q) ||
+        s.category?.toLowerCase().includes(q) ||
+        s.roles?.some((r) =>
+          (typeof r === 'string' ? r : (r as unknown as RoleInfo).name)
+            .toLowerCase()
+            .includes(q),
+        ),
+    );
+  }, [allScenesList, sceneSearch]);
 
   // Supabase Sahnesi Sil
   const handleDeleteSupabaseScene = async (id: number, scTitle: string) => {
+    if (typeof window !== 'undefined' && !window.confirm(`"${scTitle}" sahnesini silmek istediğinize emin misiniz?`)) {
+      return;
+    }
     try {
       await deleteSceneFromSupabase(id);
       deleteCustomScene(id);
       setSupabaseScenes((prev) => prev.filter((s) => s.id !== id));
+      if (sceneId === id) {
+        handleStartNewScene();
+      }
       showToast(`🗑️ "${scTitle}" Supabase'den silindi.`);
     } catch {
       deleteCustomScene(id);
       setSupabaseScenes((prev) => prev.filter((s) => s.id !== id));
+      if (sceneId === id) {
+        handleStartNewScene();
+      }
       showToast(`🗑️ "${scTitle}" silindi.`);
     }
   };
 
-  // Sahneyi Supabase'e Kaydet ve Oyuna Ekle
-  const handleSaveScene = async () => {
+  // Sahneyi Kaydet (Mevcut olanı güncelle veya yeni kopya olarak kaydet)
+  const handleSaveScene = async (asNewCopy: boolean = false) => {
     if (!videoUrl) {
-      showToast('⚠️ Lütfen önce bir video yükleyin.');
+      showToast('⚠️ Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
     const sortedCues = [...cues].sort((a, b) => a.start - b.start);
@@ -622,9 +746,14 @@ export default function EditorPage() {
       sortedCues.length > 0 ? sortedCues[sortedCues.length - 1].end : 0,
     );
 
+    const targetId = asNewCopy ? Date.now() : sceneId;
+    const targetTitle = asNewCopy
+      ? (title.includes('(Kopya)') ? title : `${title} (Kopya)`).trim()
+      : (title.trim() || 'Meme Sahnesi');
+
     const newScene: Scene = {
-      id: sceneId,
-      title: title.trim() || 'Meme Sahnesi',
+      id: targetId,
+      title: targetTitle,
       category: category.trim() || 'Meme & Mizah',
       start: 0,
       duration: Math.round(calculatedDuration),
@@ -640,13 +769,25 @@ export default function EditorPage() {
     };
 
     try {
-      showToast('☁️ Sahne Supabase veritabanına kaydediliyor...');
+      showToast('☁️ Sahne kaydediliyor ve oyuna ekleniyor...');
       await saveSceneToSupabase(newScene);
       saveCustomScene(newScene); // yerel yedek
       setSupabaseScenes((prev) => [newScene, ...prev.filter((s) => s.id !== newScene.id)]);
-      showToast(`🎉 "${newScene.title}" Supabase'e kaydedildi ve oyuna eklendi!`);
+      setSceneId(targetId);
+      setTitle(targetTitle);
+      setIsEditingExisting(true);
+      setEditingSceneTitle(targetTitle);
+      showToast(
+        asNewCopy
+          ? `🎉 "${targetTitle}" yeni bir sahne olarak oyuna eklendi!`
+          : `💾 "${targetTitle}" sahnesindeki değişiklikler başarıyla güncellendi!`,
+      );
     } catch (err) {
       saveCustomScene(newScene);
+      setSceneId(targetId);
+      setTitle(targetTitle);
+      setIsEditingExisting(true);
+      setEditingSceneTitle(targetTitle);
       showToast(`⚠️ Supabase uyarısı: ${(err as Error).message}. Yerel olarak kaydedildi.`);
     }
   };
@@ -726,6 +867,38 @@ export default function EditorPage() {
 
         {/* Aksiyon Butonları */}
         <div className="flex items-center gap-2">
+          {/* Sahne Aç & Düzenle Butonu */}
+          <button
+            onClick={() => setIsSceneModalOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#1e2417] hover:bg-[#2a341e] text-[#d8fb51] border border-[#3e4e24] flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+            title="Kayıtlı veya hazır tüm sahneleri incele ve düzenlemek için aç"
+          >
+            <FolderOpen size={14} />
+            <span>Sahne Aç &amp; Düzenle</span>
+            <span className="bg-[#d8fb51]/20 text-[#d8fb51] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
+              {allScenesList.length}
+            </span>
+          </button>
+
+          {/* Aktif Sahne Göstergesi */}
+          {isEditingExisting && (
+            <div className="hidden md:flex items-center gap-2 bg-[#202516] border border-[#384521] px-2.5 py-1 rounded-lg text-xs">
+              <span className="text-[#d8fb51] font-bold flex items-center gap-1">
+                <Edit3 size={12} /> Düzenleniyor:
+              </span>
+              <span className="text-[#f4f4e9] font-medium truncate max-w-[130px]" title={editingSceneTitle}>
+                {editingSceneTitle}
+              </span>
+              <button
+                onClick={handleStartNewScene}
+                className="text-[#8c8e82] hover:text-[#ff7878] ml-1 p-0.5"
+                title="Düzenlemeyi kapat ve sıfırdan yeni sahneye geç"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setLivePreview(!livePreview)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition border ${
@@ -763,13 +936,34 @@ export default function EditorPage() {
             onChange={handleJsonUpload}
           />
 
-          <button
-            onClick={handleSaveScene}
-            className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] flex items-center gap-1.5 shadow-lg shadow-[#d8fb51]/10 transition cursor-pointer"
-          >
-            <Check size={15} />
-            Kaydet & Oyuna Ekle
-          </button>
+          {isEditingExisting ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handleSaveScene(false)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] flex items-center gap-1.5 shadow-lg shadow-[#d8fb51]/10 transition cursor-pointer"
+                title="Mevcut sahnedeki tüm altyazı, zamanlama ve ses değişikliklerini veritabanında güncelle"
+              >
+                <Check size={14} />
+                Değişiklikleri Güncelle
+              </button>
+              <button
+                onClick={() => handleSaveScene(true)}
+                className="hidden sm:flex px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#222718] hover:bg-[#2d3520] text-[#d8fb51] border border-[#3c4a24] items-center gap-1 transition cursor-pointer"
+                title="Mevcut sahneyi bozmadan yeni bir kopya olarak kaydet"
+              >
+                <Copy size={13} />
+                Yeni Kopya
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => handleSaveScene(false)}
+              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] flex items-center gap-1.5 shadow-lg shadow-[#d8fb51]/10 transition cursor-pointer"
+            >
+              <Check size={15} />
+              Kaydet &amp; Oyuna Ekle
+            </button>
+          )}
 
           <Link
             href="/"
@@ -780,6 +974,45 @@ export default function EditorPage() {
           </Link>
         </div>
       </header>
+
+      {/* DÜZENLEME MODU BİLGİLENDİRME ÇUBUĞU */}
+      {isEditingExisting && (
+        <div className="bg-[#1b2214] border-b border-[#36441d] px-6 py-2.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="bg-[#d8fb51] text-[#12130e] text-xs font-black px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
+              <Edit3 size={13} /> DÜZENLENİYOR
+            </span>
+            <span className="text-sm font-bold text-[#f4f4e9]">
+              &ldquo;{editingSceneTitle}&rdquo;
+            </span>
+            <span className="text-xs text-[#8c927f]">
+              (ID: #{sceneId}) · Yapılan altyazı, zamanlama ve vokal temizliği değişiklikleri oyundaki tüm odalara yansır.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSaveScene(false)}
+              className="px-3 py-1 bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] text-xs font-bold rounded-lg flex items-center gap-1.5 transition shadow cursor-pointer"
+            >
+              <Check size={13} /> Değişiklikleri Güncelle
+            </button>
+            <button
+              onClick={() => handleSaveScene(true)}
+              className="px-3 py-1 bg-[#242b18] hover:bg-[#323d21] text-[#d8fb51] border border-[#3e4e24] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+              title="Bu sahneyi yeni bir kopya olarak çoğalt"
+            >
+              <Copy size={13} /> Yeni Kopya Yap
+            </button>
+            <button
+              onClick={handleStartNewScene}
+              className="px-2.5 py-1 bg-[#20211b] hover:bg-[#2c2d24] text-[#a4a69b] hover:text-[#f4f4e9] text-xs rounded-lg flex items-center gap-1 transition"
+              title="Düzenlemeyi kapat ve sıfırdan yeni sahneye geç"
+            >
+              <X size={13} /> Yeni Sahne
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* TOAST BİLDİRİMİ */}
       {toastMessage && (
@@ -1428,10 +1661,17 @@ export default function EditorPage() {
           
           {/* 1. SAHNE DETAYLARI KARTI */}
           <div className="bg-[#181913] border border-[#2d2e26] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <h2 className="text-sm font-bold text-[#f4f4e9] flex items-center gap-2">
-              <Film size={16} className="text-[#d8fb51]" />
-              Sahne Bilgileri
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-[#f4f4e9] flex items-center gap-2">
+                <Film size={16} className="text-[#d8fb51]" />
+                Sahne Bilgileri
+              </h2>
+              {isEditingExisting && (
+                <span className="text-[10px] font-bold text-[#d8fb51] bg-[#222817] border border-[#3e4a25] px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Edit3 size={11} /> Düzenleniyor (#{sceneId})
+                </span>
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1473,6 +1713,24 @@ export default function EditorPage() {
                 className="w-full bg-[#12130e] border border-[#2e3025] rounded-lg px-3 py-1.5 text-xs text-[#f4f4e9] focus:outline-none focus:border-[#d8fb51]"
               />
             </div>
+
+            {isEditingExisting && (
+              <div className="flex items-center gap-2 pt-1 border-t border-[#282a20]">
+                <button
+                  onClick={() => handleSaveScene(false)}
+                  className="flex-1 py-1.5 px-3 bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition shadow cursor-pointer"
+                >
+                  <Check size={14} /> Değişiklikleri Güncelle
+                </button>
+                <button
+                  onClick={() => handleSaveScene(true)}
+                  className="py-1.5 px-3 bg-[#24281b] hover:bg-[#323925] text-[#d8fb51] border border-[#404c27] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                  title="Yeni bir sahne olarak kaydet"
+                >
+                  <Copy size={13} /> Yeni Kopya
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 2. KARAKTER / ROL LİSTESİ */}
@@ -1715,6 +1973,157 @@ export default function EditorPage() {
         </div>
 
       </div>
+
+      {/* SAHNELERİ AÇ & DÜZENLE MODALI */}
+      {isSceneModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsSceneModalOpen(false)}
+        >
+          <div
+            className="bg-[#171912] border border-[#313327] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#292b21]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#d8fb51]/15 text-[#d8fb51] flex items-center justify-center border border-[#d8fb51]/30">
+                  <FolderOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#f4f4e9]">
+                    Sahneleri Aç &amp; Düzenle
+                  </h3>
+                  <p className="text-xs text-[#8c8e82]">
+                    İstediğiniz sahneyi seçerek altyazılarını, replik zamanlamalarını veya vokal temizliğini editörde düzenleyin.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSceneModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-[#22241b] hover:bg-[#2e3025] text-[#9ca08e] hover:text-[#f4f4e9] flex items-center justify-center transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Search & Filter */}
+            <div className="px-6 py-3 border-b border-[#24261c] bg-[#141610] flex items-center justify-between gap-4">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7c7f71]" />
+                <input
+                  type="text"
+                  value={sceneSearch}
+                  onChange={(e) => setSceneSearch(e.target.value)}
+                  placeholder="Sahne adı, kategori veya karakter ara..."
+                  className="w-full bg-[#1b1c15] border border-[#2d3023] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#f4f4e9] focus:outline-none focus:border-[#d8fb51]"
+                />
+              </div>
+              <span className="text-xs text-[#8c8e82] whitespace-nowrap">
+                Toplam {filteredScenes.length} sahne
+              </span>
+            </div>
+
+            {/* Modal Scene Grid */}
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {filteredScenes.map((sc) => {
+                const isCurrent = isEditingExisting && sceneId === sc.id;
+                return (
+                  <div
+                    key={sc.id}
+                    className={`bg-[#12130e] border rounded-xl overflow-hidden flex flex-col transition group ${
+                      isCurrent
+                        ? 'border-[#d8fb51] shadow-lg shadow-[#d8fb51]/10'
+                        : 'border-[#282a20] hover:border-[#424634]'
+                    }`}
+                  >
+                    {/* Thumbnail / Poster */}
+                    <div
+                      className="h-32 bg-[#202419] relative bg-cover bg-center flex items-end p-2.5"
+                      style={
+                        sc.poster
+                          ? { backgroundImage: `url('${sc.poster}')` }
+                          : undefined
+                      }
+                    >
+                      <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-[10px] text-[#c7cbba] font-mono px-1.5 py-0.5 rounded">
+                        00:{sc.duration}
+                      </span>
+                      {sc.isCustom && (
+                        <span className="absolute top-2 right-2 bg-[#d8fb51] text-[#12130e] text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                          Meme / Özel
+                        </span>
+                      )}
+                      {sc.instrumental && (
+                        <span className="absolute bottom-2 left-2 bg-[#a855f7]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <Music size={10} /> M&amp;E Vokalsiz
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Metadata & Actions */}
+                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="text-xs font-bold text-[#f4f4e9] group-hover:text-[#d8fb51] transition line-clamp-1">
+                            {sc.title}
+                          </h4>
+                          {isCurrent && (
+                            <span className="text-[10px] text-[#d8fb51] font-bold shrink-0">
+                              ● Açık
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#8c8e82] mt-0.5">
+                          {sc.category} · {sc.roles?.length || 0} Karakter
+                        </p>
+                        {sc.mood && (
+                          <p className="text-[10px] text-[#6d7062] mt-1 line-clamp-1 italic">
+                            {sc.mood}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Buttons */}
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-[#22241b]">
+                        <button
+                          onClick={() => loadScene(sc)}
+                          className="flex-1 py-1.5 px-2 bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <Edit3 size={13} />
+                          {isCurrent ? 'Yeniden Yükle' : 'Düzenle'}
+                        </button>
+                        {sc.isCustom && (
+                          <button
+                            onClick={() => handleDeleteSupabaseScene(sc.id, sc.title)}
+                            className="p-1.5 bg-[#20211b] hover:bg-[#3d1e1e] text-[#828577] hover:text-[#ff7878] rounded-lg transition cursor-pointer"
+                            title="Sahneyi Sil"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-[#24261c] bg-[#141610] flex items-center justify-between">
+              <span className="text-xs text-[#8c8e82]">
+                💡 Düzenlemek istediğiniz sahneye tıklayın, tüm replikleri ve zamanlamaları anında önünüze gelecektir.
+              </span>
+              <button
+                onClick={handleStartNewScene}
+                className="px-3 py-1.5 bg-[#25281e] hover:bg-[#323628] text-[#d8fb51] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Plus size={14} /> Sıfırdan Yeni Sahne Yap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

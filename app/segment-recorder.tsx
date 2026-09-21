@@ -5,6 +5,7 @@ import {
   playerCues,
   sceneCues,
   scenes,
+  getSceneById,
   timeLabel,
   type Room,
 } from '@/lib/scenes';
@@ -32,13 +33,13 @@ export default function SegmentRecorder({
   session: Session;
   onRoom: (room: Room) => void;
 }) {
-  const scene = scenes[room.scene],
+  const scene = getSceneById(room.scene),
     me = room.players.find((p) => p.id === session.id)!,
     index = room.players.findIndex((p) => p.id === session.id),
     cues = sceneCues(room.scene),
     mine = playerCues(room.scene, index, room.players.length);
   const [selected, setSelected] = useState(
-      () => mine.find((c) => !me.segments.includes(c.id))?.id ?? mine[0].id,
+      () => mine.find((c) => !me.segments.includes(c.id))?.id ?? mine[0]?.id ?? 0,
     ),
     [takes, setTakes] = useState<Record<number, Take>>({}),
     [savedUrls, setSavedUrls] = useState<Record<number, string>>({}),
