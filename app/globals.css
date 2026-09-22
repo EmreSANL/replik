@@ -5141,7 +5141,21 @@ audio {
   overflow-y: auto;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .82), 0 22px 70px rgba(0, 0, 0, .7);
 }
-.editor-timeline-expanded > div:nth-child(3) > div { height: min(38vh, 320px); }
+.editor-multitrack-box {
+  max-height: 440px;
+  overflow-y: auto;
+}
+.editor-timeline-expanded .editor-multitrack-box {
+  max-height: calc(75vh - 120px);
+}
+.editor-multitrack-box::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.editor-multitrack-box::-webkit-scrollbar-thumb {
+  background: #383832;
+  border-radius: 999px;
+}
 .editor-timeline-expand {
   display: inline-flex;
   align-items: center;
