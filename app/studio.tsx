@@ -17,6 +17,8 @@ import {
   Sparkles,
   ArrowRight,
   Loader2,
+  Globe,
+  Trash2,
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
 import MicTestDialog from '@/components/mic-test-dialog';
@@ -39,8 +41,10 @@ import {
   getGameRoom,
   executeGameRoomAction,
   getAudioRecordingUrl,
+  publishRoomDubbingToSupabase,
+  deleteUnpublishedRoomFromSupabase,
 } from '@/lib/game-service';
-import { exportDubbedMp4 } from '@/lib/mp4-exporter';
+import { exportDubbedMp4, generateDubbedMp4Blob } from '@/lib/mp4-exporter';
 
 export type Session = { code: string; token: string; id: string };
 
@@ -621,6 +625,107 @@ export default function Studio({
   }, [room.playAt, room.status, scene.duration]);
 
   const [exportProgress, setExportProgress] = useState(0);
+  const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(0);
+  const [isPublished, setIsPublished] = useState(() =>
+    Boolean(initial.recordings?.some((r) => r.player === '__published_mp4__')),
+  );
+  const isPublishedRef = useRef(isPublished);
+
+  useEffect(() => {
+    const alreadyPub = Boolean(room.recordings?.some((r) => r.player === '__published_mp4__'));
+    if (alreadyPub) {
+      setIsPublished(true);
+      isPublishedRef.current = true;
+    }
+  }, [room.recordings]);
+
+  // Eğer kullanıcı "Yayınla"ya basmadan sayfayı kapatır veya odadan çıkarsa Supabase'den kayıtları sil
+  useEffect(() => {
+    const handleUnload = () => {
+      if (room.status === 'final' && !isPublishedRef.current) {
+        void deleteUnpublishedRoomFromSupabase(room.code);
+      }
+    };
+    window.addEventListener('pagehide', handleUnload);
+    window.addEventListener('beforeunload', handleUnload);
+    return () => {
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
+  }, [room.status, room.code]);
+
+  async function handleExitRoom() {
+    if (!isPublishedRef.current) {
+      await deleteUnpublishedRoomFromSupabase(room.code).catch(() => {});
+    }
+    onExit();
+  }
+
+  async function publishVideo() {
+    if (isPublished || publishing) return;
+    setError('');
+    setNotice('');
+    setPublishProgress(0);
+
+    if (playing) {
+      stopPlayback();
+    }
+
+    setPublishing(true);
+    try {
+      const ok = await loadAudio();
+      if (!ok && buffers.current.size === 0) {
+        throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
+      }
+
+      const mp4Blob = await generateDubbedMp4Blob({
+        room,
+        scene,
+        cues,
+        buffers: buffers.current,
+        onProgress: (pct) => {
+          if (mounted.current) {
+            setPublishProgress(Math.round(pct * 0.85));
+          }
+        },
+      });
+
+      if (mounted.current) setPublishProgress(92);
+
+      const playersInfo = room.players.map((p) => ({
+        name: p.name,
+        roleName: scene.roles?.[p.role >= 0 ? p.role : 0] || 'Oyuncu',
+        roleColor: scene.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#d8fb51',
+      }));
+
+      await publishRoomDubbingToSupabase(
+        room,
+        scene.title,
+        scene.category,
+        scene.poster,
+        scene.duration,
+        playersInfo,
+        mp4Blob,
+      );
+
+      if (mounted.current) {
+        setPublishProgress(100);
+        setIsPublished(true);
+        isPublishedRef.current = true;
+        setNotice('🎉 Dublajınız ana sayfada yayınlandı! Geçici kayıt parçaları temizlendi.');
+      }
+    } catch (e) {
+      if (mounted.current) {
+        setError((e as Error).message || 'Yayınlama sırasında bir hata oluştu.');
+      }
+    } finally {
+      if (mounted.current) {
+        setPublishing(false);
+        setPublishProgress(0);
+      }
+    }
+  }
 
   async function exportVideo() {
     setError('');
@@ -671,7 +776,7 @@ export default function Studio({
   return (
     <section className="studio">
       <div className="studio-heading">
-        <button className="text-button" onClick={onExit}>
+        <button className="text-button" onClick={handleExitRoom}>
           <ArrowLeft size={17} /> Oyun alanı
         </button>
         <div className="studio-heading-actions">
@@ -1275,10 +1380,47 @@ export default function Studio({
                 <Headphones size={17} />
               </button>
 
+              {/* Ana Sayfada Yayınla Butonu */}
+              <button
+                className={isPublished ? 'secondary publish-btn is-published' : 'primary publish-btn'}
+                disabled={publishing || exporting || playing || countdown > 0}
+                onClick={isPublished ? onExit : publishVideo}
+                style={
+                  isPublished
+                    ? {
+                        borderColor: '#34d399',
+                        color: '#6ee7b7',
+                        background: 'rgba(52, 211, 153, 0.12)',
+                      }
+                    : {
+                        background: 'linear-gradient(135deg, #34d399 0%, #d8fb51 100%)',
+                        color: '#11160d',
+                        fontWeight: 800,
+                      }
+                }
+              >
+                {publishing ? (
+                  <>
+                    <Loader2 size={17} className="spin-icon" />
+                    Ana Sayfada Yayınlanıyor… %{publishProgress}
+                  </>
+                ) : isPublished ? (
+                  <>
+                    <Check size={17} />
+                    Ana Sayfada Yayınlandı! (Vitrine Git)
+                  </>
+                ) : (
+                  <>
+                    <Globe size={17} />
+                    Dublajı Ana Sayfada Yayınla
+                  </>
+                )}
+              </button>
+
               {/* Video İndirme (MP4) */}
               <button
                 className="secondary"
-                disabled={exporting || playing || countdown > 0}
+                disabled={exporting || publishing || playing || countdown > 0}
                 onClick={exportVideo}
               >
                 {exporting ? (
@@ -1293,6 +1435,37 @@ export default function Studio({
                   </>
                 )}
               </button>
+
+              {!isPublished && (
+                <button
+                  className="secondary"
+                  disabled={publishing || exporting}
+                  onClick={handleExitRoom}
+                  style={{
+                    borderColor: 'rgba(248, 113, 113, 0.35)',
+                    color: '#fca5a5',
+                  }}
+                >
+                  <Trash2 size={16} />
+                  Yayınlamadan Sil ve Çık
+                </button>
+              )}
+
+              <p
+                className="microcopy"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 10,
+                  padding: '8px 11px',
+                  fontSize: 11.5,
+                  lineHeight: 1.45,
+                }}
+              >
+                {isPublished
+                  ? '✅ Bu dublaj ana sayfadaki "Topluluk Dublajları" vitrininde yayınlandı. Gereksiz ses parçaları Supabase\'den temizlendi.'
+                  : '💡 "Dublajı Ana Sayfada Yayınla" butonuna basarsan videonuz ana sayfada herkesin izleyebileceği vitrine eklenir. Yayınlamadan çıkarsan Supabase\'de yer kaplamaması için kayıtlar otomatik olarak silinir.'}
+              </p>
 
               {/* Yeniden Oyna / Yeni Sahne Butonu (Aynı Ekiple) */}
               {me.host === 1 && (

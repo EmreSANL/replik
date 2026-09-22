@@ -2936,3 +2936,161 @@ audio {
   font-size: 11.5px;
   color: #b7c6a6;
 }
+
+/* =====================================================
+   ANA SAYFA TOPLULUK DUBLAJLARI VİTRİNİ (YAYINLANANLAR)
+   ===================================================== */
+.published-dubs-section {
+  margin-top: 28px;
+}
+
+.published-empty-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(24, 30, 19, 0.78);
+  border: 1px dashed rgba(216, 251, 81, 0.35);
+  border-radius: 16px;
+  padding: 20px 22px;
+  color: #e2ecd5;
+}
+
+.published-empty-card strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+  color: #ffffff;
+}
+
+.published-empty-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #a9b897;
+}
+
+.published-dubs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.published-dub-card {
+  background: #141911;
+  border: 1px solid #293320;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.published-dub-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(216, 251, 81, 0.45);
+}
+
+.published-dub-video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0a0d08;
+}
+
+.published-dub-video-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.published-dub-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(16, 20, 13, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(216, 251, 81, 0.4);
+  color: #d8fb51;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.published-dub-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.published-dub-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.published-dub-cat {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #93a380;
+  margin-bottom: 2px;
+}
+
+.published-dub-top h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #f4f8ee;
+}
+
+.published-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #1e2618;
+  border: 1px solid #354329;
+  color: #d8fb51;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.published-like-btn:hover {
+  background: #27321f;
+  border-color: #d8fb51;
+}
+
+.published-dub-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.published-player-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1b2216;
+  border: 1px solid #2b3522;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: #e1ebd4;
+}
+
+.published-player-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+

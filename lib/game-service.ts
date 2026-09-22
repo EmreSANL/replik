@@ -38,7 +38,7 @@ function rowToRoom(row: GameRoomRow): Room {
   return {
     code: row.code,
     scene: Number(row.scene),
-    status: row.status,
+    status: row.status === 'published' ? 'final' : row.status,
     playAt: row.play_at,
     maxPlayers: row.max_players || 4,
     serverNow: Date.now(),
@@ -322,6 +322,10 @@ export async function executeGameRoomAction(
     row.reactions[emoji] = (row.reactions[emoji] || 0) + 1;
   } else if (action === 'restart') {
     if (!player.host) throw new Error('Yeni turu yalnızca oda kurucusu başlatabilir.');
+    const wasPublished = (row.recordings || []).some((r) => r.player === '__published_mp4__');
+    if (!wasPublished) {
+      await removeRoomStorageRecordings(cleanCode, row.recordings || []);
+    }
     row.status = 'lobby';
     row.play_at = 0;
     if (extra.scene !== undefined && !isNaN(Number(extra.scene))) row.scene = Number(extra.scene);
@@ -501,3 +505,282 @@ export async function getAudioRecordingUrl(
   );
   return rec ? rec.url : null;
 }
+
+export type PublishedDub = {
+  id: string;
+  roomCode: string;
+  sceneId: number;
+  sceneTitle: string;
+  category: string;
+  videoUrl: string;
+  posterUrl: string;
+  duration: number;
+  players: { name: string; roleName: string; roleColor: string }[];
+  likes: number;
+  createdAt: number;
+};
+
+const PUBLISHED_FEED_PATH = 'published/feed.json';
+
+/**
+ * Bir odaya ait geçici ses kayıtlarını (recordings/{code}/*) Supabase Storage'dan tamamen siler.
+ */
+export async function removeRoomStorageRecordings(
+  code: string,
+  recordings?: { player: string; segment: number; url: string }[],
+): Promise<void> {
+  const cleanCode = code.toUpperCase().trim();
+  const pathsToRemove = new Set<string>();
+
+  // 1. Kayıt URL'lerinden dosya yollarını çıkar
+  (recordings || []).forEach((r) => {
+    if (r.player === '__published_mp4__') return;
+    const match = r.url?.match(/\/storage\/v1\/object\/public\/videos\/(.+)$/);
+    if (match && match[1]) {
+      pathsToRemove.add(decodeURIComponent(match[1]));
+    }
+  });
+
+  // 2. Klasördeki tüm dosyaları listele
+  try {
+    const { data: listData } = await supabase.storage
+      .from('videos')
+      .list(`recordings/${cleanCode}`, { limit: 100 });
+    if (listData && listData.length > 0) {
+      listData.forEach((f) => {
+        if (f.name) pathsToRemove.add(`recordings/${cleanCode}/${f.name}`);
+      });
+    }
+  } catch {
+    // Klasör yoksa yoksay
+  }
+
+  if (pathsToRemove.size > 0) {
+    await supabase.storage
+      .from('videos')
+      .remove(Array.from(pathsToRemove))
+      .catch(() => {});
+  }
+}
+
+/**
+ * Eğer kullanıcı "Yayınla" butonuna basmadan odadan çıkarsa veya odayı kapatırsa,
+ * odanın tüm ses kayıtlarını ve veritabanı kaydını Supabase'den otomatik siler.
+ */
+export async function deleteUnpublishedRoomFromSupabase(code: string): Promise<void> {
+  const cleanCode = code.toUpperCase().trim();
+  if (!cleanCode) return;
+
+  try {
+    const { data: row } = await supabase
+      .from('game_rooms')
+      .select('code, status, recordings')
+      .eq('code', cleanCode)
+      .single<Pick<GameRoomRow, 'code' | 'status' | 'recordings'>>();
+
+    if (!row) return;
+
+    const isPublished =
+      row.status === 'published' ||
+      (row.recordings || []).some((r) => r.player === '__published_mp4__');
+
+    // Yayınlanmış bir dublajsa ana sayfada kalmaya devam etsin, silinmesin
+    if (isPublished) return;
+
+    // Yayınlanmamışsa tüm geçici ses kayıtlarını ve odayı Supabase'den sil!
+    await removeRoomStorageRecordings(cleanCode, row.recordings || []);
+    await supabase.from('game_rooms').delete().eq('code', cleanCode);
+  } catch (err) {
+    console.warn('Otomatik oda temizleme uyarısı:', err);
+  }
+}
+
+/**
+ * Arka planda yayınlanmamış eski odaları ve ses dosyalarını Supabase'den temizler.
+ */
+export async function cleanupStaleUnpublishedRooms(): Promise<void> {
+  try {
+    const cutoff = Date.now() - 25 * 60 * 1000; // 25 dakikadan eski yayınlanmamış odalar
+    const { data: staleRooms } = await supabase
+      .from('game_rooms')
+      .select('code, status, created_at, recordings')
+      .lt('created_at', cutoff)
+      .limit(25);
+
+    if (!staleRooms || staleRooms.length === 0) return;
+
+    for (const r of staleRooms) {
+      const isPublished =
+        r.status === 'published' ||
+        (r.recordings || []).some((rec: { player: string }) => rec.player === '__published_mp4__');
+      if (!isPublished) {
+        await removeRoomStorageRecordings(r.code, r.recordings || []);
+        await supabase.from('game_rooms').delete().eq('code', r.code);
+      }
+    }
+  } catch {
+    // Sessizce geç
+  }
+}
+
+/**
+ * Dublajlanan MP4 videoyu Supabase Storage'a yükler, geçici ses parçalarını siler
+ * ve ana sayfada ("Topluluk Dublajları") herkesin izleyebilmesi için yayınlar.
+ */
+export async function publishRoomDubbingToSupabase(
+  room: Room,
+  sceneTitle: string,
+  category: string,
+  posterUrl: string,
+  duration: number,
+  playersInfo: { name: string; roleName: string; roleColor: string }[],
+  mp4Blob: Blob,
+): Promise<PublishedDub> {
+  const cleanCode = room.code.toUpperCase().trim();
+  const fileName = `published/replik_${cleanCode}_${Date.now()}.mp4`;
+
+  // 1. Birleştirilmiş MP4 videoyu Supabase Storage'a yükle
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from('videos')
+    .upload(fileName, mp4Blob, {
+      cacheControl: '31536000',
+      upsert: true,
+      contentType: 'video/mp4',
+    });
+
+  if (uploadError || !uploadData) {
+    throw new Error(`Dublaj videosu yüklenemedi: ${uploadError?.message || 'Bilinmeyen hata'}`);
+  }
+
+  const { data: pubUrlData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
+  const videoUrl = pubUrlData.publicUrl;
+
+  const newEntry: PublishedDub = {
+    id: `${cleanCode}_${Date.now()}`,
+    roomCode: cleanCode,
+    sceneId: room.scene,
+    sceneTitle,
+    category: category || 'Sahne',
+    videoUrl,
+    posterUrl: posterUrl || '',
+    duration: duration || 15,
+    players: playersInfo,
+    likes: 1,
+    createdAt: Date.now(),
+  };
+
+  // 2. Geçici parça ses dosyalarını (recordings/{code}/*) Supabase Storage'dan sil (gereksiz yer kaplamasın)
+  await removeRoomStorageRecordings(cleanCode, room.recordings || []);
+
+  // 3. Odayı "published" olarak işaretle
+  await supabase
+    .from('game_rooms')
+    .update({
+      status: 'published',
+      recordings: [{ player: '__published_mp4__', segment: -1, url: videoUrl }],
+      updated_at: new Date().toISOString(),
+    })
+    .eq('code', cleanCode)
+    .catch(() => {});
+
+  // 4. Ana sayfa yayın akışı (published/feed.json) listesini güncelle
+  try {
+    const existing = await getPublishedDubsFromSupabase();
+    const filtered = existing.filter((item) => item.roomCode !== cleanCode);
+    const updatedFeed = [newEntry, ...filtered].slice(0, 60);
+
+    const feedBlob = new Blob([JSON.stringify(updatedFeed)], {
+      type: 'application/json',
+    });
+    await supabase.storage.from('videos').upload(PUBLISHED_FEED_PATH, feedBlob, {
+      cacheControl: '0',
+      upsert: true,
+      contentType: 'application/json',
+    });
+  } catch (feedErr) {
+    console.warn('Yayın akışı güncelleme uyarısı:', feedErr);
+  }
+
+  return newEntry;
+}
+
+/**
+ * Ana sayfada yayınlanan tüm topluluk dublajlarını Supabase'den getirir.
+ */
+export async function getPublishedDubsFromSupabase(): Promise<PublishedDub[]> {
+  try {
+    const { data: pubUrlData } = supabase.storage
+      .from('videos')
+      .getPublicUrl(PUBLISHED_FEED_PATH);
+
+    if (pubUrlData?.publicUrl) {
+      const res = await fetch(`${pubUrlData.publicUrl}?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const list = (await res.json()) as PublishedDub[];
+        if (Array.isArray(list)) {
+          return list.sort((a, b) => b.createdAt - a.createdAt);
+        }
+      }
+    }
+  } catch {
+    // feed.json henüz yoksa game_rooms tablosundan kontrol et
+  }
+
+  try {
+    const { data: rows } = await supabase
+      .from('game_rooms')
+      .select('*')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (!rows || rows.length === 0) return [];
+
+    return rows
+      .map((r: GameRoomRow) => {
+        const pubRec = (r.recordings || []).find((rec) => rec.player === '__published_mp4__');
+        if (!pubRec?.url) return null;
+        const sc = getSceneById(r.scene);
+        return {
+          id: `${r.code}_${r.created_at}`,
+          roomCode: r.code,
+          sceneId: r.scene,
+          sceneTitle: sc?.title || 'Dublaj Sahnesi',
+          category: sc?.category || 'Sahne',
+          videoUrl: pubRec.url,
+          posterUrl: sc?.poster || '',
+          duration: sc?.duration || 15,
+          players: (r.players || []).map((p) => ({
+            name: p.name,
+            roleName: sc?.roles?.[p.role >= 0 ? p.role : 0] || 'Oyuncu',
+            roleColor: sc?.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#d8fb51',
+          })),
+          likes: Object.values(r.reactions || {}).reduce((a, b) => a + Number(b || 0), 0) || 1,
+          createdAt: Number(r.created_at) || Date.now(),
+        };
+      })
+      .filter(Boolean) as PublishedDub[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Ana sayfadaki yayınlanmış bir dublaja beğeni (alkış/kalp) ekler.
+ */
+export async function likePublishedDubInSupabase(dubId: string): Promise<PublishedDub[]> {
+  const list = await getPublishedDubsFromSupabase();
+  const updated = list.map((item) =>
+    item.id === dubId ? { ...item, likes: (item.likes || 0) + 1 } : item,
+  );
+  const feedBlob = new Blob([JSON.stringify(updated)], { type: 'application/json' });
+  await supabase.storage.from('videos').upload(PUBLISHED_FEED_PATH, feedBlob, {
+    cacheControl: '0',
+    upsert: true,
+    contentType: 'application/json',
+  });
+  return updated;
+}
+

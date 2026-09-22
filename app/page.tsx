@@ -24,6 +24,13 @@ import {
 import Studio, { request, type Session } from './studio';
 import { getAllScenes, getCustomScenes, fallbackScene, type Scene, type Room } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
+import {
+  getPublishedDubsFromSupabase,
+  likePublishedDubInSupabase,
+  cleanupStaleUnpublishedRooms,
+  type PublishedDub,
+} from '@/lib/game-service';
+
 export default function Home() {
   const [allScenes, setAllScenes] = useState<Scene[]>(() => {
     if (typeof window !== 'undefined') {
@@ -32,6 +39,7 @@ export default function Home() {
     }
     return [];
   });
+  const [publishedDubs, setPublishedDubs] = useState<PublishedDub[]>([]);
   const [parked, setParked] = useState<{ session: Session; room: Room } | null>(
       null,
     ),
@@ -47,6 +55,12 @@ export default function Home() {
     [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
   const clip = useRef<HTMLVideoElement>(null);
   const previewAudio = useRef<HTMLAudioElement | null>(null);
+
+  async function refreshPublishedFeed() {
+    const dubs = await getPublishedDubsFromSupabase().catch(() => []);
+    setPublishedDubs(dubs);
+  }
+
   useEffect(() => {
     void getScenesFromSupabase().then((dbScenes) => {
       if (dbScenes && dbScenes.length > 0) {
@@ -55,6 +69,8 @@ export default function Home() {
         setAllScenes(getCustomScenes());
       }
     });
+    void refreshPublishedFeed();
+    void cleanupStaleUnpublishedRooms();
   }, []);
   const activeScene = allScenes[selected] || allScenes[0] || fallbackScene;
   const previewScene =
@@ -102,8 +118,10 @@ export default function Home() {
     }
   }
   function leave() {
-    setParked(game);
+    sessionStorage.removeItem('replik-session');
+    setParked(null);
     setGame(null);
+    void refreshPublishedFeed();
   }
   return (
     <div className="app-shell">
@@ -264,6 +282,89 @@ export default function Home() {
                 </span>
               </section>
             </section>
+
+            {/* TOPLULUK DUBLAJLARI: YAYINLANAN DUBLAJLAR VİTRİNİ */}
+            <section id="yayinlanan-dublajlar" className="catalog published-dubs-section">
+              <div className="section-heading">
+                <div>
+                  <div className="eyebrow">TOPLULUK VİTRİNİ · CANLI AKIŞ</div>
+                  <h2>İnsanların yaptığı dublajlar.</h2>
+                </div>
+                <span>
+                  Finalde &ldquo;Yayınla&rdquo; butonuna basılan dublajlar burada sergilenir. Yayınlanmayanlar otomatik silinir.
+                </span>
+              </div>
+
+              {publishedDubs.length === 0 ? (
+                <div className="published-empty-card">
+                  <Sparkles size={22} style={{ color: '#d8fb51' }} />
+                  <div>
+                    <strong>Henüz yayınlanmış bir dublaj yok — İlk yayınlayan sen ol!</strong>
+                    <p>
+                      Bir sahne seçip dublajını tamamla, final ekranındaki{' '}
+                      <b style={{ color: '#d8fb51' }}>&ldquo;Dublajı Ana Sayfada Yayınla&rdquo;</b> butonuna basarak videonu burada herkese izlet!
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="published-dubs-grid">
+                  {publishedDubs.map((dub) => (
+                    <article key={dub.id} className="published-dub-card">
+                      <div className="published-dub-video-wrap">
+                        <video
+                          src={dub.videoUrl}
+                          poster={dub.posterUrl || undefined}
+                          controls
+                          playsInline
+                          preload="metadata"
+                        />
+                        <span className="published-dub-badge">
+                          ODA {dub.roomCode}
+                        </span>
+                      </div>
+                      <div className="published-dub-body">
+                        <div className="published-dub-top">
+                          <div>
+                            <span className="published-dub-cat">{dub.category}</span>
+                            <h3>{dub.sceneTitle}</h3>
+                          </div>
+                          <button
+                            type="button"
+                            className="published-like-btn"
+                            onClick={async () => {
+                              setPublishedDubs((prev) =>
+                                prev.map((x) =>
+                                  x.id === dub.id ? { ...x, likes: (x.likes || 0) + 1 } : x,
+                                ),
+                              );
+                              const updated = await likePublishedDubInSupabase(dub.id).catch(
+                                () => null,
+                              );
+                              if (updated) setPublishedDubs(updated);
+                            }}
+                          >
+                            🔥 {dub.likes || 1}
+                          </button>
+                        </div>
+
+                        <div className="published-dub-players">
+                          {dub.players.map((p, idx) => (
+                            <span key={idx} className="published-player-tag">
+                              <i
+                                className="published-player-dot"
+                                style={{ background: p.roleColor || '#d8fb51' }}
+                              />
+                              <b>{p.name}</b> · <small>{p.roleName}</small>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <section id="sahneler" className="catalog">
               <div className="section-heading">
                 <h2>Bir sahne, bin ihtimal.</h2>

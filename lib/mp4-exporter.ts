@@ -138,15 +138,16 @@ function getSupportedMp4MimeType(): string | null {
 }
 
 /**
- * Dublajlı sahneyi sorunsuz bir şekilde .mp4 (video/mp4) olarak dışa aktarır ve indirir.
+ * Dublajlı sahneyi .mp4 (video/mp4) Blob olarak üretir.
+ * Hem doğrudan indirme hem de "Yayınla" (Supabase'e MP4 yükleme) için kullanılır.
  */
-export async function exportDubbedMp4({
+export async function generateDubbedMp4Blob({
   room,
   scene,
   cues,
   buffers,
   onProgress,
-}: ExportMp4Options): Promise<void> {
+}: ExportMp4Options): Promise<Blob> {
   onProgress?.(5, 'Dublaj sesleri birleştiriliyor...');
   const mixedAudioBuffer = await renderMixedDubbingAudio(scene, room, cues, buffers);
 
@@ -323,9 +324,8 @@ export async function exportDubbedMp4({
       await videoEncoder.flush();
       muxer.finalize();
       const mp4Blob = new Blob([target.buffer], { type: 'video/mp4' });
-      triggerMp4Download(mp4Blob, `replik-${room.code}.mp4`);
-      onProgress?.(100, 'MP4 İndirildi!');
-      return;
+      onProgress?.(100, 'MP4 Hazır!');
+      return mp4Blob;
     }
 
     // 2. YÖNTEM: Gerçek zamanlı yüksek kaliteli MP4 MediaRecorder + Birleştirilmiş Ses Kanalı
@@ -420,8 +420,8 @@ export async function exportDubbedMp4({
     });
 
     const finalBlob = new Blob(chunks, { type: 'video/mp4' });
-    triggerMp4Download(finalBlob, `replik-${room.code}.mp4`);
-    onProgress?.(100, 'MP4 İndirildi!');
+    onProgress?.(100, 'MP4 Hazır!');
+    return finalBlob;
   } finally {
     exportVid.pause();
     exportVid.removeAttribute('src');
@@ -430,6 +430,11 @@ export async function exportDubbedMp4({
       setTimeout(() => URL.revokeObjectURL(cleanBlobUrl), 10000);
     }
   }
+}
+
+export async function exportDubbedMp4(options: ExportMp4Options): Promise<void> {
+  const blob = await generateDubbedMp4Blob(options);
+  triggerMp4Download(blob, `replik-${options.room.code}.mp4`);
 }
 
 function triggerMp4Download(blob: Blob, filename: string) {
