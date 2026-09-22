@@ -5,9 +5,15 @@
  * Bu sayede Vercel, Cloudflare, yerel ortam ve mobilde 0 hata ile çalışır.
  */
 
-import { supabase } from './supabase';
-import type { Room, Player, ActivityItem } from './scenes';
-import { getSceneById, sceneCues } from './scenes';
+import { supabase, getScenesFromSupabase } from './supabase';
+import {
+  getSceneById,
+  sceneCues,
+  playerCues,
+  type Room,
+  type Player,
+  type ActivityItem,
+} from './scenes';
 
 export type PlayerWithToken = Player & {
   token: string;
@@ -300,11 +306,13 @@ export async function executeGameRoomAction(
 
     row.status = 'recording';
     addLog('Kayıt aşaması başladı! Sahneye çıkın!', 'system');
-  } else if (action === 'play') {
-    if (!player.host) throw new Error('Finali oda kurucusu başlatabilir.');
+  } else if (action === 'play' || action === 'finish') {
+    if (action === 'play' && !player.host) {
+      throw new Error('Finali oda kurucusu başlatabilir.');
+    }
     row.status = 'final';
-    row.play_at = Date.now() + 3500;
-    addLog('Büyük final başladı! Birlikte izleniyor...', 'system');
+    row.play_at = Date.now() + 2500;
+    addLog('Tüm replikler tamamlandı! Büyük final başlıyor, birlikte izleniyor... 🎬', 'system');
   } else if (action === 'reaction') {
     const emoji = typeof extra.emoji === 'string' ? extra.emoji : '😂';
     row.reactions = row.reactions || { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
@@ -395,20 +403,39 @@ export async function saveAudioRecording(
     url: publicUrl,
   });
 
+  // Supabase'den güncel sahne repliklerini al
+  const remoteScenes = await getScenesFromSupabase().catch(() => []);
+  const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
+  const sceneCuesList = sceneCues(row.scene, customList);
+
   const player = row.players.find((p) => p.id === playerId);
   if (player) {
     const segs = new Set(player.segments || []);
     if (segment !== null) segs.add(segment);
     player.segments = Array.from(segs);
-    player.audio = true;
   }
 
-  // Sahne replik kontrolü: Eğer tüm oyuncular sahnelerini kaydettiyse finale geç
-  const sceneCuesList = sceneCues(row.scene);
-  const totalCues = sceneCuesList.length;
+  // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını hesapla
+  const assignedCueIds = new Set<number>();
+  row.players.forEach((p, idx) => {
+    const pCues = playerCues(row.scene, idx, row.players.length, customList);
+    pCues.forEach((c) => assignedCueIds.add(c.id));
+    const pSegs = new Set(p.segments || []);
+    p.audio = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : pSegs.size > 0;
+  });
+
+  // Sahne replik kontrolü: Tüm oyuncular kendi repliklerini tamamladıysa veya tüm replikler kaydedildiyse otomatik Büyük Final'e geç ve oynatmayı başlat!
   const recordedCues = new Set(recordings.map((r) => r.segment));
-  if (recordedCues.size >= totalCues && totalCues > 0) {
+  const allPlayersFinished = row.players.length > 0 && row.players.every((p) => p.audio);
+  const allAssignedRecorded =
+    assignedCueIds.size > 0 &&
+    Array.from(assignedCueIds).every((cueId) => recordedCues.has(cueId));
+  const allSceneCuesRecorded =
+    sceneCuesList.length > 0 && recordedCues.size >= sceneCuesList.length;
+
+  if (allPlayersFinished || allAssignedRecorded || allSceneCuesRecorded) {
     row.status = 'final';
+    row.play_at = Date.now() + 2500;
   }
 
   const activities = [...(row.activities || [])];
@@ -419,6 +446,14 @@ export async function saveAudioRecording(
       time: Date.now(),
       type: 'record',
     });
+    if (row.status === 'final') {
+      activities.unshift({
+        id: crypto.randomUUID(),
+        text: 'Tüm replikler kaydedildi! Büyük Final başlıyor! 🎬',
+        time: Date.now(),
+        type: 'system',
+      });
+    }
     if (activities.length > 30) activities.length = 30;
   }
 
@@ -426,6 +461,7 @@ export async function saveAudioRecording(
     .from('game_rooms')
     .update({
       status: row.status,
+      play_at: row.play_at,
       players: row.players,
       recordings,
       activities,

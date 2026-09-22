@@ -39,3 +39,5 @@ next-env.d.ts
 /work/
 
 *.tsbuildinfo
+.venv-splitter/
+.venv/

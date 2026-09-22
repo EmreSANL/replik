@@ -978,11 +978,50 @@ audio {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 12px;
   font-size: 12px;
   letter-spacing: 1px;
   color: #a3ae94;
+}
+.cue-timebar-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.cue-wave-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  color: #c2ccb4;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.cue-wave-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.cue-wave-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cue-wave-dot.original {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+.cue-wave-dot.user {
+  background: #d8fb51;
+  box-shadow: 0 0 8px rgba(216, 251, 81, 0.65);
 }
 .cue-timebar strong {
   font-family: monospace;
@@ -1017,19 +1056,21 @@ audio {
   text-align: left;
   color: #97a286;
   user-select: none;
+  overflow: hidden;
 }
 .cue-region.own {
   cursor: pointer;
 }
 .cue-region > .cue-region-num {
   position: absolute;
-  left: 8px;
+  left: 5px;
   top: 7px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  white-space: nowrap;
 }
 .cue-region-check {
   color: #d8fb51;
@@ -1168,38 +1209,119 @@ audio {
   color: #a5b095;
 }
 .cue-steps {
-  display: flex;
-  gap: 7px;
-  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px 4px 4px 2px;
 }
-.cue-steps button {
+.cue-steps::-webkit-scrollbar {
+  width: 6px;
+}
+.cue-steps::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 999px;
+}
+.cue-steps::-webkit-scrollbar-thumb {
+  background: #3d4831;
+  border-radius: 999px;
+}
+.cue-steps button,
+.cue-step-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  background: rgba(37, 44, 30, 0.85);
+  border: 1px solid #3c4630;
+  border-radius: 11px;
+  padding: 10px 12px;
+  color: #a4af95;
+  text-align: left;
+  transition: all 0.16s ease;
+  cursor: pointer;
+}
+.cue-steps button:hover,
+.cue-step-card:hover {
+  background: #2f3b22;
+  border-color: #55663e;
+  transform: translateY(-1px);
+}
+.cue-steps button.active,
+.cue-step-card.active {
+  border-color: var(--primary);
+  background: rgba(216, 251, 81, 0.11);
+  box-shadow: 0 0 0 2px rgba(216, 251, 81, 0.18);
+  color: var(--primary);
+}
+.cue-steps button.done,
+.cue-step-card.done {
+  background: rgba(54, 71, 33, 0.65);
+  color: #e2f5b8;
+}
+.cue-steps button.done.active,
+.cue-step-card.done.active {
+  background: rgba(73, 98, 38, 0.88);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.cue-step-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-  background: #252c1e;
-  border: 1px solid #3c4630;
-  border-radius: 8px;
-  padding: 11px 5px;
-  color: #a4af95;
+  width: 100%;
 }
-.cue-steps button.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px #d8fb5122;
+.cue-step-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
   color: var(--primary);
+  background: rgba(216, 251, 81, 0.12);
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
 }
-.cue-steps button.done {
-  background: #364721;
-  color: var(--primary);
+.cue-step-time {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #b7c5a3;
+  white-space: nowrap;
 }
-.cue-steps button > span {
+.cue-step-text {
+  margin: 0;
   font-size: 12px;
+  line-height: 1.35;
+  color: #dbe4cd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
 }
-.cue-steps button strong {
-  font-size: 10px;
-  font-family: monospace;
+.turn-listen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.turn-listen-header h4 {
+  margin: 0 !important;
+}
+.turn-listen-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #d8fb51;
+  background: rgba(216, 251, 81, 0.12);
+  border: 1px solid rgba(216, 251, 81, 0.25);
+  padding: 3px 9px;
+  border-radius: 999px;
 }
 .cue-completion {
   text-align: center;

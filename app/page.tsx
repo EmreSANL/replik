@@ -46,6 +46,7 @@ export default function Home() {
     [error, setError] = useState(''),
     [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
   const clip = useRef<HTMLVideoElement>(null);
+  const previewAudio = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     void getScenesFromSupabase().then((dbScenes) => {
       if (dbScenes && dbScenes.length > 0) {
@@ -609,41 +610,83 @@ export default function Home() {
       <Dialog
         open={preview !== null}
         onOpenChange={(open) => {
-          if (!open) setPreview(null);
+          if (!open) {
+            previewAudio.current?.pause();
+            setPreview(null);
+          }
         }}
       >
         <DialogContent className="preview-dialog">
           <DialogTitle>{previewScene?.title}</DialogTitle>
           <DialogDescription>
-            {previewScene?.duration} saniye · {previewScene?.roles.length} oyuncu · Sessiz
-            önizleme
+            {previewScene?.duration} saniye · {previewScene?.roles.length} oyuncu ·{' '}
+            {previewScene?.instrumental
+              ? 'Vokalsiz (Ses Efektli M&E) Önizleme'
+              : 'Sahne Önizlemesi'}
           </DialogDescription>
           {previewScene && (
-            <video
-              key={previewScene.id}
-              ref={clip}
-              src={previewScene.video}
-              poster={previewScene.poster}
-              muted
-              playsInline
-              autoPlay
-              controls
-              onLoadedMetadata={() => {
-                if (clip.current)
-                  clip.current.currentTime = previewScene.start;
-              }}
-              onTimeUpdate={() => {
-                const v = clip.current;
-                if (
-                  v &&
-                  v.currentTime >=
-                    previewScene.start + previewScene.duration
-                ) {
-                  v.pause();
-                  v.currentTime = previewScene.start;
-                }
-              }}
-            />
+            <>
+              {previewScene.instrumental && (
+                /* oxlint-disable-next-line jsx-a11y/media-has-caption */
+                <audio
+                  key={`audio-${previewScene.id}`}
+                  ref={previewAudio}
+                  src={previewScene.instrumental}
+                  preload="auto"
+                  playsInline
+                  style={{ display: 'none' }}
+                />
+              )}
+              <video
+                key={previewScene.id}
+                ref={clip}
+                src={previewScene.video}
+                poster={previewScene.poster}
+                muted={Boolean(previewScene.instrumental)}
+                playsInline
+                autoPlay
+                controls
+                onLoadedMetadata={() => {
+                  if (clip.current) {
+                    clip.current.currentTime = previewScene.start;
+                  }
+                  if (previewAudio.current && previewScene.instrumental) {
+                    previewAudio.current.currentTime = previewScene.start;
+                    previewAudio.current.volume = 1.0;
+                    void previewAudio.current.play().catch(() => {});
+                  }
+                }}
+                onPlay={() => {
+                  if (previewAudio.current && clip.current && previewScene.instrumental) {
+                    previewAudio.current.currentTime = clip.current.currentTime;
+                    void previewAudio.current.play().catch(() => {});
+                  }
+                }}
+                onPause={() => {
+                  previewAudio.current?.pause();
+                }}
+                onSeeked={() => {
+                  if (previewAudio.current && clip.current && previewScene.instrumental) {
+                    previewAudio.current.currentTime = clip.current.currentTime;
+                  }
+                }}
+                onTimeUpdate={() => {
+                  const v = clip.current;
+                  if (
+                    v &&
+                    v.currentTime >=
+                      previewScene.start + previewScene.duration
+                  ) {
+                    v.pause();
+                    previewAudio.current?.pause();
+                    v.currentTime = previewScene.start;
+                    if (previewAudio.current) {
+                      previewAudio.current.currentTime = previewScene.start;
+                    }
+                  }
+                }}
+              />
+            </>
           )}
           <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
             <button

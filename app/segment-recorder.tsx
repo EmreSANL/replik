@@ -11,19 +11,22 @@ import {
   type Scene,
 } from '@/lib/scenes';
 import type { Session } from './studio';
-import { saveAudioRecording, getAudioRecordingUrl } from '@/lib/game-service';
+import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
-function peaksOf(buffer: AudioBuffer) {
-  const samples = buffer.getChannelData(0);
-  return Array.from({ length: 80 }, (_, i) => {
-    let peak = 0;
-    const start = Math.floor((i * samples.length) / 80),
-      end = Math.floor(((i + 1) * samples.length) / 80);
-    for (let j = start; j < end; j += 8)
-      peak = Math.max(peak, Math.abs(samples[j]));
-    return Math.min(1, peak * 2.5);
+function peaksOf(buffer: AudioBuffer, bars = 80) {
+  const data = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(data.length / bars));
+  const raw = Array.from({ length: bars }, (_, i) => {
+    let max = 0;
+    for (let j = i * step; j < Math.min(data.length, (i + 1) * step); j++) {
+      const v = Math.abs(data[j]);
+      if (v > max) max = v;
+    }
+    return max;
   });
+  const peak = Math.max(0.02, ...raw);
+  return raw.map((n) => Math.max(0.08, Math.min(1, n / peak)));
 }
 export default function SegmentRecorder({
   room,
@@ -37,16 +40,11 @@ export default function SegmentRecorder({
   customScenes?: Scene[];
 }) {
   const scene = getSceneById(room.scene, customScenes);
-  const me = room.players.find((p) => p.id === session.id) || room.players[0] || {
-    id: session.id,
-    name: 'Oyuncu',
-    host: 1,
-    role: 0,
-    ready: 1,
-    audio: false,
-    segments: [],
-  };
-  const index = Math.max(0, room.players.findIndex((p) => p.id === session.id));
+  const me = room.players.find((p) => p.id === session.id) ?? room.players[0];
+  const index = Math.max(
+    0,
+    room.players.findIndex((p) => p.id === me.id),
+  );
   const cues = sceneCues(room.scene, customScenes);
   const mine = playerCues(room.scene, index, room.players.length, customScenes);
   const [selected, setSelected] = useState<number>(() => {
@@ -59,6 +57,21 @@ export default function SegmentRecorder({
   const [takes, setTakes] = useState<Record<number, Take>>({});
   const [savedUrls, setSavedUrls] = useState<Record<number, string>>({});
   const [waves, setWaves] = useState<Record<number, number[]>>({});
+  const [originalPeaks, setOriginalPeaks] = useState<number[]>(() => {
+    const bars = 200;
+    const dur = Math.max(1, scene.duration);
+    return Array.from({ length: bars }, (_, i) => {
+      const t = ((i + 0.5) / bars) * dur;
+      const activeCue = cues.find((c) => t >= c.start && t <= c.end);
+      if (activeCue) {
+        const rel = (t - activeCue.start) / Math.max(0.1, activeCue.end - activeCue.start);
+        const env = Math.sin(rel * Math.PI);
+        const mod = 0.55 + 0.45 * Math.abs(Math.sin(i * 1.7 + activeCue.id) * Math.cos(i * 0.9));
+        return Math.max(0.16, Math.min(0.92, env * mod * 0.88 + 0.12));
+      }
+      return 0.08 + 0.08 * Math.abs(Math.sin(i * 1.3));
+    });
+  });
   const [recording, setRecording] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [playingSegment, setPlayingSegment] = useState<number | null>(null);
@@ -79,11 +92,10 @@ export default function SegmentRecorder({
       end: scene.duration || 10,
     };
   const duration = Math.max(0.1, current.end - current.start);
-  const completed = me.audio
-    ? mine.length
-    : mine.filter((c) => me.segments?.includes(c.id)).length;
+  const completed = mine.filter((c) => me.segments?.includes(c.id)).length;
   const take = takes[selected];
-  const locked = busy || recording || countdown > 0;
+  const [listeningOriginal, setListeningOriginal] = useState(false);
+  const locked = busy || recording || countdown > 0 || listeningOriginal;
   const video = useRef<HTMLVideoElement>(null);
   const recorder = useRef<MediaRecorder | null>(null),
     stream = useRef<MediaStream | null>(null),
@@ -94,17 +106,26 @@ export default function SegmentRecorder({
     urls = useRef<string[]>([]),
     loaded = useRef(new Set<number>()),
     savedAudio = useRef<HTMLAudioElement>(null),
-    segmentAudio = useRef<HTMLAudioElement | null>(null);
+    segmentAudio = useRef<HTMLAudioElement | null>(null),
+    instrumentalAudio = useRef<HTMLAudioElement | null>(null);
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
+
   function stop() {
     previewEnd.current = null;
-    video.current?.pause();
+    if (video.current) {
+      video.current.pause();
+      video.current.muted = true;
+    }
+    if (instrumentalAudio.current) {
+      instrumentalAudio.current.pause();
+    }
     if (segmentAudio.current) {
       segmentAudio.current.pause();
       segmentAudio.current.currentTime = 0;
     }
     savedAudio.current?.pause();
     setPreviewing(false);
+    setListeningOriginal(false);
     setPlayingSegment(null);
     if (timer.current) clearInterval(timer.current);
     if (recorder.current?.state === 'recording') recorder.current.stop();
@@ -138,6 +159,57 @@ export default function SegmentRecorder({
       ownedUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [video]);
+
+  // Videonun gerçek orijinal ses dalgasını (waveform) çıkart
+  useEffect(() => {
+    let active = true;
+    if (!scene.video) return;
+    void (async () => {
+      try {
+        const res = await fetch(scene.video);
+        if (!res.ok) return;
+        const buf = await res.arrayBuffer();
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const tempCtx = new Ctx();
+        try {
+          const decoded = await tempCtx.decodeAudioData(buf);
+          if (!active) return;
+          const ch0 = decoded.getChannelData(0);
+          const ch1 = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : ch0;
+          const sr = decoded.sampleRate;
+          const startIdx = Math.max(0, Math.floor(scene.start * sr));
+          const totalSamples = Math.max(
+            1,
+            Math.min(decoded.length - startIdx, Math.floor(scene.duration * sr)),
+          );
+          const bars = 200;
+          const step = Math.max(1, Math.floor(totalSamples / bars));
+          const raw = Array.from({ length: bars }, (_, i) => {
+            let max = 0;
+            const s = startIdx + i * step;
+            const e = Math.min(decoded.length, s + step);
+            for (let j = s; j < e; j++) {
+              const v = (Math.abs(ch0[j]) + Math.abs(ch1[j])) * 0.5;
+              if (v > max) max = v;
+            }
+            return max;
+          });
+          const maxPeak = Math.max(0.02, ...raw);
+          const normalized = raw.map((n) => Math.max(0.06, Math.min(1, n / maxPeak)));
+          if (active) setOriginalPeaks(normalized);
+        } finally {
+          void tempCtx.close().catch(() => {});
+        }
+      } catch {
+        // Fallback waveform remains active
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [scene.video, scene.start, scene.duration]);
   const segmentKey = me.segments.join(',');
   useEffect(() => {
     let cancelled = false;
@@ -209,6 +281,12 @@ export default function SegmentRecorder({
       previewEnd.current = scene.start + current.end;
       setPosition(current.start);
       setPreviewing(true);
+      // Önizlemede videonun ORİJİNAL sesini oynat (instrumentalAudio kapalı)
+      if (instrumentalAudio.current) {
+        instrumentalAudio.current.pause();
+      }
+      v.muted = false;
+      v.volume = 1.0;
       await v.play();
     } catch (e) {
       setError((e as Error).message);
@@ -267,26 +345,29 @@ export default function SegmentRecorder({
     setError('');
 
     try {
-      const v = await seek(scene.start + c.start);
-      if (!mounted.current) return;
+      // Kendi sesimizi dinlerken VİDEO OYNATILMAZ ve arka plan müziği çalmaz!
+      if (video.current) {
+        video.current.pause();
+        video.current.currentTime = scene.start + c.start;
+      }
+      if (instrumentalAudio.current) {
+        instrumentalAudio.current.pause();
+      }
 
       const a = segmentAudio.current;
       if (a) {
         a.src = audioUrl;
         a.currentTime = 0;
+        setPosition(c.start);
         await a.play();
       }
-      previewEnd.current = scene.start + c.end;
-      setPosition(c.start);
-      await v.play();
 
       timer.current = setInterval(() => {
-        if (!v || !mounted.current) return;
-        const currentPos = v.currentTime - scene.start;
+        if (!a || !mounted.current) return;
+        const currentPos = Math.min(c.end, c.start + a.currentTime);
         setPosition(currentPos);
-        if (v.currentTime >= scene.start + c.end || (a && a.ended)) {
+        if (a.ended || a.currentTime >= c.end - c.start) {
           stop();
-          v.currentTime = scene.start + c.start;
           setPosition(c.start);
         }
       }, 25);
@@ -313,7 +394,46 @@ export default function SegmentRecorder({
         media.getTracks().forEach((t) => t.stop());
         return;
       }
+
+      // 1. ADIM: İlk başta replik yapılacak kısım videonun ORİJİNAL SESİYLE oynatılsın
       const v = await seek(scene.start + current.start);
+      if (!mounted.current) return;
+      if (instrumentalAudio.current) {
+        instrumentalAudio.current.pause();
+      }
+      setListeningOriginal(true);
+      setPosition(current.start);
+      v.muted = false;
+      v.volume = 1.0;
+      await v.play();
+
+      await new Promise<void>((resolve) => {
+        const checkOriginalEnd = setInterval(() => {
+          if (!mounted.current || !video.current) {
+            clearInterval(checkOriginalEnd);
+            resolve();
+            return;
+          }
+          setPosition(video.current.currentTime - scene.start);
+          if (video.current.currentTime >= scene.start + current.end || video.current.paused) {
+            clearInterval(checkOriginalEnd);
+            video.current.pause();
+            resolve();
+          }
+        }, 25);
+      });
+
+      if (!mounted.current) {
+        media.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      setListeningOriginal(false);
+
+      // 2. ADIM: Videoyu başa sar, sesi kapat ve oyuncunun repliğini dublaj olarak kaydet!
+      v.muted = true;
+      await seek(scene.start + current.start);
+      setPosition(current.start);
+
       audioContext.current ??= new AudioContext();
       await audioContext.current.resume();
       for (let n = 3; n > 0; n--) {
@@ -354,8 +474,12 @@ export default function SegmentRecorder({
           .catch(() =>
             setError('Ses önizlemesi hazırlanamadı. Tekrar kaydet.'),
           );
+        // Kayıt biter bitmez otomatik olarak sunucuya kaydet ve sıradaki repliğe (veya son replikse Büyük Final'e) geç!
+        void save(id, blob);
       };
       recorder.current = r;
+      // Kayıt sırasında orijinal ses kapalı, sadece görüntü oynatılır (oyuncu dublajını yapar)
+      v.muted = true;
       await v.play();
       if (!mounted.current) return;
       r.start();
@@ -371,6 +495,7 @@ export default function SegmentRecorder({
       }, 25);
     } catch (e) {
       stream.current?.getTracks().forEach((t) => t.stop());
+      setListeningOriginal(false);
       setCountdown(0);
       setError(
         (e as Error).name === 'NotAllowedError'
@@ -381,8 +506,8 @@ export default function SegmentRecorder({
       if (mounted.current) setBusy(false);
     }
   }
-  async function save() {
-    if (!take) return;
+  async function save(targetId = selected, targetBlob = take?.blob) {
+    if (!targetBlob) return;
     stop();
     savedAudio.current?.pause();
     setBusy(true);
@@ -393,8 +518,8 @@ export default function SegmentRecorder({
         const res = await saveAudioRecording(
           room.code,
           session.id,
-          selected,
-          take.blob,
+          targetId,
+          targetBlob,
         );
         updatedRoom = res.room;
       } catch (err) {
@@ -402,13 +527,13 @@ export default function SegmentRecorder({
       }
 
       if (!updatedRoom) {
-        const r = await fetch(`${api}?segment=${selected}`, {
+        const r = await fetch(`${api}?segment=${targetId}`, {
           method: 'PUT',
           headers: {
             Authorization: `Bearer ${session.token}`,
-            'Content-Type': take.blob.type,
+            'Content-Type': targetBlob.type,
           },
-          body: take.blob,
+          body: targetBlob,
         });
         const data = (await r.json()) as { room: Room; error?: string };
         if (!r.ok) throw new Error(data.error);
@@ -416,17 +541,34 @@ export default function SegmentRecorder({
       }
 
       onRoom(updatedRoom);
+      const myUpdatedSegs =
+        updatedRoom.players.find((p) => p.id === me.id)?.segments || [];
       const next = mine.find(
-        (c) =>
-          c.id !== selected &&
-          !updatedRoom!.players
-            .find((p) => p.id === me.id)!
-            .segments.includes(c.id),
+        (c) => c.id !== targetId && !myUpdatedSegs.includes(c.id),
       );
       if (next) {
         setSelected(next.id);
         setPosition(next.start);
         if (video.current) video.current.currentTime = scene.start + next.start;
+      } else {
+        // Bu oyuncunun tüm replikleri bitti; odadaki diğer oyuncular da bitirdiyse hemen Büyük Final'e geç
+        const everyoneDone = updatedRoom.players.every((p, idx) => {
+          const pAssigned = playerCues(
+            room.scene,
+            idx,
+            updatedRoom!.players.length,
+            customScenes,
+          );
+          return pAssigned.every((c) => p.segments?.includes(c.id));
+        });
+        if (everyoneDone && updatedRoom.status !== 'final') {
+          const finalRoom = await executeGameRoomAction(
+            room.code,
+            session.token,
+            'finish',
+          ).catch(() => null);
+          if (finalRoom) onRoom(finalRoom);
+        }
       }
     } catch (e) {
       setError((e as Error).message);
@@ -448,6 +590,17 @@ export default function SegmentRecorder({
         aria-hidden="true"
         style={{ display: 'none' }}
       />
+      {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+      {scene.instrumental && (
+        <audio
+          ref={instrumentalAudio}
+          src={scene.instrumental}
+          preload="auto"
+          playsInline
+          aria-hidden="true"
+          style={{ display: 'none' }}
+        />
+      )}
       <div className={`video-wrap ${recording ? 'recording-active-glow' : ''}`}>
         <video
           ref={video}
@@ -481,24 +634,34 @@ export default function SegmentRecorder({
           <p className="video-subtitle-line">“{current.text}”</p>
         </div>
 
+        {listeningOriginal && (
+          <div
+            className="active-recording-pill"
+            style={{ background: 'rgba(14, 165, 233, 0.92)', borderColor: '#38bdf8' }}
+          >
+            <span className="recording-dot" style={{ background: '#fff' }} />
+            <span>1. ADIM: ORİJİNAL REPLİK OYNATILIYOR · {timeLabel(position)}</span>
+          </div>
+        )}
+
         {countdown > 0 && (
           <div className="recording-countdown-overlay">
             <div className="countdown-number">{countdown}</div>
-            <span className="countdown-sub">Hazırlan, kayıt başlıyor!</span>
+            <span className="countdown-sub">Şimdi sıra sende! Dublaj kaydı başlıyor…</span>
           </div>
         )}
 
         {recording && (
           <div className="active-recording-pill">
             <span className="recording-dot" />
-            <span>KAYIT · {current.roleName.toUpperCase()} · {timeLabel(position)}</span>
+            <span>2. ADIM: DUBLAJ KAYDI · {current.roleName.toUpperCase()} · {timeLabel(position)}</span>
           </div>
         )}
       </div>
 
       <div className="cue-editor">
         {/* Eğer oyuncu tüm repliklerini tamamladıysa Dublaj.io "Sıra Kimde?" Paneli göster */}
-        {completed >= mine.length && !recording && !countdown ? (
+        {completed >= mine.length && !recording && !countdown && !listeningOriginal ? (
           <div className="turn-tracker-card">
             <div className="turn-tracker-header">
               <span className="turn-tracker-badge">
@@ -510,8 +673,10 @@ export default function SegmentRecorder({
 
             <div className="turn-players-list">
               {room.players.map((p, pIdx) => {
-                const pAssigned = playerCues(room.scene, pIdx, room.players.length);
-                const pDone = p.audio || p.segments.length >= pAssigned.length;
+                const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes);
+                const pDone = pAssigned.length > 0
+                  ? pAssigned.every((c) => p.segments?.includes(c.id))
+                  : p.audio;
                 const pPct = pDone
                   ? 100
                   : Math.round((p.segments.length / Math.max(1, pAssigned.length)) * 100);
@@ -558,21 +723,65 @@ export default function SegmentRecorder({
               })}
             </div>
 
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const finalRoom = await executeGameRoomAction(
+                      room.code,
+                      session.token,
+                      'finish',
+                    );
+                    onRoom(finalRoom);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                style={{ width: '100%', justifyContent: 'center', padding: '14px 20px', fontSize: '15px' }}
+              >
+                <Play size={18} fill="currentColor" /> Bitmiş Halini Şimdi İzle (Büyük Final) 🎬
+              </button>
+            </div>
+
             <div className="turn-listen-box">
-              <h4>Kaydettiğin Replikleri Dinle</h4>
+              <div className="turn-listen-header">
+                <h4>Kaydettiğin Replikleri Dinle</h4>
+                <span className="turn-listen-count">{mine.length} Replik</span>
+              </div>
               <div className="cue-steps">
-                {mine.map((c, i) => (
-                  <button
-                    disabled={locked}
-                    key={c.id}
-                    onClick={() => select(c.id)}
-                    className={`${Number(c.id) === Number(selected) ? 'active' : ''} done`}
-                    aria-label={`${i + 1}. repliğin`}
-                  >
-                    <span><Check size={14} /></span>
-                    <strong>{timeLabel(c.start)} — {timeLabel(c.end)}</strong>
-                  </button>
-                ))}
+                {mine.map((c, i) => {
+                  const isSelected = Number(c.id) === Number(selected);
+                  return (
+                    <button
+                      type="button"
+                      disabled={locked}
+                      key={c.id}
+                      onClick={() => select(c.id)}
+                      className={`cue-step-card ${isSelected ? 'active' : ''} done`}
+                      aria-label={`${i + 1}. repliğin`}
+                    >
+                      <div className="cue-step-top">
+                        <span className="cue-step-badge">
+                          <Check size={12} strokeWidth={2.5} /> #{String(i + 1).padStart(2, '0')}
+                        </span>
+                        <strong className="cue-step-time">
+                          {timeLabel(c.start)} – {timeLabel(c.end)}
+                        </strong>
+                      </div>
+                      {c.text && (
+                        <p className="cue-step-text" title={c.text}>
+                          “{c.text}”
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {(take || savedUrls[selected]) && (
@@ -584,6 +793,10 @@ export default function SegmentRecorder({
                     ref={savedAudio}
                     src={take?.url ?? savedUrls[selected]}
                     aria-label="Kaydını dinle"
+                    onPlay={() => {
+                      video.current?.pause();
+                      instrumentalAudio.current?.pause();
+                    }}
                   />
                   <button
                     className="secondary"
@@ -606,7 +819,17 @@ export default function SegmentRecorder({
         ) : (
           <>
             <div className="cue-timebar">
-              <span>SAHNE ZAMAN ÇİZELGESİ</span>
+              <div className="cue-timebar-left">
+                <span>SAHNE ZAMAN ÇİZELGESİ</span>
+                <div className="cue-wave-legend">
+                  <span className="cue-wave-legend-item">
+                    <i className="cue-wave-dot original" /> Orijinal Video Sesi
+                  </span>
+                  <span className="cue-wave-legend-item">
+                    <i className="cue-wave-dot user" /> Senin Kaydın
+                  </span>
+                </div>
+              </div>
               <strong>
                 {timeLabel(position)} <span>/ {timeLabel(scene.duration)}</span>
               </strong>
@@ -615,18 +838,42 @@ export default function SegmentRecorder({
               <svg
                 viewBox="0 0 1000 100"
                 preserveAspectRatio="none"
-                aria-label="Kayıtların ses dalgası"
+                aria-label="Orijinal video ve kayıtların ses dalgası"
               >
                 <line
                   x1="0"
                   y1="50"
                   x2="1000"
                   y2="50"
-                  stroke="#4c5444"
+                  stroke="#3b4336"
                   strokeWidth="1"
                 />
+                {/* 1. Katman: Videonun Orijinal Ses Dalgası (Turkuaz / Mavi) */}
+                <g className="original-waveform-layer">
+                  {originalPeaks.map((peak, i) => {
+                    const x = ((i + 0.5) / originalPeaks.length) * 1000;
+                    const t = ((i + 0.5) / originalPeaks.length) * Math.max(1, scene.duration);
+                    const coveredByUserWave = cues.some(
+                      (c) => t >= c.start && t <= c.end && (waves[c.id]?.length ?? 0) > 0,
+                    );
+                    return (
+                      <line
+                        key={`orig-${i}`}
+                        x1={x}
+                        x2={x}
+                        y1={50 - peak * 36}
+                        y2={50 + peak * 36}
+                        stroke={coveredByUserWave ? 'rgba(56, 189, 248, 0.32)' : 'rgba(56, 189, 248, 0.72)'}
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      />
+                    );
+                  })}
+                </g>
+
+                {/* 2. Katman: Kullanıcının Kaydettiği Ses Dalgası (Neon Yeşil / Sarı - Üst Katman) */}
                 {cues.map((c) => (
-                  <g key={c.id}>
+                  <g key={c.id} className="user-waveform-layer">
                     {(waves[c.id] ?? []).map((peak, i) => (
                       <line
                         key={i}
@@ -640,32 +887,36 @@ export default function SegmentRecorder({
                             Math.max(1, scene.duration)) *
                           1000
                         }
-                        y1={50 - peak * 44}
-                        y2={50 + peak * 44}
-                        stroke={Number(c.id) === Number(selected) ? '#d8fb51' : '#839776'}
-                        strokeWidth="2"
+                        y1={50 - peak * 43}
+                        y2={50 + peak * 43}
+                        stroke={
+                          Number(c.id) === Number(selected)
+                            ? '#d8fb51'
+                            : mine.some((m) => Number(m.id) === Number(c.id))
+                              ? '#34d399'
+                              : '#a3e635'
+                        }
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
                       />
                     ))}
                   </g>
                 ))}
               </svg>
               {cues.map((c, cIndex) => {
-                const own = mine.some((x) => Number(x.id) === Number(c.id));
+                const own = mine.some((m) => Number(m.id) === Number(c.id));
                 const hasRecorded =
-                  own &&
-                  Boolean(
-                    takes[c.id] ||
-                      savedUrls[c.id] ||
-                      me.segments?.includes(c.id),
-                  );
-                const isPlayingThis = playingSegment === c.id;
+                  Boolean(takes[c.id]) ||
+                  Boolean(savedUrls[c.id]) ||
+                  Boolean(me.segments?.includes(c.id));
+                const isPlayingThis = Number(playingSegment) === Number(c.id);
 
                 return (
                   <div
-                    key={c.id}
                     role="button"
                     tabIndex={own && !locked ? 0 : -1}
-                    className={`cue-region ${Number(c.id) === Number(selected) ? 'selected' : ''} ${own ? 'own' : 'other'} ${hasRecorded ? 'has-recording' : ''}`}
+                    key={c.id}
+                    className={`cue-region ${own ? 'own' : ''} ${Number(c.id) === Number(selected) ? 'selected' : ''} ${me.segments?.includes(c.id) ? 'done' : ''} ${isPlayingThis ? 'playing-segment' : ''}`}
                     style={{
                       left: `${(c.start / Math.max(1, scene.duration)) * 100}%`,
                       width: `${((c.end - c.start) / Math.max(1, scene.duration)) * 100}%`,
@@ -728,11 +979,18 @@ export default function SegmentRecorder({
                 <span key={n}>{timeLabel(scene.duration * n)}</span>
               ))}
             </div>
-            {countdown > 0 ? (
+            {listeningOriginal ? (
+              <div className="cue-countdown" style={{ borderColor: '#38bdf8' }}>
+                <strong style={{ color: '#38bdf8', fontSize: '18px' }}>🔊 Orijinal Sahne</strong>
+                <span>
+                  Önce orijinal replik oynatılıyor ({timeLabel(current.start)} → {timeLabel(current.end)}), hemen ardından dublaj kaydın başlayacak!
+                </span>
+              </div>
+            ) : countdown > 0 ? (
               <div className="cue-countdown">
                 <strong>{countdown}</strong>
                 <span>
-                  Hazırlan. {timeLabel(current.start)} konumunda kayıt başlayacak.
+                  Şimdi sıra sende! {timeLabel(current.start)} konumunda dublaj kaydın başlıyor.
                 </span>
               </div>
             ) : recording ? (
@@ -753,7 +1011,7 @@ export default function SegmentRecorder({
               >
                 <Mic size={19} />
                 {take || me.segments?.includes(selected)
-                  ? 'Bu repliği yeniden kaydet'
+                  ? 'Bu repliği yeniden kaydet (Önce Orijinal Sesi Dinletir)'
                   : mine.length > 1
                     ? `Şimdi seslendir (Replik ${Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1}/${mine.length})`
                     : 'Şimdi seslendir'}
@@ -762,7 +1020,7 @@ export default function SegmentRecorder({
                 </span>
               </button>
             )}
-            {(take || savedUrls[selected]) && !recording && !countdown && (
+            {(take || savedUrls[selected]) && !recording && !countdown && !listeningOriginal && (
               <div className="cue-review">
                 <span>Son kaydın — Replik {Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1} ({current.roleName})</span>
                 {/* Player-created speech has no automatic transcript. */}
@@ -774,11 +1032,16 @@ export default function SegmentRecorder({
                   aria-label="Kaydını dinle"
                   onPlay={() => {
                     if (playingSegment !== null) stop();
+                    video.current?.pause();
+                    instrumentalAudio.current?.pause();
                   }}
                 />
-                {take && !me.audio && (
-                  <button className="primary" disabled={busy} onClick={save}>
-                    Kaydı onayla ve sıradakine geç <ArrowRight size={17} />
+                {take && (
+                  <button className="primary" disabled={busy} onClick={() => void save()}>
+                    {mine.filter((c) => c.id !== selected && !me.segments?.includes(c.id)).length === 0
+                      ? 'Son Kaydı Onayla ve Bitmiş Halini İzle 🎬'
+                      : 'Kaydı Onayla ve Sıradaki Repliğe Geç'}
+                    <ArrowRight size={17} />
                   </button>
                 )}
               </div>
@@ -789,7 +1052,7 @@ export default function SegmentRecorder({
               disabled={locked}
             >
               {previewing ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
-              {previewing ? 'Önizlemeyi durdur' : 'Seçili bölümü tekrar izle'}
+              {previewing ? 'Önizlemeyi durdur' : 'Seçili bölümü orijinal sesiyle izle'}
             </button>
           </>
         )}

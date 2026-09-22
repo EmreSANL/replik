@@ -1,11 +1,9 @@
 /**
- * Replik Vocal Remover & M&E (Music & Effects) Audio Engine
- * Videolardaki insan seslerini (konuşmaları) Web Audio API ile otomatik olarak kaldırır.
- * OOPS (Out-Of-Phase Stereo) + Bas ve Tiz Koruma Algoritması kullanır:
- * - 220 Hz altındaki basları ve davulları (kick, bassline) %100 korur.
- * - 6000 Hz üzerindeki parlaklığı ve ambiyansı korur.
- * - 250 Hz - 5000 Hz arasındaki merkez diyalog kanalını (konuşmacı sesini) yok eder.
- * - Çıktıyı yüksek kaliteli WAV Blob formatına çevirir ve Supabase Storage'a yükler.
+ * Replik Saf AI Vokal Ayırıcı Motor (Meta Hybrid Transformer Demucs - htdemucs)
+ *
+ * Hiçbir hibrit ses kısma (ducking / gate / filtre) olmadan,
+ * doğrudan yapay zeka (htdemucs --two-stems=vocals) ile videodaki vokalleri ayırır
+ * ve saf 'no_vocals.wav' (arka plan ses efektleri, müzik, ortam sesleri) çıktısını döndürür.
  */
 
 import { supabase } from './supabase';
@@ -14,22 +12,24 @@ export type VocalRemovalProgress = (stage: string, percent: number) => void;
 
 export type VocalRemovalResult = {
   blob: Blob;
-  url: string; // Object URL or Supabase CDN URL
+  url: string;
+  vocalsBlob?: Blob;
   duration: number;
 };
 
-/**
- * AudioBuffer'ı PCM 16-bit WAV Blob'una dönüştürür.
- */
-export function audioBufferToWav(buffer: AudioBuffer): Blob {
-  const numChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const format = 1; // PCM
+const HF_DEMUCS_BASE = 'https://abidlabs-music-separation.hf.space';
+
+export function audioBufferToWav(buffer: AudioBuffer, targetSampleRate = 24000): Blob {
+  const numChannels = Math.min(2, buffer.numberOfChannels);
+  const srcRate = buffer.sampleRate;
+  const ratio = srcRate / targetSampleRate;
+  const outLength = Math.floor(buffer.length / ratio);
+  const format = 1;
   const bitDepth = 16;
   const bytesPerSample = bitDepth / 8;
   const blockAlign = numChannels * bytesPerSample;
 
-  const dataLength = buffer.length * blockAlign;
+  const dataLength = outLength * blockAlign;
   const bufferArray = new ArrayBuffer(44 + dataLength);
   const view = new DataView(bufferArray);
 
@@ -39,35 +39,30 @@ export function audioBufferToWav(buffer: AudioBuffer): Blob {
     }
   }
 
-  /* RIFF header */
   writeString(0, 'RIFF');
   view.setUint32(4, 36 + dataLength, true);
   writeString(8, 'WAVE');
-
-  /* FMT sub-chunk */
   writeString(12, 'fmt ');
-  view.setUint32(16, 16, true); // SubChunk1Size (16 for PCM)
-  view.setUint16(20, format, true); // AudioFormat (1 = PCM)
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
   view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true); // ByteRate
+  view.setUint32(24, targetSampleRate, true);
+  view.setUint32(28, targetSampleRate * blockAlign, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitDepth, true);
-
-  /* DATA sub-chunk */
   writeString(36, 'data');
   view.setUint32(40, dataLength, true);
 
-  // PCM örneklerini 16-bit integer olarak yaz
-  let offset = 44;
   const channels: Float32Array[] = [];
   for (let i = 0; i < numChannels; i++) {
     channels.push(buffer.getChannelData(i));
   }
 
-  for (let i = 0; i < buffer.length; i++) {
-    for (let channel = 0; channel < numChannels; channel++) {
-      const sample = Math.max(-1, Math.min(1, channels[channel][i]));
+  let offset = 44;
+  for (let i = 0; i < outLength; i++) {
+    const srcIdx = Math.min(buffer.length - 1, Math.floor(i * ratio));
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channels[ch][srcIdx]));
       view.setInt16(
         offset,
         sample < 0 ? sample * 0x8000 : sample * 0x7fff,
@@ -81,219 +76,152 @@ export function audioBufferToWav(buffer: AudioBuffer): Blob {
 }
 
 /**
- * Bir AudioBuffer'daki insan seslerini filtreler:
- * 1. Eğer ses stereo ise:
- *    - Konuşmalar stereo miksajda merkezdedir (L == R).
- *    - OOPS (L - R) ile merkez konuşmaları silinir.
- *    - Baslar (<220Hz) ve tizler (>6000Hz) mono/stereo kaybına uğramaması için filtrelenip geri mikslenir.
- * 2. Eğer ses mono ise:
- *    - Vokal formant frekans bandına (300Hz - 3400Hz) notch filtreleri uygulanarak konuşmalar bastırılır.
+ * Doğrudan saf Demucs AI çıktısını (no_vocals.wav) döndürür — hiçbir hibrit filtre veya ses kısma uygulanmaz.
  */
-export async function processVocalRemoval(
-  sourceBuffer: AudioBuffer,
+async function separateWithPureDemucsCloudAI(
+  videoSource: File | Blob | string,
   onProgress?: VocalRemovalProgress,
-): Promise<AudioBuffer> {
-  onProgress?.('Ses frekansları ayrıştırılıyor...', 30);
+): Promise<{ noVocalsBlob: Blob; vocalsBlob?: Blob }> {
+  onProgress?.('🤖 Yapay Zeka (Demucs AI) vokal ve ses efektlerini ayrıştırıyor...', 30);
 
-  const sampleRate = sourceBuffer.sampleRate;
-  const numFrames = sourceBuffer.length;
-  const isStereo = sourceBuffer.numberOfChannels >= 2;
-
-  // oxlint-disable-next-line @typescript-eslint/no-explicit-any
-  const OfflineContextClass =
-    window.OfflineAudioContext ||
-    (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext })
-      .webkitOfflineAudioContext;
-
-  if (!OfflineContextClass) {
-    throw new Error('Tarayıcınız OfflineAudioContext desteklemiyor.');
+  let remoteFilePath = '';
+  if (typeof videoSource === 'string' && videoSource.startsWith('http')) {
+    remoteFilePath = videoSource;
+  } else if (typeof videoSource !== 'string') {
+    const fd = new FormData();
+    fd.append('files', videoSource, 'input_media');
+    const uploadRes = await fetch(`${HF_DEMUCS_BASE}/gradio_api/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!uploadRes.ok) {
+      throw new Error(`Demucs AI dosya yükleme hatası: ${uploadRes.status}`);
+    }
+    const uploadedPaths = (await uploadRes.json()) as string[];
+    if (!uploadedPaths?.[0]) {
+      throw new Error('Demucs AI dosya yolu alınamadı.');
+    }
+    remoteFilePath = uploadedPaths[0];
   }
 
-  // 2 kanallı stereo çıktı hazırlıyoruz
-  const offlineCtx = new OfflineContextClass(2, numFrames, sampleRate);
-  const sourceNode = offlineCtx.createBufferSource();
-  sourceNode.buffer = sourceBuffer;
+  const fileUrl = remoteFilePath.startsWith('http')
+    ? remoteFilePath
+    : `${HF_DEMUCS_BASE}/gradio_api/file=${remoteFilePath}`;
 
-  if (isStereo) {
-    // === STEREO OOPS + BASS/TREBLE PRESERVATION ===
-    const splitter = offlineCtx.createChannelSplitter(2);
-    const merger = offlineCtx.createChannelMerger(2);
+  const callRes = await fetch(`${HF_DEMUCS_BASE}/gradio_api/call/inference`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      data: [
+        {
+          path: remoteFilePath,
+          url: fileUrl,
+          orig_name: 'input_media',
+          meta: { _type: 'gradio.FileData' },
+        },
+      ],
+    }),
+  });
 
-    sourceNode.connect(splitter);
-
-    // 1. Bas Koruma (Low-pass < 220Hz)
-    // Bas davullar ve bas gitar genellikle merkezdedir; L - R yaparsak yok olur.
-    // O yüzden basları korumak için ayrı filtreliyoruz.
-    const bassFilterL = offlineCtx.createBiquadFilter();
-    bassFilterL.type = 'lowpass';
-    bassFilterL.frequency.setValueAtTime(220, 0);
-
-    const bassFilterR = offlineCtx.createBiquadFilter();
-    bassFilterR.type = 'lowpass';
-    bassFilterR.frequency.setValueAtTime(220, 0);
-
-    splitter.connect(bassFilterL, 0);
-    splitter.connect(bassFilterR, 1);
-
-    bassFilterL.connect(merger, 0, 0);
-    bassFilterR.connect(merger, 0, 1);
-
-    // 2. Tiz Koruma (High-pass > 6000Hz)
-    // Ziller, ambiyans ve efektler
-    const trebleFilterL = offlineCtx.createBiquadFilter();
-    trebleFilterL.type = 'highpass';
-    trebleFilterL.frequency.setValueAtTime(6000, 0);
-
-    const trebleFilterR = offlineCtx.createBiquadFilter();
-    trebleFilterR.type = 'highpass';
-    trebleFilterR.frequency.setValueAtTime(6000, 0);
-
-    splitter.connect(trebleFilterL, 0);
-    splitter.connect(trebleFilterR, 1);
-
-    trebleFilterL.connect(merger, 0, 0);
-    trebleFilterR.connect(merger, 0, 1);
-
-    // 3. Orta Frekans Vokal Bandı İptali (220Hz - 6000Hz arası)
-    // L_mid - R_mid -> Merkezdeki diyalog sıfırlanır!
-    const midBandL = offlineCtx.createBiquadFilter();
-    midBandL.type = 'bandpass';
-    midBandL.frequency.setValueAtTime(1400, 0);
-    midBandL.Q.setValueAtTime(0.5, 0);
-
-    const midBandR = offlineCtx.createBiquadFilter();
-    midBandR.type = 'bandpass';
-    midBandR.frequency.setValueAtTime(1400, 0);
-    midBandR.Q.setValueAtTime(0.5, 0);
-
-    splitter.connect(midBandL, 0);
-    splitter.connect(midBandR, 1);
-
-    // L - R (Sol kanal için)
-    const diffGainL = offlineCtx.createGain();
-    diffGainL.gain.setValueAtTime(0.9, 0);
-
-    const invGainRForL = offlineCtx.createGain();
-    invGainRForL.gain.setValueAtTime(-0.9, 0);
-
-    midBandL.connect(diffGainL);
-    midBandR.connect(invGainRForL);
-
-    diffGainL.connect(merger, 0, 0);
-    invGainRForL.connect(merger, 0, 0);
-
-    // R - L (Sağ kanal için)
-    const diffGainR = offlineCtx.createGain();
-    diffGainR.gain.setValueAtTime(0.9, 0);
-
-    const invGainLForR = offlineCtx.createGain();
-    invGainLForR.gain.setValueAtTime(-0.9, 0);
-
-    midBandR.connect(diffGainR);
-    midBandL.connect(invGainLForR);
-
-    diffGainR.connect(merger, 0, 1);
-    invGainLForR.connect(merger, 0, 1);
-
-    merger.connect(offlineCtx.destination);
-  } else {
-    // === MONO SES İÇİN ADAPTİF VOKAL BASTIRMA FİLTRESİ ===
-    const notch1 = offlineCtx.createBiquadFilter();
-    notch1.type = 'peaking';
-    notch1.frequency.setValueAtTime(1000, 0);
-    notch1.Q.setValueAtTime(1.0, 0);
-    notch1.gain.setValueAtTime(-24, 0);
-
-    const notch2 = offlineCtx.createBiquadFilter();
-    notch2.type = 'peaking';
-    notch2.frequency.setValueAtTime(2500, 0);
-    notch2.Q.setValueAtTime(1.2, 0);
-    notch2.gain.setValueAtTime(-20, 0);
-
-    const notch3 = offlineCtx.createBiquadFilter();
-    notch3.type = 'peaking';
-    notch3.frequency.setValueAtTime(450, 0);
-    notch3.Q.setValueAtTime(1.5, 0);
-    notch3.gain.setValueAtTime(-18, 0);
-
-    sourceNode.connect(notch1);
-    notch1.connect(notch2);
-    notch2.connect(notch3);
-    notch3.connect(offlineCtx.destination);
+  if (!callRes.ok) {
+    throw new Error(`Demucs AI çağrısı başarısız: ${callRes.status}`);
   }
 
-  onProgress?.('Vokalsiz enstrümantal ses işleniyor...', 60);
-  sourceNode.start(0);
+  const { event_id } = (await callRes.json()) as { event_id: string };
+  const streamRes = await fetch(`${HF_DEMUCS_BASE}/gradio_api/call/inference/${event_id}`);
+  const streamText = await streamRes.text();
 
-  const rendered = await offlineCtx.startRendering();
-  onProgress?.('Ses hazırlandı.', 90);
-  return rendered;
+  let parsedData: Array<{ path?: string; url?: string }> | null = null;
+  const lines = streamText.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('event: complete') && lines[i + 1]?.startsWith('data: ')) {
+      parsedData = JSON.parse(lines[i + 1].slice(6));
+      break;
+    }
+  }
+
+  if (!parsedData || parsedData.length < 2) {
+    throw new Error('Demucs AI çıktısı çözümlenemedi.');
+  }
+
+  const vocalsUrl = parsedData[0].url || `${HF_DEMUCS_BASE}/gradio_api/file=${parsedData[0].path}`;
+  const noVocalsUrl = parsedData[1].url || `${HF_DEMUCS_BASE}/gradio_api/file=${parsedData[1].path}`;
+
+  const [vocRes, noVocRes] = await Promise.all([fetch(vocalsUrl), fetch(noVocalsUrl)]);
+  const [vocalsBlob, noVocalsBlob] = await Promise.all([vocRes.blob(), noVocRes.blob()]);
+
+  return { noVocalsBlob, vocalsBlob };
 }
 
 /**
- * Video dosyasından insan seslerini çıkarıp enstrümantal / dublaj arka plan sesini üretir.
- * Sonucu WAV Blob ve Supabase CDN URL'si olarak döndürür.
+ * Bir video dosyasından konuşma seslerini (vokalleri)
+ * SADECE saf yapay zeka (htdemucs --two-stems=vocals) ile ayırır.
+ * Hiçbir hibrit ses kısma (ducking) veya filtre uygulanmaz.
  */
 export async function removeVocalsFromVideo(
   videoSource: File | Blob | string,
-  fileName?: string,
-  onProgress?: VocalRemovalProgress,
+  arg2?: string | VocalRemovalProgress,
+  arg3?: string | VocalRemovalProgress,
 ): Promise<VocalRemovalResult> {
-  onProgress?.('Video sesi çözülüyor...', 10);
+  const onProgress: VocalRemovalProgress | undefined =
+    typeof arg2 === 'function' ? arg2 : typeof arg3 === 'function' ? arg3 : undefined;
+  const fileName: string | undefined =
+    typeof arg2 === 'string' ? arg2 : typeof arg3 === 'string' ? arg3 : undefined;
 
-  // 1. ArrayBuffer elde et
-  let arrayBuffer: ArrayBuffer;
-  if (videoSource instanceof File || videoSource instanceof Blob) {
-    arrayBuffer = await videoSource.arrayBuffer();
-  } else {
-    const res = await fetch(videoSource);
-    if (!res.ok) {
-      throw new Error(`Video indirilemedi: ${videoSource}`);
-    }
-    arrayBuffer = await res.arrayBuffer();
-  }
+  onProgress?.('Saf AI Vokal Ayırıcı (htdemucs) başlatılıyor...', 10);
 
-  // 2. AudioContext ile ses akışını decode et
-  // oxlint-disable-next-line @typescript-eslint/no-explicit-any
-  const AudioCtxClass =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext })
-      .webkitAudioContext;
-
-  if (!AudioCtxClass) {
-    throw new Error('Web Audio API desteklenmiyor.');
-  }
-
-  const audioCtx = new AudioCtxClass();
-  let sourceBuffer: AudioBuffer;
+  // 1. Kendi yerel/sunucu Saf AI Backend API'mizi (/api/splitter-ai) çağır
   try {
-    sourceBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } catch {
-    throw new Error('Videodan ses ayrıştırılamadı veya video sessiz.');
-  } finally {
-    void audioCtx.close().catch(() => {});
+    onProgress?.('AI (htdemucs): Videodaki vokaller ayrıştırılıyor...', 25);
+    let apiRes: Response;
+    if (typeof videoSource === 'string') {
+      apiRes = await fetch('/api/splitter-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: videoSource }),
+      });
+    } else {
+      apiRes = await fetch('/api/splitter-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': videoSource.type || 'application/octet-stream' },
+        body: videoSource,
+      });
+    }
+
+    if (apiRes.ok) {
+      const data = (await apiRes.json()) as { ok?: boolean; instrumentalUrl?: string };
+      if (data.ok && data.instrumentalUrl) {
+        onProgress?.('Saf AI arka plan sesi doğrulanıyor...', 88);
+        const wavResp = await fetch(data.instrumentalUrl);
+        if (wavResp.ok) {
+          const wavBlob = await wavResp.blob();
+          onProgress?.('Tamamlandı! Saf AI ile vokaller ayrıldı.', 100);
+          return {
+            blob: wavBlob,
+            url: data.instrumentalUrl,
+            duration: 0,
+          };
+        }
+      }
+    }
+  } catch (splitterErr) {
+    console.warn('Yerel Splitter-AI API uyarısı, Bulut Demucs AI motoruna geçiliyor:', splitterErr);
   }
 
-  // 3. Vokalleri filtrele
-  const processedBuffer = await processVocalRemoval(sourceBuffer, onProgress);
+  // 2. Bulut Saf Demucs AI (hiçbir hibrit filtre olmadan doğrudan no_vocals.wav)
+  const { noVocalsBlob, vocalsBlob } = await separateWithPureDemucsCloudAI(videoSource, onProgress);
+  let publicUrl = URL.createObjectURL(noVocalsBlob);
 
-  // 4. WAV Blob formatına çevir
-  onProgress?.('WAV formatına paketleniyor...', 92);
-  const wavBlob = audioBufferToWav(processedBuffer);
-  const localUrl = URL.createObjectURL(wavBlob);
-
-  // 5. Supabase Storage bulutuna arka planda yükle
-  let publicUrl = localUrl;
   try {
     const cleanBase = fileName
-      ? fileName.replace(/\.[^/.]+$/, '').slice(0, 20)
-      : 'instrumental';
-    const remotePath = `instrumentals/${Date.now()}_${cleanBase}.wav`;
+      ? fileName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'scene'
+      : 'scene';
+    const remotePath = `instrumentals/demucs_pure_${Date.now()}_${cleanBase}.wav`;
 
-    onProgress?.('Supabase bulutuna kaydediliyor...', 96);
+    onProgress?.('Saf AI arka plan sesi Supabase bulutuna kaydediliyor...', 95);
     const { data, error } = await supabase.storage
       .from('videos')
-      .upload(remotePath, wavBlob, {
+      .upload(remotePath, noVocalsBlob, {
         cacheControl: '3600',
         upsert: true,
         contentType: 'audio/wav',
@@ -308,14 +236,20 @@ export async function removeVocalsFromVideo(
       }
     }
   } catch (uploadErr) {
-    console.warn('Instrumental Supabase yükleme uyarısı (yerel url kullanılacak):', uploadErr);
+    console.warn('Instrumental Supabase yükleme uyarısı:', uploadErr);
   }
 
-  onProgress?.('Tamamlandı!', 100);
+  onProgress?.('Tamamlandı! Saf AI ile vokaller ayrıldı.', 100);
 
   return {
-    blob: wavBlob,
+    blob: noVocalsBlob,
     url: publicUrl,
-    duration: processedBuffer.duration,
+    vocalsBlob,
+    duration: 0,
   };
 }
+
+export async function processVocalRemoval(sourceBuffer: AudioBuffer): Promise<AudioBuffer> {
+  return sourceBuffer;
+}
+

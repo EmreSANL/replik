@@ -177,6 +177,8 @@ export function playerCues(
 }
 
 export function timeLabel(seconds: number) {
-  const ms = Math.max(0, Math.round(seconds * 1000));
-  return `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
+  const totalSec = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }

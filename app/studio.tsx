@@ -32,6 +32,7 @@ import {
   type Scene,
 } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
+import { removeVocalsFromVideo } from '@/lib/vocal-remover';
 import {
   createGameRoom,
   joinGameRoom,
@@ -127,6 +128,7 @@ export default function Studio({
     [scenePickerOpen, setScenePickerOpen] = useState(false),
     [roleRevealOpen, setRoleRevealOpen] = useState(false),
     [autoplayPrompt, setAutoplayPrompt] = useState(false),
+    [lobbyPlaying, setLobbyPlaying] = useState(false),
     [playbackTime, setPlaybackTime] = useState(0),
     [activeSubtitle, setActiveSubtitle] = useState<{
       roleName: string;
@@ -136,6 +138,7 @@ export default function Studio({
     } | null>(null);
 
   const video = useRef<HTMLVideoElement>(null),
+    lobbyAudio = useRef<HTMLAudioElement | null>(null),
     ctx = useRef<AudioContext | null>(null),
     masterGain = useRef<GainNode | null>(null),
     buffers = useRef<Map<string, AudioBuffer>>(new Map()),
@@ -144,12 +147,12 @@ export default function Studio({
     playStop = useRef<ReturnType<typeof setTimeout> | null>(null),
     exportStop = useRef<ReturnType<typeof setTimeout> | null>(null),
     exportRecorder = useRef<MediaRecorder | null>(null),
-    frame = useRef(0),
-    mounted = useRef(true),
     subtitleInterval = useRef<ReturnType<typeof setInterval> | null>(null),
+    frame = useRef(0),
+    clockOffset = useRef(0),
+    mounted = useRef(true),
     prevStatus = useRef(initial.status);
 
-  const clockOffset = useRef(0);
   useEffect(() => {
     clockOffset.current = initial.serverNow - Date.now();
   }, [initial.serverNow]);
@@ -158,23 +161,31 @@ export default function Studio({
     if (typeof window !== 'undefined') return getCustomScenes();
     return [];
   });
+
+  // Supabase'den özel sahneleri senkronize et
   useEffect(() => {
-    void getScenesFromSupabase().then((sc) => {
-      if (sc && sc.length > 0) setCustomScenes(sc);
+    void getScenesFromSupabase().then((remoteScenes) => {
+      if (remoteScenes && remoteScenes.length > 0 && mounted.current) {
+        setCustomScenes(remoteScenes);
+      }
     });
-  }, []);
+  }, [room.scene]);
 
   const scene = getSceneById(room.scene, customScenes),
-    me = room.players.find((p) => p.id === session.id)!,
+    me = room.players.find((p) => p.id === session.id) ?? room.players[0],
     slotDuration = scene.duration / Math.max(1, room.players.length),
     cues = sceneCues(room.scene, customScenes);
 
   const api = `/api/rooms/${session.code}`;
 
-  // Karakter tanıtım kartını oyun başlangıcında göster
+  // Lobi -> Kayıt geçişinde "Rolün Belli Oldu!" sinematik ekranını otomatik aç
   useEffect(() => {
     if (prevStatus.current === 'lobby' && room.status === 'recording') {
       setRoleRevealOpen(true);
+    }
+    if (room.status !== 'lobby') {
+      setLobbyPlaying(false);
+      lobbyAudio.current?.pause();
     }
     prevStatus.current = room.status;
   }, [room.status]);
@@ -194,19 +205,35 @@ export default function Studio({
         await ctx.current.resume().catch(() => {});
       }
 
+      const instKey = `__scene_instrumental__:${scene.id}`;
       // Sahnenin insan sesleri temizlenmiş enstrümantal / M&E parçasını preload et
-      if (scene.instrumental && !buffers.current.has('__scene_instrumental__')) {
-        try {
-          const r = await fetch(scene.instrumental);
-          if (r.ok) {
-            const buf = await r.arrayBuffer();
+      if (!buffers.current.has(instKey)) {
+        if (scene.instrumental) {
+          try {
+            const r = await fetch(scene.instrumental);
+            if (r.ok) {
+              const buf = await r.arrayBuffer();
+              if (buf.byteLength > 0 && ctx.current) {
+                const decoded = await ctx.current.decodeAudioData(buf);
+                buffers.current.set(instKey, decoded);
+              }
+            }
+          } catch (instErr) {
+            console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
+          }
+        }
+        // Eğer sahnenin hazır M&E parçası yoksa doğrudan Saf AI (/api/splitter-ai) ile vokalleri ayır
+        if (!buffers.current.has(instKey) && scene.video && ctx.current) {
+          try {
+            const aiRes = await removeVocalsFromVideo(scene.video);
+            const buf = await aiRes.blob.arrayBuffer();
             if (buf.byteLength > 0 && ctx.current) {
               const decoded = await ctx.current.decodeAudioData(buf);
-              buffers.current.set('__scene_instrumental__', decoded);
+              buffers.current.set(instKey, decoded);
             }
+          } catch (fallbackErr) {
+            console.warn('Saf AI M&E ses ayrıştırma uyarısı:', fallbackErr);
           }
-        } catch (instErr) {
-          console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
         }
       }
 
@@ -386,21 +413,20 @@ export default function Studio({
 
       if (audio && masterGain.current) {
         // 1. Orijinal arka plan müziği & ses efektleri (İnsan sesleri temizlenmiş M&E track)
-        if (scene.instrumental) {
-          const instBuffer = buffers.current.get('__scene_instrumental__');
-          if (instBuffer) {
-            const instSource = audio.createBufferSource();
-            instSource.buffer = instBuffer;
-            const instGain = audio.createGain();
-            // Arka plan müziğinin ses seviyesini oyuncuların seslerinin arkasında dengeli tutmak için 0.75 gain
-            instGain.gain.setValueAtTime(0.75, audio.currentTime);
-            instSource.connect(instGain);
-            instGain.connect(masterGain.current);
-            const instDuration = Math.max(0, Math.min(instBuffer.duration - late, scene.duration - late));
-            if (instDuration > 0) {
-              instSource.start(now, late, instDuration);
-              sources.current.push(instSource);
-            }
+        const instBuffer = buffers.current.get(`__scene_instrumental__:${scene.id}`);
+        let instGain: GainNode | null = null;
+        if (instBuffer) {
+          const instSource = audio.createBufferSource();
+          instSource.buffer = instBuffer;
+          instGain = audio.createGain();
+          // Silah sesleri, çevre sesleri ve efektler net duyulsun diye baz ses 1.0
+          instGain.gain.setValueAtTime(1.0, now);
+          instSource.connect(instGain);
+          instGain.connect(masterGain.current);
+          const instDuration = Math.max(0, Math.min(instBuffer.duration - late, scene.duration - late));
+          if (instDuration > 0) {
+            instSource.start(now, late, instDuration);
+            sources.current.push(instSource);
           }
         }
 
@@ -422,10 +448,14 @@ export default function Studio({
             const skip = Math.max(0, late - track.at),
               duration = Math.min(buffer.duration, track.length) - skip;
             if (duration <= 0) return;
+            const startAt = now + Math.max(0, track.at - late);
             const source = audio.createBufferSource();
             source.buffer = buffer;
-            source.connect(masterGain.current!);
-            source.start(now + Math.max(0, track.at - late), skip, duration);
+            const voiceGain = audio.createGain();
+            voiceGain.gain.setValueAtTime(1.15, now);
+            source.connect(voiceGain);
+            voiceGain.connect(masterGain.current!);
+            source.start(startAt, skip, duration);
             sources.current.push(source);
           });
         });
@@ -474,42 +504,48 @@ export default function Studio({
   const scheduledPlay = useEffectEvent(playFinal);
 
   useEffect(() => {
-    if (
-      room.status !== 'final' ||
-      !room.playAt ||
-      seenPlay.current === room.playAt
-    )
-      return;
+    if (room.status !== 'final') return;
 
-    const remaining = room.playAt - Date.now() - clockOffset.current;
-    if (remaining < -scene.duration * 1000) {
-      seenPlay.current = room.playAt;
-      return;
-    }
+    const targetPlayAt = room.playAt || -1;
+    if (seenPlay.current === targetPlayAt) return;
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const effectivePlayAt =
+      room.playAt && room.playAt > Date.now() - 5000
+        ? room.playAt
+        : Date.now() + 1800;
+
+    const remaining = Math.max(
+      0,
+      effectivePlayAt - Date.now() - (room.playAt ? clockOffset.current : 0),
+    );
 
     const update = () =>
       setCountdown(
         Math.max(
           0,
-          Math.ceil((room.playAt - Date.now() - clockOffset.current) / 1000),
+          Math.ceil(
+            (effectivePlayAt -
+              Date.now() -
+              (room.playAt ? clockOffset.current : 0)) /
+              1000,
+          ),
         ),
       );
     update();
     const tick = setInterval(update, 100);
 
-    const timer = setTimeout(
-      () => {
-        seenPlay.current = room.playAt;
-        clearInterval(tick);
-        setCountdown(0);
-        scheduledPlay(
-          Math.max(0, (Date.now() + clockOffset.current - room.playAt) / 1000),
-        ).catch(() => {
+    const timer = setTimeout(() => {
+      seenPlay.current = targetPlayAt;
+      clearInterval(tick);
+      setCountdown(0);
+      loadAudio()
+        .then(() => scheduledPlay(0))
+        .catch(() => {
           setAutoplayPrompt(true);
         });
-      },
-      Math.max(0, remaining),
-    );
+    }, remaining);
 
     return () => {
       clearTimeout(timer);
@@ -677,6 +713,17 @@ export default function Studio({
                   }
                 }}
               >
+                {scene.instrumental && (
+                  /* oxlint-disable-next-line jsx-a11y/media-has-caption */
+                  <audio
+                    ref={lobbyAudio}
+                    src={scene.instrumental}
+                    preload="auto"
+                    playsInline
+                    onEnded={() => setLobbyPlaying(false)}
+                    style={{ display: 'none' }}
+                  />
+                )}
                 <video
                   ref={video}
                   src={scene.video}
@@ -697,10 +744,65 @@ export default function Studio({
                       !playing &&
                       video.current &&
                       video.current.currentTime > scene.start + scene.duration
-                    )
+                    ) {
                       video.current.pause();
+                      lobbyAudio.current?.pause();
+                      setLobbyPlaying(false);
+                    }
                   }}
                 />
+
+                {room.status === 'lobby' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const v = video.current;
+                      if (!v) return;
+                      if (lobbyPlaying) {
+                        v.pause();
+                        lobbyAudio.current?.pause();
+                        setLobbyPlaying(false);
+                      } else {
+                        v.currentTime = scene.start;
+                        if (lobbyAudio.current && scene.instrumental) {
+                          lobbyAudio.current.currentTime = scene.start;
+                          lobbyAudio.current.volume = 1.0;
+                          void lobbyAudio.current.play().catch(() => {});
+                        } else {
+                          v.muted = false;
+                        }
+                        void v.play().catch(() => {});
+                        setLobbyPlaying(true);
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      bottom: '14px',
+                      right: '14px',
+                      zIndex: 10,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 14px',
+                      borderRadius: '999px',
+                      background: 'rgba(20, 21, 17, 0.85)',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255, 255, 255, 0.16)',
+                      color: '#fff',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {lobbyPlaying ? <Pause size={15} /> : <Volume2 size={15} />}
+                    {lobbyPlaying
+                      ? 'Önizlemeyi Durdur'
+                      : scene.instrumental
+                        ? 'Sahneyi Dinle (Vokalsiz Efektli)'
+                        : 'Sahneyi Önizle'}
+                  </button>
+                )}
 
                 {/* Tarayıcı otomatik oynatmayı engellediğinde çıkan uyarı */}
                 {autoplayPrompt && (
