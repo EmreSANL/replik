@@ -12,7 +12,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import type { Cue, RoleInfo } from './scenes';
+import { type Cue, type RoleInfo, CHARACTER_PALETTE, getCharacterColor } from './scenes';
 import { extractAudioFromVideo } from './audio-extractor';
 import {
   enhanceSpeechAudio,
@@ -227,7 +227,7 @@ function smartGroupWhisperChunks(
       id: Date.now() + index,
       roleIndex: roleIdx,
       roleName: role?.name || `Karakter ${roleIdx + 1}`,
-      roleColor: role?.color || '#d8fb51',
+      roleColor: getCharacterColor(roleIdx, role?.color),
       start: snapped.start,
       end: snapped.end,
       text: rawText,
@@ -380,7 +380,7 @@ export function useWhisper() {
               id: Date.now() + idx,
               roleIndex: roleIdx,
               roleName: role?.name || `Karakter ${roleIdx + 1}`,
-              roleColor: role?.color || '#d8fb51',
+              roleColor: getCharacterColor(roleIdx, role?.color),
               start,
               end,
               text,

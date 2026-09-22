@@ -31,6 +31,7 @@ import {
   playerCues,
   getSceneById,
   getCustomScenes,
+  getCharacterColor,
   type Room,
   type Scene,
 } from '@/lib/scenes';
@@ -684,7 +685,7 @@ export default function Studio({
       const playersInfo = room.players.map((p) => ({
         name: p.name,
         roleName: scene.roles?.[p.role >= 0 ? p.role : 0] || 'Oyuncu',
-        roleColor: scene.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#9E8CA9',
+        roleColor: getCharacterColor(p.role >= 0 ? p.role : 0, scene.roleDetails?.[p.role >= 0 ? p.role : 0]?.color),
       }));
 
       await publishRoomDubbingToSupabase(

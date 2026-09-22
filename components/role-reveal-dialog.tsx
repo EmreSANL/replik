@@ -10,6 +10,7 @@ import {
   getSceneById,
   playerCues,
   sceneCues,
+  getCharacterColor,
   type Room,
   type Scene,
 } from '@/lib/scenes';
@@ -144,7 +145,7 @@ export default function RoleRevealDialog({
                   const pRoleGroup = new Map<string, { color: string; count: number }>();
                   pCues.forEach((c) => {
                     const name = c.roleName || scene.roles?.[idx % Math.max(1, scene.roles.length)] || `${idx + 1}. Karakter`;
-                    const color = c.roleColor || '#9E8CA9';
+                    const color = getCharacterColor(c.roleIndex ?? idx, c.roleColor);
                     const curr = pRoleGroup.get(name) || { color, count: 0 };
                     curr.count += 1;
                     pRoleGroup.set(name, curr);

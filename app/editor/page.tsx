@@ -29,11 +29,15 @@ import {
   Minimize2,
   Scissors,
   Layers,
+  Palette,
 } from 'lucide-react';
 import {
   type Scene,
   type Cue,
   type RoleInfo,
+  CHARACTER_PALETTE,
+  getCharacterColor,
+  ensureDistinctRoleColors,
   getAllScenes,
   sceneCues,
   saveCustomScene,
@@ -51,11 +55,6 @@ import {
   getScenesFromSupabase,
   deleteSceneFromSupabase,
 } from '@/lib/supabase';
-
-const COLOR_PALETTE = [
-  '#9E8CA9',
-  '#AEA932',
-];
 
 function waveformFromAudio(channel: Float32Array): number[] {
   const barCount = 140;
@@ -117,13 +116,13 @@ export default function EditorPage() {
     {
       id: 0,
       name: '1. Karakter',
-      color: '#9E8CA9',
+      color: CHARACTER_PALETTE[0],
       description: 'İlk konuşan karakter',
     },
     {
       id: 1,
       name: '2. Karakter',
-      color: '#AEA932',
+      color: CHARACTER_PALETTE[1],
       description: 'İkinci karakter',
     },
   ]);
@@ -658,15 +657,20 @@ export default function EditorPage() {
 
   // Karakter Ekle
   const addRole = () => {
-    if (roles.length >= 6) {
-      showToast('Maksimum 6 karakter eklenebilir.');
+    if (roles.length >= 8) {
+      showToast('Maksimum 8 karakter eklenebilir.');
       return;
     }
     const id = roles.length;
+    const usedColors = new Set(roles.map((r) => r.color?.toLowerCase()));
+    let nextColor = CHARACTER_PALETTE.find((c) => !usedColors.has(c.toLowerCase()));
+    if (!nextColor) {
+      nextColor = CHARACTER_PALETTE[id % CHARACTER_PALETTE.length];
+    }
     const newRole: RoleInfo = {
       id,
       name: `${id + 1}. Karakter`,
-      color: COLOR_PALETTE[id % COLOR_PALETTE.length],
+      color: nextColor,
       description: 'Karakter rol açıklaması',
     };
     setRoles((prev) => [...prev, newRole]);
@@ -959,24 +963,39 @@ export default function EditorPage() {
       setDuration(sc.duration || 20);
 
       // Karakterler / Roller
+      let currentRoles: RoleInfo[] = [];
       if (sc.roleDetails && sc.roleDetails.length > 0) {
-        setRoles(sc.roleDetails);
+        currentRoles = ensureDistinctRoleColors(sc.roleDetails);
+        setRoles(currentRoles);
       } else if (sc.roles && sc.roles.length > 0) {
-        setRoles(
-          sc.roles.map((r, i) => ({
-            id: i,
-            name: typeof r === 'string' ? r : (r as unknown as RoleInfo).name,
-            color: COLOR_PALETTE[i % COLOR_PALETTE.length],
-            description: '',
-          })),
-        );
+        currentRoles = sc.roles.map((r, i) => ({
+          id: i,
+          name: typeof r === 'string' ? r : (r as unknown as RoleInfo).name,
+          color: CHARACTER_PALETTE[i % CHARACTER_PALETTE.length],
+          description: '',
+        }));
+        setRoles(currentRoles);
+      } else {
+        currentRoles = [
+          { id: 0, name: '1. Karakter', color: CHARACTER_PALETTE[0], description: '' },
+          { id: 1, name: '2. Karakter', color: CHARACTER_PALETTE[1], description: '' },
+        ];
+        setRoles(currentRoles);
       }
 
       // Replikler (Cue'lar): Varsa doğrudan al, yoksa varsayılan replik şablonunu üret
-      const loadedCues =
+      const rawLoadedCues =
         sc.cues && sc.cues.length > 0
           ? sc.cues
           : sceneCues(sc.id, supabaseScenes);
+      const loadedCues = rawLoadedCues.map((c) => {
+        const r = currentRoles[c.roleIndex ?? 0] || currentRoles[0];
+        return {
+          ...c,
+          roleName: r ? r.name : c.roleName,
+          roleColor: r ? r.color : getCharacterColor(c.roleIndex ?? 0, c.roleColor),
+        };
+      });
       setCues(loadedCues);
       if (loadedCues.length > 0) {
         setSelectedCueId(loadedCues[0].id);
@@ -1035,13 +1054,13 @@ export default function EditorPage() {
       {
         id: 0,
         name: '1. Karakter',
-        color: '#9E8CA9',
+        color: CHARACTER_PALETTE[0],
         description: 'İlk konuşan karakter',
       },
       {
         id: 1,
         name: '2. Karakter',
-        color: '#AEA932',
+        color: CHARACTER_PALETTE[1],
         description: 'İkinci karakter',
       },
     ]);
@@ -1749,14 +1768,17 @@ export default function EditorPage() {
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span
-                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm ring-1 ring-white/20"
-                                style={{ backgroundColor: role.color }}
+                                className="w-3 h-3 rounded-md shrink-0 shadow-sm ring-1 ring-white/30"
+                                style={{
+                                  backgroundColor: role.color,
+                                  boxShadow: `0 0 8px ${role.color}88`,
+                                }}
                               />
                               <div className="flex flex-col min-w-0">
                                 <span className="text-xs font-extrabold text-white truncate max-w-[85px] sm:max-w-[105px]">
                                   {role.name}
                                 </span>
-                                <span className="text-[10px] text-[#9E8CA9] font-mono">
+                                <span className="text-[10px] text-[#B8B8AE] font-mono">
                                   {roleCues.length} replik
                                 </span>
                               </div>
@@ -1914,8 +1936,8 @@ export default function EditorPage() {
                                     style={{
                                       left: `${leftPct}%`,
                                       width: `${widthPct}%`,
-                                      backgroundColor: isSelected ? '#F5E636' : (cue.roleColor || role.color || '#9E8CA9'),
-                                      borderColor: isSelected ? '#F5E636' : (cue.roleColor || role.color || '#9E8CA9'),
+                                      backgroundColor: isSelected ? '#F5E636' : (cue.roleColor || role.color || getCharacterColor(roleIdx)),
+                                      borderColor: isSelected ? '#F5E636' : (cue.roleColor || role.color || getCharacterColor(roleIdx)),
                                       zIndex: isSelected ? 20 : 10,
                                     }}
                                     onPointerDown={(e) => {
@@ -2133,7 +2155,7 @@ export default function EditorPage() {
 
           {/* ADIM 2: KARAKTERLER */}
           <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                   2
@@ -2142,47 +2164,92 @@ export default function EditorPage() {
                   Karakterler ({roles.length})
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={addRole}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <Plus size={14} /> Karakter Ekle
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = roles.map((r, i) => ({
+                      ...r,
+                      color: CHARACTER_PALETTE[i % CHARACTER_PALETTE.length],
+                    }));
+                    setRoles(updated);
+                    setCues((prev) =>
+                      prev.map((c) => {
+                        const r = updated.find((role) => role.id === c.roleIndex);
+                        return r ? { ...c, roleColor: r.color } : c;
+                      }),
+                    );
+                    showToast('Karakter renkleri canlı ve benzersiz olarak yenilendi.');
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[#22221E] hover:bg-[#32322C] text-[#B8B8AE] hover:text-[#F4F4E9] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
+                  title="Tüm karakterlere benzersiz canlı renkler ata"
+                >
+                  <Palette size={13} />
+                  <span className="hidden sm:inline">Renkleri Yenile</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={addRole}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Plus size={14} /> Karakter Ekle
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {roles.map((role) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+              {roles.map((role, idx) => (
                 <div
-                  key={role.id}
-                  className="bg-[#090909] border border-[#383832] rounded-xl px-3 py-2 flex items-center gap-2"
+                  key={role.id ?? idx}
+                  className="bg-[#090909] border border-[#383832] hover:border-[#4c4c44] rounded-xl p-2.5 flex items-center gap-2.5 transition-all shadow-sm group"
                 >
-                  <input
-                    type="color"
-                    value={role.color}
-                    onChange={(e) =>
-                      updateRole(role.id, { color: e.target.value })
-                    }
-                    className="w-5 h-5 rounded-full border-0 cursor-pointer bg-transparent p-0 shrink-0"
-                    title="Karakter Rengi"
-                  />
-                  <input
-                    type="text"
-                    value={role.name}
-                    onChange={(e) =>
-                      updateRole(role.id, { name: e.target.value })
-                    }
-                    className="w-full bg-transparent text-xs font-bold text-[#F4F4E9] focus:outline-none"
-                    placeholder="Karakter Adı"
-                  />
+                  {/* Renk Seçici Butonu / Swatch */}
+                  <label
+                    className="relative w-6 h-6 rounded-lg shrink-0 cursor-pointer border border-white/30 shadow-md flex items-center justify-center transition-transform hover:scale-110 active:scale-95 overflow-hidden ring-1 ring-black/50"
+                    style={{
+                      backgroundColor: role.color,
+                      boxShadow: `0 0 10px ${role.color}45`,
+                    }}
+                    title="Karakter Rengini Değiştir (Tıkla)"
+                  >
+                    <input
+                      type="color"
+                      value={role.color}
+                      onChange={(e) =>
+                        updateRole(role.id, { color: e.target.value })
+                      }
+                      className="absolute -top-4 -left-4 w-16 h-16 opacity-0 cursor-pointer"
+                    />
+                  </label>
+
+                  {/* Karakter Adı */}
+                  <div className="flex-1 flex items-center min-w-0">
+                    <span
+                      className="text-[11px] font-black mr-1.5 shrink-0 select-none"
+                      style={{ color: role.color }}
+                    >
+                      {idx + 1}.
+                    </span>
+                    <input
+                      type="text"
+                      value={role.name}
+                      onChange={(e) =>
+                        updateRole(role.id, { name: e.target.value })
+                      }
+                      className="w-full bg-transparent text-xs font-bold text-[#F4F4E9] focus:outline-none focus:text-white placeholder:text-[#666]"
+                      placeholder="Karakter Adı"
+                    />
+                  </div>
+
+                  {/* Karakter Sil */}
                   {roles.length > 1 && (
                     <button
                       type="button"
                       onClick={() =>
                         setRoles((prev) => prev.filter((r) => r.id !== role.id))
                       }
-                      className="text-[#B8B8AE] hover:text-[#FA5636] p-0.5 transition cursor-pointer"
-                      title="Sil"
+                      className="text-[#666] hover:text-[#FA5636] p-1 rounded hover:bg-[#FA5636]/15 transition cursor-pointer shrink-0"
+                      title="Karakteri Sil"
                     >
                       <X size={14} />
                     </button>

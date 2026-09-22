@@ -26,6 +26,57 @@ export const CUSTOM_SCENES_STORAGE_KEY = 'replik_custom_scenes_v1';
 
 export const scenes: Scene[] = [];
 
+export const CHARACTER_PALETTE = [
+  '#3B82F6', // 1: Canlı Mavi (Blue)
+  '#10B981', // 2: Zümrüt Yeşili (Emerald)
+  '#F59E0B', // 3: Canlı Kehribar (Amber)
+  '#EC4899', // 4: Canlı Fuşya/Pembe (Pink)
+  '#8B5CF6', // 5: Parlak Mor (Purple)
+  '#06B6D4', // 6: Camgöbeği/Turkuaz (Cyan)
+  '#F97316', // 7: Mercan Turuncusu (Orange)
+  '#EAB308', // 8: Altın Sarısı (Yellow)
+  '#6366F1', // 9: Çivit Mavisi (Indigo)
+  '#14B8A6', // 10: Nane Yeşili (Teal)
+  '#D946EF', // 11: Canlı Magenta (Fuchsia)
+  '#84CC16', // 12: Lime Yeşili (Lime)
+];
+
+export function getCharacterColor(index: number, existingColor?: string): string {
+  const clean = existingColor?.trim();
+  if (
+    clean &&
+    clean !== '#9E8CA9' &&
+    clean !== '#AEA932' &&
+    clean !== '#FA5636' &&
+    clean !== '#d8fb51'
+  ) {
+    return clean;
+  }
+  return CHARACTER_PALETTE[Math.max(0, index) % CHARACTER_PALETTE.length];
+}
+
+export function ensureDistinctRoleColors(roleDetails: RoleInfo[]): RoleInfo[] {
+  const seen = new Set<string>();
+  return roleDetails.map((role, idx) => {
+    let color = role.color?.trim();
+    if (
+      !color ||
+      color === '#9E8CA9' ||
+      color === '#AEA932' ||
+      color === '#FA5636' ||
+      seen.has(color.toLowerCase())
+    ) {
+      color = CHARACTER_PALETTE[idx % CHARACTER_PALETTE.length];
+    }
+    seen.add(color.toLowerCase());
+    return {
+      ...role,
+      id: typeof role.id === 'number' ? role.id : idx,
+      color,
+    };
+  });
+}
+
 export const fallbackScene: Scene = {
   id: 0,
   title: 'Sahne Yok',
@@ -37,8 +88,8 @@ export const fallbackScene: Scene = {
   mood: 'Lütfen bir sahne seçin veya editörden video yükleyin.',
   roles: ['1. Karakter', '2. Karakter'],
   roleDetails: [
-    { id: 0, name: '1. Karakter', color: '#9E8CA9', description: '' },
-    { id: 1, name: '2. Karakter', color: '#AEA932', description: '' },
+    { id: 0, name: '1. Karakter', color: CHARACTER_PALETTE[0], description: '' },
+    { id: 1, name: '2. Karakter', color: CHARACTER_PALETTE[1], description: '' },
   ],
   prompts: [],
 };
@@ -152,11 +203,14 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
           ...c,
           roleIndex: balancedIdx,
           roleName: detail ? detail.name : roles[balancedIdx] || `Karakter ${balancedIdx + 1}`,
-          roleColor: detail ? detail.color : c.roleColor || '#9E8CA9',
+          roleColor: detail ? getCharacterColor(balancedIdx, detail.color) : getCharacterColor(balancedIdx, c.roleColor),
         };
       });
     }
-    return rawCues;
+    return rawCues.map((c) => ({
+      ...c,
+      roleColor: getCharacterColor(c.roleIndex ?? 0, c.roleColor),
+    }));
   }
 
   const lines =
@@ -173,7 +227,7 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
       id,
       roleIndex: roleIdx,
       roleName: detail ? detail.name : roles[roleIdx] || `Karakter ${roleIdx + 1}`,
-      roleColor: detail ? detail.color : '#9E8CA9',
+      roleColor: detail ? getCharacterColor(roleIdx, detail.color) : getCharacterColor(roleIdx),
       text,
       start: Number((id * step).toFixed(2)),
       end: Number(((id + 1) * step).toFixed(2)),
