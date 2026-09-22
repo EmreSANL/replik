@@ -4,3 +4,7 @@ node_modules
 .venv-splitter
 .venv
 .git
+.wrangler
+dist
+work
+*.tsbuildinfo
