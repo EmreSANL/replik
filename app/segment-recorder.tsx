@@ -45,8 +45,9 @@ export default function SegmentRecorder({
     0,
     room.players.findIndex((p) => p.id === me.id),
   );
+  const preferredRoles = room.players.map((p) => p.role);
   const cues = sceneCues(room.scene, customScenes);
-  const mine = playerCues(room.scene, index, room.players.length, customScenes);
+  const mine = playerCues(room.scene, index, room.players.length, customScenes, preferredRoles);
   const [selected, setSelected] = useState<number>(() => {
     const unrecorded = mine.find((c) => !me.segments?.includes(c.id));
     if (unrecorded) return unrecorded.id;
@@ -552,12 +553,14 @@ export default function SegmentRecorder({
         if (video.current) video.current.currentTime = scene.start + next.start;
       } else {
         // Bu oyuncunun tüm replikleri bitti; odadaki diğer oyuncular da bitirdiyse hemen Büyük Final'e geç
+        const updatedPreferredRoles = updatedRoom.players.map((p) => p.role);
         const everyoneDone = updatedRoom.players.every((p, idx) => {
           const pAssigned = playerCues(
             room.scene,
             idx,
             updatedRoom!.players.length,
             customScenes,
+            updatedPreferredRoles,
           );
           return pAssigned.every((c) => p.segments?.includes(c.id));
         });
@@ -607,7 +610,7 @@ export default function SegmentRecorder({
         <div className="stage-role-table-header">
           <span>🎭 KARAKTER & REPLİK DAĞILIM TABLOSU</span>
           <span className="stage-fair-pill">
-            ⚖️ Eşit Dağılım ({cues.length} Replik / {room.players.length} Oyuncu)
+            🔒 1 Karakter = 1 Oyuncu ({cues.length} Replik / {room.players.length} Oyuncu)
           </span>
         </div>
         <div className="stage-role-table-grid">
@@ -617,6 +620,7 @@ export default function SegmentRecorder({
               pIdx,
               room.players.length,
               customScenes,
+              preferredRoles,
             );
             const pRoles = Array.from(
               new Set(pAssigned.map((c) => c.roleName).filter(Boolean)),

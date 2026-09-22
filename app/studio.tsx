@@ -1261,55 +1261,81 @@ export default function Studio({
               </div>
             </>
           ) : room.status === 'recording' ? (
-            <>
-              <div className="eyebrow">SENİN KARAKTERİN</div>
-              <h2
-                className="role-name"
-                style={{
-                  color:
-                    scene.roleDetails?.[me.role >= 0 ? me.role : 0]?.color ||
-                    '#d8fb51',
-                }}
-              >
-                {scene.roles?.[me.role >= 0 ? me.role : 0] || 'Karakter'}
-              </h2>
-              <p>{scene.mood}</p>
-              <button
-                type="button"
-                className="secondary"
-                style={{ width: '100%', marginBottom: 10 }}
-                onClick={() => setRoleRevealOpen(true)}
-              >
-                <Users size={15} /> Karakter & Replik Tablosunu Gör
-              </button>
-              <p>
-                İşaretli bölümü izle, geri sayımdan sonra seslendir. Her kaydı
-                dinleyip onayladığında sıradaki repliğin açılır.
-              </p>
-              <ul className="assigned-cues">
-                {playerCues(
-                  room.scene,
-                  room.players.findIndex((p) => p.id === me.id),
-                  room.players.length,
-                  customScenes,
-                ).map((c, cIdx) => (
-                  <li key={c.id}>
-                    <span>Replik {cIdx + 1}</span>
-                    <strong>
-                      {timeLabel(c.start)} — {timeLabel(c.end)}
-                    </strong>
-                    {me.segments?.includes(c.id) ? (
-                      <Check size={16} />
-                    ) : (
-                      <span className="waiting-dot" />
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <span className="microcopy">
-                <Headphones size={14} /> Kayıtta kulaklık kullan.
-              </span>
-            </>
+            (() => {
+              const myIdx = Math.max(
+                0,
+                room.players.findIndex((p) => p.id === me.id),
+              );
+              const preferredRoles = room.players.map((p) => p.role);
+              const myAssignedCues = playerCues(
+                room.scene,
+                myIdx,
+                room.players.length,
+                customScenes,
+                preferredRoles,
+              );
+              const myRoleNames = Array.from(
+                new Set(myAssignedCues.map((c) => c.roleName).filter(Boolean)),
+              );
+              const displayRoleName =
+                myRoleNames.join(' + ') ||
+                scene.roles?.[me.role >= 0 ? me.role : 0] ||
+                'Karakter';
+              const displayRoleColor =
+                myAssignedCues[0]?.roleColor ||
+                scene.roleDetails?.[me.role >= 0 ? me.role : 0]?.color ||
+                '#d8fb51';
+
+              return (
+                <>
+                  <div className="eyebrow">
+                    {myRoleNames.length > 1 ? 'SENİN KARAKTERLERİN' : 'SENİN KARAKTERİN'}
+                  </div>
+                  <h2
+                    className="role-name"
+                    style={{
+                      color: displayRoleColor,
+                    }}
+                  >
+                    {displayRoleName}
+                  </h2>
+                  <p>{scene.mood}</p>
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ width: '100%', marginBottom: 10 }}
+                    onClick={() => setRoleRevealOpen(true)}
+                  >
+                    <Users size={15} /> Karakter & Replik Tablosunu Gör
+                  </button>
+                  <p>
+                    İşaretli bölümü izle, geri sayımdan sonra seslendir. Her kaydı
+                    dinleyip onayladığında sıradaki repliğin açılır.
+                  </p>
+                  <ul className="assigned-cues">
+                    {myAssignedCues.map((c, cIdx) => (
+                      <li key={c.id}>
+                        <span>
+                          Replik {cIdx + 1}{' '}
+                          {c.roleName ? `(${c.roleName})` : ''}
+                        </span>
+                        <strong>
+                          {timeLabel(c.start)} — {timeLabel(c.end)}
+                        </strong>
+                        {me.segments?.includes(c.id) ? (
+                          <Check size={16} />
+                        ) : (
+                          <span className="waiting-dot" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="microcopy">
+                    <Headphones size={14} /> Kayıtta kulaklık kullan.
+                  </span>
+                </>
+              );
+            })()
           ) : (
             <>
               <div className="small-icon">

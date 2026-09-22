@@ -10,6 +10,7 @@ import {
   getSceneById,
   sceneCues,
   playerCues,
+  getPlayerCharacterMap,
   type Room,
   type Player,
   type ActivityItem,
@@ -299,15 +300,34 @@ export async function executeGameRoomAction(
       throw new Error('Başlamadan önce tüm oyuncular hazır olmalı.');
     }
 
-    // Rolü atanmamış oyunculara rastgele rol ata
-    const takenRoles = new Set(row.players.map((p) => p.role).filter((r) => r !== -1));
-    let currentRole = 0;
-    row.players.forEach((p) => {
-      if (p.role === -1) {
-        while (takenRoles.has(currentRole)) currentRole++;
-        p.role = currentRole;
-        takenRoles.add(currentRole);
+    // 1 Karakter = 1 Oyuncu kuralına göre her oyuncuya ana karakterini ata
+    const remoteScenesForStart = await getScenesFromSupabase().catch(() => []);
+    const customListForStart =
+      remoteScenesForStart.length > 0 ? remoteScenesForStart : undefined;
+    const initialPrefs = row.players.map((p) => p.role);
+    const charToPlayerMap = getPlayerCharacterMap(
+      row.scene,
+      row.players.length,
+      customListForStart,
+      initialPrefs,
+    );
+
+    const usedRoles = new Set<number>();
+    row.players.forEach((p, pIdx) => {
+      // Bu oyuncuya atanan karakterlerden ilkini ana rolü olarak kaydet
+      let assignedRole = -1;
+      charToPlayerMap.forEach((ownerIdx, roleIdx) => {
+        if (ownerIdx === pIdx && assignedRole === -1 && !usedRoles.has(roleIdx)) {
+          assignedRole = roleIdx;
+        }
+      });
+      if (assignedRole === -1) {
+        let fallback = 0;
+        while (usedRoles.has(fallback)) fallback++;
+        assignedRole = fallback;
       }
+      p.role = assignedRole;
+      usedRoles.add(assignedRole);
     });
 
     row.status = 'recording';
@@ -424,8 +444,15 @@ export async function saveAudioRecording(
 
   // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını recordings tablosuyla birleştirerek hesapla
   const assignedCueIds = new Set<number>();
+  const preferredRoles = row.players.map((p) => p.role);
   row.players.forEach((p, idx) => {
-    const pCues = playerCues(row.scene, idx, row.players.length, customList);
+    const pCues = playerCues(
+      row.scene,
+      idx,
+      row.players.length,
+      customList,
+      preferredRoles,
+    );
     pCues.forEach((c) => assignedCueIds.add(c.id));
     const playerRecSegs = recordings.filter((r) => r.player === p.id).map((r) => r.segment);
     const pSegs = new Set([...(p.segments || []), ...playerRecSegs]);

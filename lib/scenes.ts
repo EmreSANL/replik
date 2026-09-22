@@ -140,27 +140,21 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
 
   if (currentScene.cues && currentScene.cues.length > 0) {
     const rawCues = currentScene.cues;
-    if (numRoles > 1 && rawCues.length > 1) {
-      const counts = new Array(numRoles).fill(0);
-      rawCues.forEach((c) => {
-        const rIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex % numRoles : 0;
-        counts[rIdx]++;
+    const distinctRoles = new Set(
+      rawCues.map((c) => (typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0)),
+    );
+    // Sadece sahnede birden fazla karakter tanımlı olmasına rağmen TÜM replikler tek bir karaktere (0) yığılmışsa dağıt
+    if (numRoles > 1 && rawCues.length > 1 && distinctRoles.size === 1) {
+      return rawCues.map((c, idx) => {
+        const balancedIdx = idx % numRoles;
+        const detail = roleDetails[balancedIdx];
+        return {
+          ...c,
+          roleIndex: balancedIdx,
+          roleName: detail ? detail.name : roles[balancedIdx] || `Karakter ${balancedIdx + 1}`,
+          roleColor: detail ? detail.color : c.roleColor || '#d8fb51',
+        };
       });
-      const maxC = Math.max(...counts);
-      const minC = Math.min(...counts);
-      // Eğer bir karaktere 19 replik, diğerine 3 replik gibi dengesiz dağılım varsa otomatik eşit dağıt!
-      if (maxC - minC > 2) {
-        return rawCues.map((c, idx) => {
-          const balancedIdx = idx % numRoles;
-          const detail = roleDetails[balancedIdx];
-          return {
-            ...c,
-            roleIndex: balancedIdx,
-            roleName: detail ? detail.name : roles[balancedIdx] || `Karakter ${balancedIdx + 1}`,
-            roleColor: detail ? detail.color : c.roleColor || '#d8fb51',
-          };
-        });
-      }
     }
     return rawCues;
   }
@@ -187,38 +181,117 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
   });
 }
 
+/**
+ * Bir karakteri ASLA iki farklı oyuncuya bölmez!
+ * Her karakter (örn: Gökhan Abi) baştan sona SADECE TEK BİR oyuncu tarafından seslendirilir.
+ * Eğer sahnedeki karakter sayısı oyuncu sayısından fazlaysa (örn: 5 karakter, 2 oyuncu),
+ * kalan yan karakterler bütün olarak replik sayısı az olan oyuncuya dengeli şekilde verilir.
+ */
+export function getPlayerCharacterMap(
+  sceneId: number,
+  playerCount: number,
+  customList?: Scene[],
+  preferredRoles?: number[],
+): Map<number, number> {
+  const all = sceneCues(sceneId, customList);
+  const roleToPlayer = new Map<number, number>();
+  if (playerCount <= 1) {
+    all.forEach((c) => {
+      const rIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0;
+      roleToPlayer.set(rIdx, 0);
+    });
+    return roleToPlayer;
+  }
+
+  // 1. Her karakterin (roleIndex) toplam kaç repliği olduğunu hesapla
+  const roleCounts = new Map<number, number>();
+  all.forEach((c) => {
+    const rIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0;
+    roleCounts.set(rIdx, (roleCounts.get(rIdx) || 0) + 1);
+  });
+
+  const distinctRoleIndices = Array.from(roleCounts.keys());
+
+  // Eğer sahnede sadece 1 karakter varsa ve birden fazla oyuncu varsa
+  if (distinctRoleIndices.length <= 1) {
+    roleToPlayer.set(distinctRoleIndices[0] ?? 0, 0);
+    return roleToPlayer;
+  }
+
+  const playerLoad = new Array(playerCount).fill(0);
+  const assignedRoles = new Set<number>();
+
+  // 2. Önce oyuncuların lobide seçtiği ana rolleri (her oyuncuya 1 benzersiz karakter) ata
+  if (preferredRoles && preferredRoles.length === playerCount) {
+    preferredRoles.forEach((prefRole, pIdx) => {
+      if (
+        typeof prefRole === 'number' &&
+        prefRole >= 0 &&
+        roleCounts.has(prefRole) &&
+        !assignedRoles.has(prefRole)
+      ) {
+        roleToPlayer.set(prefRole, pIdx);
+        assignedRoles.add(prefRole);
+        playerLoad[pIdx] += roleCounts.get(prefRole) || 0;
+      }
+    });
+  }
+
+  // 3. Kalan karakterleri replik sayısına göre büyükten küçüğe sırala
+  const remainingRoles = distinctRoleIndices
+    .filter((r) => !assignedRoles.has(r))
+    .sort((a, b) => (roleCounts.get(b) || 0) - (roleCounts.get(a) || 0));
+
+  // 4. Önce henüz hiç karakter almamış oyunculara en büyük karakterleri birer birer ver
+  for (let pIdx = 0; pIdx < playerCount; pIdx++) {
+    const hasAnyRole = Array.from(roleToPlayer.values()).includes(pIdx);
+    if (!hasAnyRole && remainingRoles.length > 0) {
+      const nextRole = remainingRoles.shift()!;
+      roleToPlayer.set(nextRole, pIdx);
+      assignedRoles.add(nextRole);
+      playerLoad[pIdx] += roleCounts.get(nextRole) || 0;
+    }
+  }
+
+  // 5. Sahnedeki ekstra karakterleri (bütün karakteri bölmeden!) o an en az repliği olan oyuncuya ata
+  for (const rIdx of remainingRoles) {
+    let minPlayerIdx = 0;
+    for (let pIdx = 1; pIdx < playerCount; pIdx++) {
+      if (playerLoad[pIdx] < playerLoad[minPlayerIdx]) {
+        minPlayerIdx = pIdx;
+      }
+    }
+    roleToPlayer.set(rIdx, minPlayerIdx);
+    playerLoad[minPlayerIdx] += roleCounts.get(rIdx) || 0;
+  }
+
+  return roleToPlayer;
+}
+
 export function playerCues(
   sceneId: number,
   playerIndex: number,
   playerCount: number,
   customList?: Scene[],
+  preferredRoles?: number[],
 ): Cue[] {
   const all = sceneCues(sceneId, customList);
   if (playerCount <= 1) return all;
 
-  // Rol bazlı dağılımın her oyuncuya eşit sayıda replik verip vermediğini kontrol et
-  const countsByPlayer = new Array(playerCount).fill(0);
-  all.forEach((c, idx) => {
-    const pIdx =
-      typeof c.roleIndex === 'number' && c.roleIndex >= 0
-        ? c.roleIndex % playerCount
-        : idx % playerCount;
-    countsByPlayer[pIdx]++;
-  });
-  const maxPlayerCues = Math.max(...countsByPlayer);
-  const minPlayerCues = Math.min(...countsByPlayer);
+  const roleCounts = new Set(
+    all.map((c) => (typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0)),
+  );
 
-  // Eğer oyuncular arasında 1 replikten fazla fark oluşuyorsa (örn: 19'a 3),
-  // replikleri sırayla (round-robin) %100 eşit olarak paylaştır!
-  if (maxPlayerCues - minPlayerCues > 1) {
+  // Sadece sahnede tek 1 karakter varsa replikleri sırayla böl
+  if (roleCounts.size <= 1) {
     return all.filter((_, idx) => idx % playerCount === playerIndex);
   }
 
-  return all.filter((c, idx) => {
-    if (typeof c.roleIndex === 'number' && c.roleIndex >= 0) {
-      return c.roleIndex % playerCount === playerIndex;
-    }
-    return idx % playerCount === playerIndex;
+  // Birden fazla karakter varsa HER KARAKTER SADECE TEK BİR OYUNCUYA aittir!
+  const roleMap = getPlayerCharacterMap(sceneId, playerCount, customList, preferredRoles);
+  return all.filter((c) => {
+    const rIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0;
+    return roleMap.get(rIdx) === playerIndex;
   });
 }
 

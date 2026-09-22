@@ -33,17 +33,19 @@ export default function RoleRevealDialog({
     0,
     room.players.findIndex((p) => p.id === playerId),
   );
+  const preferredRoles = room.players.map((p) => p.role);
   const myCues = playerCues(
     room.scene,
     myIdx,
     room.players.length,
     customScenes,
+    preferredRoles,
   );
   const myRoleNames = Array.from(
     new Set(myCues.map((c) => c.roleName).filter(Boolean)),
   );
   const primaryRoleName =
-    myRoleNames.join(' & ') ||
+    myRoleNames.join(' + ') ||
     (scene.roles && scene.roles[myIdx % Math.max(1, scene.roles.length)]) ||
     'Karakter';
   const primaryRoleColor =
@@ -63,7 +65,7 @@ export default function RoleRevealDialog({
               Karakter ve Replik Dağılım Tablosu
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Hangi oyuncunun hangi karakteri ve kaç repliği seslendireceğinin eşit dağılım tablosu.
+              Hangi oyuncunun hangi karakteri seslendireceğinin tablosu.
             </DialogDescription>
           </div>
 
@@ -78,7 +80,7 @@ export default function RoleRevealDialog({
               className="role-name-banner"
               style={{ backgroundColor: primaryRoleColor }}
             >
-              <h2>SENİN ROLÜN: {primaryRoleName.toUpperCase()}</h2>
+              <h2>SENİN KARAKTERİN: {primaryRoleName.toUpperCase()}</h2>
             </div>
 
             <div className="role-card-content">
@@ -89,9 +91,7 @@ export default function RoleRevealDialog({
               <div className="fair-distribution-banner">
                 <Scale size={15} />
                 <span>
-                  <strong>Eşit Replik Garantisi:</strong> Tüm replikler odadaki{' '}
-                  {room.players.length} oyuncuya eşit sayıda ({myCues.length}{' '}
-                  replik) paylaştırıldı.
+                  <strong>1 Karakter = 1 Oyuncu Kuralı:</strong> Aynı karakteri iki farklı kişi seslendirmez! Fazla karakterler oyuncu sayısına göre dengelendi.
                 </span>
               </div>
 
@@ -104,7 +104,7 @@ export default function RoleRevealDialog({
                   <thead>
                     <tr>
                       <th>Oyuncu</th>
-                      <th>Seslendireceği Karakter</th>
+                      <th>Seslendireceği Karakter(ler)</th>
                       <th>Replik Sayısı</th>
                       <th>Sıralar</th>
                     </tr>
@@ -116,12 +116,13 @@ export default function RoleRevealDialog({
                         idx,
                         room.players.length,
                         customScenes,
+                        preferredRoles,
                       );
                       const pRoles = Array.from(
                         new Set(pCues.map((c) => c.roleName).filter(Boolean)),
                       );
                       const roleLabel =
-                        pRoles.join(' / ') ||
+                        pRoles.join(' + ') ||
                         scene.roles?.[idx % Math.max(1, scene.roles.length)] ||
                         `${idx + 1}. Karakter`;
                       const roleColor =
