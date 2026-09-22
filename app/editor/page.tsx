@@ -957,23 +957,33 @@ export default function EditorPage() {
       {/* SADE ÜST ÇUBUK (Sadece 3 Temel Buton) */}
       <header className="border-b border-[#25271e] bg-[#151611] px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <Link
+          <a
             href="/"
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#20221a] hover:bg-[#2b2e23] text-[#d8fb51] border border-[#323628] flex items-center gap-2 transition"
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.href = '/';
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-extrabold bg-[#20221a] hover:bg-[#d8fb51] text-[#d8fb51] hover:text-[#11120d] border border-[#323628] flex items-center gap-2 transition cursor-pointer no-underline"
           >
             <ArrowLeft size={15} />
-            Oyuna Dön
-          </Link>
+            <span>Oyuna Dön</span>
+          </a>
           <div className="h-5 w-[1px] bg-[#2a2d22] hidden sm:block" />
-          <h1 className="text-sm sm:text-base font-extrabold text-[#f4f4e9] flex items-center gap-2">
-            <Film size={18} className="text-[#d8fb51]" />
+          <div
+            style={{ fontSize: '16px', letterSpacing: 'normal', lineHeight: 1.3 }}
+            className="font-extrabold text-[#f4f4e9] flex items-center gap-2"
+          >
+            <Film size={18} className="text-[#d8fb51] shrink-0" />
             <span>Sahne Stüdyosu</span>
             {isEditingExisting && title && (
-              <span className="text-xs font-semibold text-[#9ca28e] hidden md:inline">
+              <span
+                style={{ fontSize: '13px', letterSpacing: 'normal' }}
+                className="font-semibold text-[#a8b097] hidden md:inline"
+              >
                 — “{title}”
               </span>
             )}
-          </h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5">

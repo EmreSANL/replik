@@ -146,8 +146,12 @@ export default function Home() {
             >
               Oyun alanı
             </button>
-            <Link
+            <a
               href="/editor"
+              onClick={(e) => {
+                e.preventDefault();
+                window.location.href = '/editor';
+              }}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -164,7 +168,7 @@ export default function Home() {
               }}
             >
               <Sparkles size={14} /> Sahne Editörü 🎬
-            </Link>
+            </a>
             <button onClick={() => setHelp(true)}>Nasıl oynanır?</button>
             {!game && parked && (
               <button onClick={() => setGame(parked)}>Odana dön ↗</button>
@@ -409,11 +413,12 @@ export default function Home() {
                           <Check size={12} /> SEÇİLİ
                         </span>
                       )}
-                      <Link
+                      <a
                         href={`/editor?sceneId=${s.id}`}
-                        target="_blank"
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
+                          window.location.href = `/editor?sceneId=${s.id}`;
                         }}
                         title="Bu sahneyi editörde düzenle"
                         style={{
@@ -437,7 +442,7 @@ export default function Home() {
                         }}
                       >
                         <Edit3 size={11} /> Düzenle ↗
-                      </Link>
+                      </a>
                       {s.isCustom && (
                         <span
                           style={{
@@ -466,8 +471,12 @@ export default function Home() {
                 ))}
 
                 {/* Yeni Sahne / Meme Ekle Kartı */}
-                <Link
+                <a
                   href="/editor"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.location.href = '/editor';
+                  }}
                   className="scene-card"
                   style={{
                     border: '2px dashed #3e4133',
@@ -512,7 +521,7 @@ export default function Home() {
                   <span style={{ color: '#8c8e82', fontSize: '12px' }}>
                     Video yükle & altyazı zamanla 🎬
                   </span>
-                </Link>
+                </a>
               </div>
             </section>
             <div className="how-strip">
