@@ -8,7 +8,6 @@ import React, {
   useMemo,
   useCallback,
 } from 'react';
-import Link from 'next/link';
 import {
   Play,
   Pause,
@@ -1007,13 +1006,17 @@ export default function EditorPage() {
       {/* SADE ÜST ÇUBUK (Sadece 3 Temel Buton) */}
       <header className="border-b border-[#383832] bg-[#1A1A17] px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <Link
+          <a
             href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              window.location.assign('/');
+            }}
             className="px-4 py-2 rounded-xl text-xs font-extrabold bg-[#22221E] hover:bg-[#F5E636] text-[#F5E636] hover:text-[#090909] border border-[#383832] flex items-center gap-2 transition cursor-pointer no-underline"
           >
             <ArrowLeft size={15} />
             <span>Oyuna Dön</span>
-          </Link>
+          </a>
           <div className="h-5 w-[1px] bg-[#383832] hidden sm:block" />
           <div
             style={{

@@ -4917,14 +4917,194 @@ audio {
 .trim-heading [data-slot='dialog-description'] { color: var(--muted-foreground); font-size: 14px; line-height: 1.5; }
 .trim-video-wrap { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--ink); }
 .trim-video-wrap video { width: 100%; height: 100%; object-fit: contain; }
-.trim-play { position: absolute; inset: auto auto 16px 16px; display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--primary); border-radius: 50%; background: var(--surface-raised); color: var(--primary); }
+.trim-video-controls-overlay {
+  position: absolute;
+  inset: auto 14px 14px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
+}
+.trim-play {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--primary);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--primary);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
 .trim-play:hover { background: var(--primary); color: var(--surface-raised); }
-.trim-range-heading { display: flex; justify-content: space-between; align-items: center; color: var(--muted-foreground); font-size: 12px; font-weight: 800; letter-spacing: .1em; }
+.trim-quick-seek-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(12, 12, 10, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  padding: 5px 10px;
+  border-radius: 999px;
+}
+.trim-seek-step-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #f4f4e9;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.trim-seek-step-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: #090909;
+}
+.trim-current-time-readout {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--primary);
+  min-width: 52px;
+  text-align: center;
+}
+.trim-range-heading { display: flex; justify-content: space-between; align-items: center; color: var(--muted-foreground); font-size: 11.5px; font-weight: 800; letter-spacing: .08em; }
 .trim-range-heading strong { color: var(--primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; letter-spacing: 0; }
-.trim-slider { padding: 12px 8px; }
-.trim-slider [data-slot='slider-track'] { height: 8px; background: var(--border); }
-.trim-slider [data-slot='slider-range'] { background: var(--primary); }
-.trim-slider [data-slot='slider-thumb'] { width: 20px; height: 20px; border: 3px solid var(--primary); background: var(--surface-raised); box-shadow: 0 0 0 3px var(--surface); }
+
+/* Custom Interactive Trim Bar & Center Line */
+.trim-custom-timeline {
+  position: relative;
+  height: 48px;
+  margin: 10px 8px 6px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  touch-action: none;
+  cursor: pointer;
+}
+.trim-custom-track-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 12px;
+  background: #2a2a25;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.trim-custom-selected-bar {
+  position: absolute;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 999px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 16px rgba(245, 230, 54, 0.25);
+  z-index: 2;
+}
+.trim-custom-selected-bar.is-dragging {
+  cursor: grabbing;
+  filter: brightness(1.08);
+}
+.trim-custom-center-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 5;
+}
+.trim-center-line-tag {
+  position: absolute;
+  bottom: 24px;
+  background: #090909;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.trim-center-line-bar {
+  width: 3px;
+  height: 32px;
+  background: #090909;
+  border-left: 1px solid #ffffff;
+  border-right: 1px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
+}
+.trim-center-line-grip {
+  position: absolute;
+  background: #090909;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 3px 4px;
+  letter-spacing: -1px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.trim-custom-playhead {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: #fa5636;
+  transform: translateX(-50%);
+  z-index: 4;
+  cursor: ew-resize;
+  box-shadow: 0 0 8px rgba(250, 86, 54, 0.8);
+}
+.trim-playhead-cap {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fa5636;
+  border: 2px solid #ffffff;
+}
+.trim-custom-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid var(--primary);
+  background: #141412;
+  box-shadow: 0 0 0 3px #090909, 0 4px 10px rgba(0, 0, 0, 0.6);
+  cursor: ew-resize;
+  z-index: 6;
+  transition: transform 0.1s;
+}
+.trim-custom-thumb:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  background: var(--primary);
+}
 .trim-time-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .trim-time-inputs label { display: grid; gap: 6px; min-width: 0; }
 .trim-time-inputs label > span { color: var(--muted-foreground); font-size: 12px; font-weight: 800; letter-spacing: .1em; }

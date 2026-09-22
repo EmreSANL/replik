@@ -1,14 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Pause, Play, Scissors } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Pause, Play, Scissors, RotateCcw, FastForward } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Slider } from '@/components/ui/slider';
 import {
   formatTrimTime,
   normalizeTrimRange,
@@ -21,16 +20,33 @@ type Props = {
   onConfirm: (file: File, duration: number) => void;
 };
 
+type DragMode = 'start' | 'end' | 'move' | 'scrub' | null;
+
 export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
   const [url, setUrl] = useState('');
   const [duration, setDuration] = useState(0);
   const [range, setRange] = useState<[number, number]>([0, 0]);
+  const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+
+  // Dragging state for custom timeline
+  const [dragMode, setDragMode] = useState<DragMode>(null);
+  const dragOriginRef = useRef<{
+    startX: number;
+    initialStart: number;
+    initialEnd: number;
+  }>({
+    startX: 0,
+    initialStart: 0,
+    initialEnd: 0,
+  });
 
   useEffect(() => {
     const objectUrl = URL.createObjectURL(file);
@@ -44,17 +60,95 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
     };
   }, [file]);
 
-  function changeRange(values: readonly number[]) {
+  function seekVideo(targetSec: number) {
+    if (!duration) return;
+    const clamped = Math.max(0, Math.min(duration, targetSec));
+    setCurrentTime(clamped);
+    const video = videoRef.current;
+    if (video) {
+      video.currentTime = clamped;
+    }
+  }
+
+  function changeRange(
+    values: readonly number[],
+    previewTarget: 'start' | 'end' | 'center' = 'start',
+  ) {
     const normalized = normalizeTrimRange(values[0], values[1], duration);
     if (normalized.end - normalized.start < 0.5) return;
     setRange([normalized.start, normalized.end]);
     const video = videoRef.current;
+    const targetSec =
+      previewTarget === 'end'
+        ? normalized.end
+        : previewTarget === 'center'
+          ? Number(((normalized.start + normalized.end) / 2).toFixed(1))
+          : normalized.start;
+
+    setCurrentTime(targetSec);
     if (video) {
       video.pause();
-      video.currentTime = normalized.start;
+      video.currentTime = targetSec;
     }
     setPlaying(false);
   }
+
+  // Global pointer move / up listeners for smooth dragging
+  useEffect(() => {
+    if (!dragMode || !duration) return;
+
+    function handlePointerMove(e: PointerEvent) {
+      const track = trackRef.current;
+      if (!track) return;
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const secAtPointer = Number((pct * duration).toFixed(1));
+
+      if (dragMode === 'start') {
+        const nextStart = Math.max(0, Math.min(range[1] - 0.5, secAtPointer));
+        changeRange([nextStart, range[1]], 'start');
+      } else if (dragMode === 'end') {
+        const nextEnd = Math.min(
+          duration,
+          Math.max(range[0] + 0.5, secAtPointer),
+        );
+        changeRange([range[0], nextEnd], 'end');
+      } else if (dragMode === 'move') {
+        const deltaPx = e.clientX - dragOriginRef.current.startX;
+        const deltaSec = (deltaPx / rect.width) * duration;
+        const span =
+          dragOriginRef.current.initialEnd - dragOriginRef.current.initialStart;
+        let nextStart = dragOriginRef.current.initialStart + deltaSec;
+        if (nextStart < 0) nextStart = 0;
+        if (nextStart + span > duration) nextStart = Math.max(0, duration - span);
+        const nextEnd = Number((nextStart + span).toFixed(1));
+        nextStart = Number(nextStart.toFixed(1));
+        changeRange([nextStart, nextEnd], 'center');
+      } else if (dragMode === 'scrub') {
+        const video = videoRef.current;
+        if (video && !video.paused) {
+          video.pause();
+          setPlaying(false);
+        }
+        seekVideo(secAtPointer);
+      }
+    }
+
+    function handlePointerUp() {
+      setDragMode(null);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [dragMode, duration, range]);
 
   async function togglePreview() {
     const video = videoRef.current;
@@ -70,6 +164,7 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
         video.currentTime >= range[1] - 0.05
       ) {
         video.currentTime = range[0];
+        setCurrentTime(range[0]);
       }
       await video.play();
       setPlaying(true);
@@ -110,6 +205,15 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
     }
   }
 
+  const startPct = duration > 0 ? (range[0] / duration) * 100 : 0;
+  const endPct = duration > 0 ? (range[1] / duration) * 100 : 100;
+  const widthPct = Math.max(0, endPct - startPct);
+  const centerTime = Number(((range[0] + range[1]) / 2).toFixed(1));
+  const playheadPct =
+    duration > 0
+      ? Math.max(0, Math.min(100, (currentTime / duration) * 100))
+      : 0;
+
   return (
     <Dialog
       open
@@ -124,14 +228,14 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
           </span>
           <DialogTitle>Oynanacak bölümü seç</DialogTitle>
           <DialogDescription>
-            Başlangıç ve bitiş işaretlerini sürükle. Yalnızca seçtiğin bölüm
-            sahneye yüklenir ve ses analizine girer.
+            Başlangıç/bitiş noktalarını veya <strong>ortadaki çizgiyi</strong>{' '}
+            tutup ileri-geri sürükleyerek kesiti kaydırabilir, çubuğa tıklayarak
+            videoyu ileri-geri sardırabilirsin.
           </DialogDescription>
         </div>
 
         <div className="trim-video-wrap">
           {url && (
-            // The uploaded source is user-provided and has no caption track yet.
             // oxlint-disable-next-line jsx-a11y/media-has-caption
             <video
               ref={videoRef}
@@ -146,9 +250,12 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
                 }
                 setDuration(measured);
                 setRange([0, measured]);
+                setCurrentTime(0);
               }}
               onTimeUpdate={(event) => {
-                if (event.currentTarget.currentTime >= range[1] - 0.04) {
+                const t = event.currentTarget.currentTime;
+                setCurrentTime(t);
+                if (playing && t >= range[1] - 0.04) {
                   event.currentTarget.pause();
                   setPlaying(false);
                 }
@@ -159,39 +266,163 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
               }
             />
           )}
-          <button
-            className="trim-play"
-            type="button"
-            disabled={!duration || processing}
-            onClick={togglePreview}
-            aria-label={playing ? 'Önizlemeyi durdur' : 'Seçili bölümü oynat'}
-          >
-            {playing ? (
-              <Pause size={20} />
-            ) : (
-              <Play size={20} fill="currentColor" />
-            )}
-          </button>
+          <div className="trim-video-controls-overlay">
+            <button
+              className="trim-play"
+              type="button"
+              disabled={!duration || processing}
+              onClick={togglePreview}
+              aria-label={playing ? 'Önizlemeyi durdur' : 'Seçili bölümü oynat'}
+            >
+              {playing ? (
+                <Pause size={20} />
+              ) : (
+                <Play size={20} fill="currentColor" />
+              )}
+            </button>
+
+            <div className="trim-quick-seek-pill">
+              <button
+                type="button"
+                className="trim-seek-step-btn"
+                disabled={!duration || processing}
+                onClick={() => seekVideo(currentTime - 5)}
+                title="5 saniye geri sar"
+              >
+                <RotateCcw size={13} /> -5sn
+              </button>
+              <span className="trim-current-time-readout">
+                {formatTrimTime(currentTime)}
+              </span>
+              <button
+                type="button"
+                className="trim-seek-step-btn"
+                disabled={!duration || processing}
+                onClick={() => seekVideo(currentTime + 5)}
+                title="5 saniye ileri sar"
+              >
+                +5sn <FastForward size={13} />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="trim-range-heading">
-          <span>SEÇİLİ ARALIK</span>
+          <span>SEÇİLİ ARALIK (ORTADAN TUTUP İLERİ-GERİ KAYDIRABİLİRSİN)</span>
           <strong>{formatTrimTime(range[1] - range[0])}</strong>
         </div>
+
         {duration > 0 && (
-          <Slider
-            className="trim-slider"
-            min={0}
-            max={duration}
-            step={0.1}
-            minStepsBetweenValues={5}
-            thumbCollisionBehavior="none"
-            value={range}
-            onValueChange={(values) => changeRange(values as readonly number[])}
-            aria-label="Video başlangıç ve bitiş aralığı"
-            disabled={processing}
-          />
+          <div
+            ref={trackRef}
+            className="trim-custom-timeline"
+            onPointerDown={(e) => {
+              if (processing) return;
+              // Clicking directly on the background track scrubs the video playhead
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pct = Math.max(
+                0,
+                Math.min(1, (e.clientX - rect.left) / rect.width),
+              );
+              const sec = Number((pct * duration).toFixed(1));
+              seekVideo(sec);
+              setDragMode('scrub');
+            }}
+          >
+            {/* Base grey track */}
+            <div className="trim-custom-track-bg" />
+
+            {/* Selected Yellow Trim Bar (draggable forward & backward) */}
+            <div
+              className={`trim-custom-selected-bar ${dragMode === 'move' ? 'is-dragging' : ''}`}
+              style={{
+                left: `${startPct}%`,
+                width: `${widthPct}%`,
+              }}
+              onPointerDown={(e) => {
+                if (processing) return;
+                e.stopPropagation();
+                dragOriginRef.current = {
+                  startX: e.clientX,
+                  initialStart: range[0],
+                  initialEnd: range[1],
+                };
+                setDragMode('move');
+              }}
+              title="Kesiti ileri-geri kaydırmak için sürükle"
+            >
+              {/* CENTER VERTICAL LINE (Kırpma yerinin tam ortasındaki çizgi & tutamaç) */}
+              <div
+                className="trim-custom-center-line"
+                onPointerDown={(e) => {
+                  if (processing) return;
+                  e.stopPropagation();
+                  dragOriginRef.current = {
+                    startX: e.clientX,
+                    initialStart: range[0],
+                    initialEnd: range[1],
+                  };
+                  setDragMode('move');
+                }}
+              >
+                <span className="trim-center-line-tag">
+                  {formatTrimTime(centerTime)}
+                </span>
+                <div className="trim-center-line-bar" />
+                <div className="trim-center-line-grip">||</div>
+              </div>
+            </div>
+
+            {/* Live Playhead Needle (İleri-geri sardırma çizgisi) */}
+            <div
+              className="trim-custom-playhead"
+              style={{ left: `${playheadPct}%` }}
+              onPointerDown={(e) => {
+                if (processing) return;
+                e.stopPropagation();
+                setDragMode('scrub');
+              }}
+              title="Videoyu ileri-geri sarmak için sürükle"
+            >
+              <div className="trim-playhead-cap" />
+            </div>
+
+            {/* Left Start Handle (Başlangıç) */}
+            <div
+              className="trim-custom-thumb"
+              style={{ left: `${startPct}%` }}
+              role="slider"
+              tabIndex={0}
+              aria-label="Başlangıç noktası"
+              aria-valuemin={0}
+              aria-valuemax={range[1]}
+              aria-valuenow={range[0]}
+              onPointerDown={(e) => {
+                if (processing) return;
+                e.stopPropagation();
+                setDragMode('start');
+              }}
+            />
+
+            {/* Right End Handle (Bitiş) */}
+            <div
+              className="trim-custom-thumb"
+              style={{ left: `${endPct}%` }}
+              role="slider"
+              tabIndex={0}
+              aria-label="Bitiş noktası"
+              aria-valuemin={range[0]}
+              aria-valuemax={duration}
+              aria-valuenow={range[1]}
+              onPointerDown={(e) => {
+                if (processing) return;
+                e.stopPropagation();
+                setDragMode('end');
+              }}
+            />
+          </div>
         )}
+
         <div className="trim-time-inputs">
           <label>
             <span>BAŞLANGIÇ</span>
@@ -202,7 +433,7 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
               step={0.1}
               value={Number(range[0].toFixed(1))}
               onChange={(event) =>
-                changeRange([Number(event.target.value), range[1]])
+                changeRange([Number(event.target.value), range[1]], 'start')
               }
               disabled={processing || !duration}
               aria-label="Başlangıç saniyesi"
@@ -218,7 +449,7 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
               step={0.1}
               value={Number(range[1].toFixed(1))}
               onChange={(event) =>
-                changeRange([range[0], Number(event.target.value)])
+                changeRange([range[0], Number(event.target.value)], 'end')
               }
               disabled={processing || !duration}
               aria-label="Bitiş saniyesi"

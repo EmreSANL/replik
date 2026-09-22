@@ -457,8 +457,12 @@ export default function Home() {
                 })}
 
                 {/* Add Custom Meme Tile */}
-                <Link
+                <a
                   href="/editor"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.location.href = '/editor';
+                  }}
                   className="bbank-scene-tile bbank-add-tile"
                 >
                   <div className="bbank-add-icon">
@@ -467,7 +471,7 @@ export default function Home() {
                   <h3>Kendi Sahnini Ekle</h3>
                   <p>Video yükle, repliklerin zamanını belirle.</p>
                   <span className="bbank-add-btn-tag">Editöre git</span>
-                </Link>
+                </a>
               </div>
             </section>
 
