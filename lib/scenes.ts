@@ -116,6 +116,7 @@ export type Room = {
   players: Player[];
   reactions?: Record<string, number>;
   activities?: ActivityItem[];
+  recordings?: { player: string; segment: number; url: string }[];
 };
 
 export type Cue = {
@@ -130,23 +131,49 @@ export type Cue = {
 
 export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
   const currentScene = getSceneById(sceneId, customList);
+  const roles =
+    currentScene.roles && currentScene.roles.length > 0
+      ? currentScene.roles
+      : ['1. Karakter', '2. Karakter'];
+  const roleDetails = currentScene.roleDetails || [];
+  const numRoles = Math.max(1, roles.length);
+
   if (currentScene.cues && currentScene.cues.length > 0) {
-    return currentScene.cues;
+    const rawCues = currentScene.cues;
+    if (numRoles > 1 && rawCues.length > 1) {
+      const counts = new Array(numRoles).fill(0);
+      rawCues.forEach((c) => {
+        const rIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex % numRoles : 0;
+        counts[rIdx]++;
+      });
+      const maxC = Math.max(...counts);
+      const minC = Math.min(...counts);
+      // Eğer bir karaktere 19 replik, diğerine 3 replik gibi dengesiz dağılım varsa otomatik eşit dağıt!
+      if (maxC - minC > 2) {
+        return rawCues.map((c, idx) => {
+          const balancedIdx = idx % numRoles;
+          const detail = roleDetails[balancedIdx];
+          return {
+            ...c,
+            roleIndex: balancedIdx,
+            roleName: detail ? detail.name : roles[balancedIdx] || `Karakter ${balancedIdx + 1}`,
+            roleColor: detail ? detail.color : c.roleColor || '#d8fb51',
+          };
+        });
+      }
+    }
+    return rawCues;
   }
+
   const lines =
     currentScene.prompts && currentScene.prompts.length > 0
       ? currentScene.prompts
       : ['Replik 1', 'Replik 2'];
   const duration = currentScene.duration || 20;
   const step = duration / Math.max(1, lines.length);
-  const roles =
-    currentScene.roles && currentScene.roles.length > 0
-      ? currentScene.roles
-      : ['1. Karakter', '2. Karakter'];
-  const roleDetails = currentScene.roleDetails || [];
 
   return lines.map((text, id) => {
-    const roleIdx = id % roles.length;
+    const roleIdx = id % numRoles;
     const detail = roleDetails[roleIdx];
     return {
       id,
@@ -168,6 +195,25 @@ export function playerCues(
 ): Cue[] {
   const all = sceneCues(sceneId, customList);
   if (playerCount <= 1) return all;
+
+  // Rol bazlı dağılımın her oyuncuya eşit sayıda replik verip vermediğini kontrol et
+  const countsByPlayer = new Array(playerCount).fill(0);
+  all.forEach((c, idx) => {
+    const pIdx =
+      typeof c.roleIndex === 'number' && c.roleIndex >= 0
+        ? c.roleIndex % playerCount
+        : idx % playerCount;
+    countsByPlayer[pIdx]++;
+  });
+  const maxPlayerCues = Math.max(...countsByPlayer);
+  const minPlayerCues = Math.min(...countsByPlayer);
+
+  // Eğer oyuncular arasında 1 replikten fazla fark oluşuyorsa (örn: 19'a 3),
+  // replikleri sırayla (round-robin) %100 eşit olarak paylaştır!
+  if (maxPlayerCues - minPlayerCues > 1) {
+    return all.filter((_, idx) => idx % playerCount === playerIndex);
+  }
+
   return all.filter((c, idx) => {
     if (typeof c.roleIndex === 'number' && c.roleIndex >= 0) {
       return c.roleIndex % playerCount === playerIndex;
@@ -182,3 +228,4 @@ export function timeLabel(seconds: number) {
   const secs = totalSec % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
+

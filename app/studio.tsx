@@ -178,17 +178,26 @@ export default function Studio({
 
   const api = `/api/rooms/${session.code}`;
 
-  // Lobi -> Kayıt geçişinde "Rolün Belli Oldu!" sinematik ekranını otomatik aç
+  const revealedSceneRef = useRef<string | null>(null);
+
+  // Lobi -> Kayıt geçişinde veya kayıt başında "Rolün Belli Oldu & Replik Tablosu" ekranını otomatik aç
   useEffect(() => {
-    if (prevStatus.current === 'lobby' && room.status === 'recording') {
-      setRoleRevealOpen(true);
+    if (room.status === 'recording') {
+      const revealKey = `${room.code}:${room.scene}`;
+      if (
+        prevStatus.current === 'lobby' ||
+        (revealedSceneRef.current !== revealKey && (me?.segments?.length ?? 0) === 0)
+      ) {
+        revealedSceneRef.current = revealKey;
+        setRoleRevealOpen(true);
+      }
     }
     if (room.status !== 'lobby') {
       setLobbyPlaying(false);
       lobbyAudio.current?.pause();
     }
     prevStatus.current = room.status;
-  }, [room.status]);
+  }, [room.status, room.code, room.scene, me?.segments?.length]);
 
   // Final aşamasına geçildiğinde sesleri arka planda otomatik yükle
   async function loadAudio(): Promise<boolean> {
@@ -237,36 +246,71 @@ export default function Studio({
         }
       }
 
-      await Promise.all(
-        room.players.flatMap((p) => {
-          const tracks = p.segments.length
-            ? p.segments.map((id) => ({
-                key: `${p.id}:${id}`,
-                segment: id,
-                playerId: p.id,
-                fallbackUrl: `${api}/audio/${p.id}?segment=${id}`,
-              }))
-            : [{ key: p.id, segment: null, playerId: p.id, fallbackUrl: `${api}/audio/${p.id}` }];
-          return tracks.map(async (track) => {
-            if (buffers.current.has(track.key)) return;
-            try {
-              let audioUrl = await getAudioRecordingUrl(session.code, track.playerId, track.segment);
-              if (!audioUrl) audioUrl = track.fallbackUrl;
+      // 1. Öncelikle odadaki tüm kayıtları (room.recordings) doğrudan önbelleğe al
+      const directRecs = (room.recordings || []).map((rec) => ({
+        key: `${rec.player}:${rec.segment}`,
+        cueKey: `cue:${rec.segment}`,
+        segment: rec.segment,
+        playerId: rec.player,
+        directUrl: rec.url,
+        fallbackUrl: `${api}/audio/${rec.player}?segment=${rec.segment}`,
+      }));
 
-              const r = await fetch(audioUrl, {
-                headers: audioUrl.startsWith('http') && !audioUrl.includes('/api/rooms')
+      // 2. Oyuncu segment listelerinden de eksik kalanları tamamla
+      const playerTracks = room.players.flatMap((p) =>
+        p.segments.length
+          ? p.segments.map((id) => ({
+              key: `${p.id}:${id}`,
+              cueKey: `cue:${id}`,
+              segment: id,
+              playerId: p.id,
+              directUrl: null as string | null,
+              fallbackUrl: `${api}/audio/${p.id}?segment=${id}`,
+            }))
+          : [
+              {
+                key: p.id,
+                cueKey: null as string | null,
+                segment: null as number | null,
+                playerId: p.id,
+                directUrl: null as string | null,
+                fallbackUrl: `${api}/audio/${p.id}`,
+              },
+            ],
+      );
+
+      const allTracks = [...directRecs, ...playerTracks];
+      await Promise.all(
+        allTracks.map(async (track) => {
+          if (
+            buffers.current.has(track.key) &&
+            (!track.cueKey || buffers.current.has(track.cueKey))
+          ) {
+            return;
+          }
+          try {
+            let audioUrl =
+              track.directUrl ||
+              (await getAudioRecordingUrl(session.code, track.playerId, track.segment));
+            if (!audioUrl) audioUrl = track.fallbackUrl;
+
+            const r = await fetch(audioUrl, {
+              headers:
+                audioUrl.startsWith('http') && !audioUrl.includes('/api/rooms')
                   ? {}
                   : { Authorization: `Bearer ${session.token}` },
-              });
-              if (!r.ok) return;
-              const buf = await r.arrayBuffer();
-              if (buf.byteLength === 0) return;
-              const decoded = await ctx.current!.decodeAudioData(buf);
-              buffers.current.set(track.key, decoded);
-            } catch (err) {
-              console.warn('Track load warning:', track.key, err);
+            });
+            if (!r.ok) return;
+            const buf = await r.arrayBuffer();
+            if (buf.byteLength === 0) return;
+            const decoded = await ctx.current!.decodeAudioData(buf);
+            buffers.current.set(track.key, decoded);
+            if (track.cueKey) {
+              buffers.current.set(track.cueKey, decoded);
             }
-          });
+          } catch (err) {
+            console.warn('Track load warning:', track.key, err);
+          }
         }),
       );
       setAudioLoaded(true);
@@ -283,7 +327,7 @@ export default function Studio({
     if (room.status === 'final') {
       void loadAudio();
     }
-  }, [room.status]);
+  }, [room.status, room.recordings?.length]);
 
   useEffect(() => {
     if (masterGain.current && ctx.current) {
@@ -430,25 +474,47 @@ export default function Studio({
           }
         }
 
-        // 2. Oyuncuların mikrofondan kaydettiği dublaj parçaları
-        room.players.forEach((p, i) => {
-          const tracks = p.segments.length
-            ? sceneCues(room.scene, customScenes)
-                .filter((c) => p.segments.includes(c.id))
-                .map((c) => ({
-                  key: `${p.id}:${c.id}`,
-                  at: c.start,
-                  length: c.end - c.start,
-                }))
-            : [{ key: p.id, at: i * slotDuration, length: slotDuration }];
+        // 2. Odadaki tüm oyuncuların kaydettiği dublaj parçaları (tam senkronize)
+        const allCues = sceneCues(room.scene, customScenes);
+        const scheduledCues = new Set<number>();
 
-          tracks.forEach((track) => {
-            const buffer = buffers.current.get(track.key);
+        allCues.forEach((c) => {
+          let buffer = buffers.current.get(`cue:${c.id}`);
+          if (!buffer) {
+            for (const p of room.players) {
+              const b = buffers.current.get(`${p.id}:${c.id}`);
+              if (b) {
+                buffer = b;
+                break;
+              }
+            }
+          }
+          if (!buffer) return;
+          scheduledCues.add(c.id);
+          const skip = Math.max(0, late - c.start),
+            duration = Math.min(buffer.duration, c.end - c.start) - skip;
+          if (duration <= 0) return;
+          const startAt = now + Math.max(0, c.start - late);
+          const source = audio.createBufferSource();
+          source.buffer = buffer;
+          const voiceGain = audio.createGain();
+          voiceGain.gain.setValueAtTime(1.15, now);
+          source.connect(voiceGain);
+          voiceGain.connect(masterGain.current!);
+          source.start(startAt, skip, duration);
+          sources.current.push(source);
+        });
+
+        // Eğer sahnede replik yoksa tek parça oyuncu kayıtlarını oynat
+        if (scheduledCues.size === 0) {
+          room.players.forEach((p, i) => {
+            const buffer = buffers.current.get(p.id);
             if (!buffer) return;
-            const skip = Math.max(0, late - track.at),
-              duration = Math.min(buffer.duration, track.length) - skip;
+            const at = i * slotDuration;
+            const skip = Math.max(0, late - at),
+              duration = Math.min(buffer.duration, slotDuration) - skip;
             if (duration <= 0) return;
-            const startAt = now + Math.max(0, track.at - late);
+            const startAt = now + Math.max(0, at - late);
             const source = audio.createBufferSource();
             source.buffer = buffer;
             const voiceGain = audio.createGain();
@@ -458,7 +524,7 @@ export default function Studio({
             source.start(startAt, skip, duration);
             sources.current.push(source);
           });
-        });
+        }
       }
 
       // Senkronize Altyazı ve İlerleme Takibi
@@ -1130,6 +1196,14 @@ export default function Studio({
                 {scene.roles?.[me.role >= 0 ? me.role : 0] || 'Karakter'}
               </h2>
               <p>{scene.mood}</p>
+              <button
+                type="button"
+                className="secondary"
+                style={{ width: '100%', marginBottom: 10 }}
+                onClick={() => setRoleRevealOpen(true)}
+              >
+                <Users size={15} /> Karakter & Replik Tablosunu Gör
+              </button>
               <p>
                 İşaretli bölümü izle, geri sayımdan sonra seslendir. Her kaydı
                 dinleyip onayladığında sıradaki repliğin açılır.
@@ -1204,19 +1278,17 @@ export default function Studio({
                 )}
               </button>
 
-              {/* Kurucu için Senkronize Birlikte Başlat Butonu */}
-              {me.host === 1 && (
-                <button
-                  className="secondary sync-play-btn"
-                  disabled={busy || playing || exporting || countdown > 0}
-                  onClick={() => act('play')}
-                >
-                  <Users size={16} />
-                  {room.playAt
-                    ? 'Ekipçe Birlikte Tekrar İzle'
-                    : 'Ekipçe Birlikte Başlat (3 sn)'}
-                </button>
-              )}
+              {/* Odadaki Herkes İçin Senkronize Birlikte İzle Butonu */}
+              <button
+                className="secondary sync-play-btn"
+                disabled={busy || playing || exporting || countdown > 0}
+                onClick={() => act('play')}
+              >
+                <Users size={16} />
+                {room.playAt
+                  ? 'Odadaki Herkesle Beraber Tekrar İzle'
+                  : 'Odadaki Herkesle Beraber Başlat (3 sn)'}
+              </button>
 
               {/* Ses Durumu / Yenileme */}
               <button
@@ -1293,6 +1365,7 @@ export default function Studio({
         open={roleRevealOpen}
         room={room}
         playerId={session.id}
+        customScenes={customScenes}
         onStart={() => setRoleRevealOpen(false)}
       />
 

@@ -601,6 +601,78 @@ export default function SegmentRecorder({
           style={{ display: 'none' }}
         />
       )}
+
+      {/* Oyun Başlangıcı & Kayıt Boyunca Görünür Karakter - Oyuncu Eşleşme ve Eşit Replik Tablosu */}
+      <div className="stage-role-table-card">
+        <div className="stage-role-table-header">
+          <span>🎭 KARAKTER & REPLİK DAĞILIM TABLOSU</span>
+          <span className="stage-fair-pill">
+            ⚖️ Eşit Dağılım ({cues.length} Replik / {room.players.length} Oyuncu)
+          </span>
+        </div>
+        <div className="stage-role-table-grid">
+          {room.players.map((p, pIdx) => {
+            const pAssigned = playerCues(
+              room.scene,
+              pIdx,
+              room.players.length,
+              customScenes,
+            );
+            const pRoles = Array.from(
+              new Set(pAssigned.map((c) => c.roleName).filter(Boolean)),
+            );
+            const roleLabel =
+              pRoles.join(' / ') ||
+              scene.roles?.[pIdx % Math.max(1, scene.roles.length)] ||
+              `${pIdx + 1}. Karakter`;
+            const roleColor =
+              pAssigned[0]?.roleColor ||
+              scene.roleDetails?.[
+                pIdx % Math.max(1, scene.roleDetails?.length || 1)
+              ]?.color ||
+              '#d8fb51';
+            const doneCount = pAssigned.filter((c) =>
+              p.segments?.includes(c.id),
+            ).length;
+            const isMe = p.id === me.id;
+
+            return (
+              <div
+                key={p.id}
+                className={`stage-role-player-box ${isMe ? 'is-me' : ''} ${doneCount >= pAssigned.length && pAssigned.length > 0 ? 'all-done' : ''}`}
+                style={{ borderColor: isMe ? roleColor : undefined }}
+              >
+                <div className="stage-role-player-top">
+                  <div className="stage-role-player-name">
+                    <span
+                      className="stage-role-dot"
+                      style={{ background: roleColor }}
+                    />
+                    <strong>{p.name}</strong>
+                    {isMe && <span className="stage-me-badge">SEN</span>}
+                  </div>
+                  <span className="stage-role-count">
+                    {doneCount}/{pAssigned.length} Replik
+                  </span>
+                </div>
+                <div className="stage-role-char-line">
+                  <span
+                    className="stage-role-char-tag"
+                    style={{
+                      color: roleColor,
+                      background: `${roleColor}18`,
+                      borderColor: `${roleColor}55`,
+                    }}
+                  >
+                    Seslendirdiği Karakter: <strong>{roleLabel}</strong>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className={`video-wrap ${recording ? 'recording-active-glow' : ''}`}>
         <video
           ref={video}

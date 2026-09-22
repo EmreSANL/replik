@@ -2734,5 +2734,205 @@ audio {
   color: #b8c8a1;
 }
 
+/* =====================================================
+   KARAKTER & REPLİK DAĞILIM TABLOSU (OYUN BAŞI VE SAHNE)
+   ===================================================== */
+.fair-distribution-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: #6ee7b7;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 6px 0 12px;
+}
 
+.role-distribution-table-wrap {
+  width: 100%;
+  background: #141911;
+  border: 1px solid #2b3522;
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 8px 0 16px;
+}
 
+.role-distribution-table-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1b2216;
+  border-bottom: 1px solid #2b3522;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d8fb51;
+}
+
+.role-distribution-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.role-distribution-table th {
+  padding: 9px 12px;
+  background: #171d13;
+  color: #98a886;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid #252f1e;
+}
+
+.role-distribution-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #202819;
+  color: #eef5e6;
+  vertical-align: middle;
+}
+
+.role-distribution-table tr:last-child td {
+  border-bottom: none;
+}
+
+.role-distribution-table tr.is-me-row td {
+  background: rgba(216, 251, 81, 0.08);
+}
+
+.player-table-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.player-table-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.me-pill-tag {
+  background: #d8fb51;
+  color: #14170d;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.char-table-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.cue-count-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #232c1b;
+  border: 1px solid #3c4b2e;
+  color: #d8fb51;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.cue-numbers-cell {
+  color: #a9b897;
+  font-size: 11.5px;
+  font-family: monospace;
+}
+
+/* Kayıt Sahnesi Üst Karakter & Replik Dağılım Tablosu */
+.stage-role-table-card {
+  background: #151a11;
+  border: 1px solid #2b3421;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.stage-role-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #dce8cb;
+}
+
+.stage-role-equal-pill {
+  background: rgba(52, 211, 153, 0.14);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: #6ee7b7;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stage-role-table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 8px;
+}
+
+.stage-role-player-box {
+  background: #1b2216;
+  border: 1px solid #2c3723;
+  border-radius: 10px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.stage-role-player-box.is-me {
+  border-color: rgba(216, 251, 81, 0.55);
+  background: rgba(216, 251, 81, 0.06);
+}
+
+.stage-role-player-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.stage-role-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stage-role-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 800;
+  color: #d8fb51;
+  background: #232c1b;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.stage-role-char-name {
+  font-size: 11.5px;
+  color: #b7c6a6;
+}

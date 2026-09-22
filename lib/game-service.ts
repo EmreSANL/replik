@@ -34,6 +34,7 @@ export type GameRoomRow = {
 };
 
 function rowToRoom(row: GameRoomRow): Room {
+  const recs = row.recordings || [];
   return {
     code: row.code,
     scene: Number(row.scene),
@@ -43,16 +44,21 @@ function rowToRoom(row: GameRoomRow): Room {
     serverNow: Date.now(),
     reactions: row.reactions || { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 },
     activities: row.activities || [],
-    players: (row.players || []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      host: p.host,
-      role: p.role,
-      ready: p.ready,
-      audio: Boolean(p.audio || (p.segments && p.segments.length > 0)),
-      segments: p.segments || [],
-      micTested: Boolean(p.micTested),
-    })),
+    recordings: recs,
+    players: (row.players || []).map((p) => {
+      const fromRecs = recs.filter((r) => r.player === p.id).map((r) => r.segment);
+      const mergedSegments = Array.from(new Set([...(p.segments || []), ...fromRecs]));
+      return {
+        id: p.id,
+        name: p.name,
+        host: p.host,
+        role: p.role,
+        ready: p.ready,
+        audio: Boolean(p.audio),
+        segments: mergedSegments,
+        micTested: Boolean(p.micTested),
+      };
+    }),
   };
 }
 
@@ -307,12 +313,9 @@ export async function executeGameRoomAction(
     row.status = 'recording';
     addLog('Kayıt aşaması başladı! Sahneye çıkın!', 'system');
   } else if (action === 'play' || action === 'finish') {
-    if (action === 'play' && !player.host) {
-      throw new Error('Finali oda kurucusu başlatabilir.');
-    }
     row.status = 'final';
-    row.play_at = Date.now() + 2500;
-    addLog('Tüm replikler tamamlandı! Büyük final başlıyor, birlikte izleniyor... 🎬', 'system');
+    row.play_at = Date.now() + 2800;
+    addLog('Tüm replikler tamamlandı! Büyük final başlıyor, odadaki herkesle birlikte izleniyor... 🎬', 'system');
   } else if (action === 'reaction') {
     const emoji = typeof extra.emoji === 'string' ? extra.emoji : '😂';
     row.reactions = row.reactions || { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
@@ -415,16 +418,18 @@ export async function saveAudioRecording(
     player.segments = Array.from(segs);
   }
 
-  // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını hesapla
+  // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını recordings tablosuyla birleştirerek hesapla
   const assignedCueIds = new Set<number>();
   row.players.forEach((p, idx) => {
     const pCues = playerCues(row.scene, idx, row.players.length, customList);
     pCues.forEach((c) => assignedCueIds.add(c.id));
-    const pSegs = new Set(p.segments || []);
+    const playerRecSegs = recordings.filter((r) => r.player === p.id).map((r) => r.segment);
+    const pSegs = new Set([...(p.segments || []), ...playerRecSegs]);
+    p.segments = Array.from(pSegs);
     p.audio = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : pSegs.size > 0;
   });
 
-  // Sahne replik kontrolü: Tüm oyuncular kendi repliklerini tamamladıysa veya tüm replikler kaydedildiyse otomatik Büyük Final'e geç ve oynatmayı başlat!
+  // Sahne replik kontrolü: Tüm oyuncular kendi repliklerini tamamladıysa otomatik Büyük Final'e geç ve odadaki herkes için senkronize oynatmayı başlat!
   const recordedCues = new Set(recordings.map((r) => r.segment));
   const allPlayersFinished = row.players.length > 0 && row.players.every((p) => p.audio);
   const allAssignedRecorded =
@@ -435,7 +440,7 @@ export async function saveAudioRecording(
 
   if (allPlayersFinished || allAssignedRecorded || allSceneCuesRecorded) {
     row.status = 'final';
-    row.play_at = Date.now() + 2500;
+    row.play_at = Date.now() + 2800;
   }
 
   const activities = [...(row.activities || [])];
