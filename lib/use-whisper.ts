@@ -177,7 +177,6 @@ function smartGroupWhisperChunks(
       };
     } else {
       const gap = chunkStart - current.end;
-      const currentText = current.words.join(' ');
       const isPunctuationEnd = SENTENCE_END_REGEX.test(current.words[current.words.length - 1]);
       const isLongEnough = current.words.length >= 10;
       const durationSoFar = chunkEnd - current.start;
@@ -269,6 +268,7 @@ export function useWhisper() {
       videoDuration: number,
       language: string = 'turkish',
       modelId: string = 'onnx-community/whisper-base',
+      onAudioReady?: (audio: Float32Array) => void,
     ): Promise<WhisperResult> => {
       isCancelledRef.current = false;
       setError(null);
@@ -287,6 +287,7 @@ export function useWhisper() {
         });
 
         if (isCancelledRef.current) throw new Error('İptal edildi');
+        onAudioReady?.(rawAudioData);
 
         // Sesi gürültü ve bas frekanslarından temizle, ses seviyesini normalize et
         const enhancedAudioData = enhanceSpeechAudio(rawAudioData);
@@ -456,6 +457,5 @@ export function useWhisper() {
     statusMessage,
     error,
     isProcessing: status !== 'idle' && status !== 'done' && status !== 'error',
-    cachedAudio: cachedAudioRef.current,
   };
 }

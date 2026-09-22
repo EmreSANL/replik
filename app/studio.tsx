@@ -19,6 +19,7 @@ import {
   Loader2,
   Globe,
   Trash2,
+  Captions,
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
@@ -34,7 +35,6 @@ import {
   type Scene,
 } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
-import { removeVocalsFromVideo } from '@/lib/vocal-remover';
 import {
   createGameRoom,
   joinGameRoom,
@@ -44,7 +44,6 @@ import {
   publishRoomDubbingToSupabase,
   deleteUnpublishedRoomFromSupabase,
 } from '@/lib/game-service';
-import { exportDubbedMp4, generateDubbedMp4Blob } from '@/lib/mp4-exporter';
 
 export type Session = { code: string; token: string; id: string };
 
@@ -129,6 +128,7 @@ export default function Studio({
     [audioLoaded, setAudioLoaded] = useState(false),
     [audioLoading, setAudioLoading] = useState(false),
     [isMuted, setIsMuted] = useState(false),
+    [subtitlesVisible, setSubtitlesVisible] = useState(true),
     [micTestOpen, setMicTestOpen] = useState(false),
     [scenePickerOpen, setScenePickerOpen] = useState(false),
     [roleRevealOpen, setRoleRevealOpen] = useState(false),
@@ -234,19 +234,6 @@ export default function Studio({
             }
           } catch (instErr) {
             console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
-          }
-        }
-        // Eğer sahnenin hazır M&E parçası yoksa doğrudan Saf AI (/api/splitter-ai) ile vokalleri ayır
-        if (!buffers.current.has(instKey) && scene.video && ctx.current) {
-          try {
-            const aiRes = await removeVocalsFromVideo(scene.video);
-            const buf = await aiRes.blob.arrayBuffer();
-            if (buf.byteLength > 0 && ctx.current) {
-              const decoded = await ctx.current.decodeAudioData(buf);
-              buffers.current.set(instKey, decoded);
-            }
-          } catch (fallbackErr) {
-            console.warn('Saf AI M&E ses ayrıştırma uyarısı:', fallbackErr);
           }
         }
       }
@@ -679,6 +666,7 @@ export default function Studio({
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
 
+      const { generateDubbedMp4Blob } = await import('@/lib/mp4-exporter');
       const mp4Blob = await generateDubbedMp4Blob({
         room,
         scene,
@@ -743,6 +731,7 @@ export default function Studio({
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
 
+      const { exportDubbedMp4 } = await import('@/lib/mp4-exporter');
       await exportDubbedMp4({
         room,
         scene,
@@ -980,7 +969,7 @@ export default function Studio({
                 )}
 
                 {/* Senkronize Dublaj Altyazısı */}
-                {activeSubtitle && (
+                {subtitlesVisible && activeSubtitle && (
                   <div className="final-subtitle-overlay">
                     <span className="final-char-badge">
                       {activeSubtitle.roleName} ({activeSubtitle.playerName})
@@ -1063,6 +1052,16 @@ export default function Studio({
                     title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
                   >
                     {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`final-ctrl-btn ${subtitlesVisible ? 'subtitles-on' : ''}`}
+                    onClick={() => setSubtitlesVisible((visible) => !visible)}
+                    aria-label={subtitlesVisible ? 'Altyazıyı kapat' : 'Altyazıyı aç'}
+                    aria-pressed={subtitlesVisible}
+                    title={subtitlesVisible ? 'Altyazıyı kapat' : 'Altyazıyı aç'}
+                  >
+                    <Captions size={19} />
                   </button>
                 </div>
               )}

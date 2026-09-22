@@ -25,6 +25,8 @@ import {
   FolderOpen,
   X,
   Search,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   type Scene,
@@ -37,7 +39,7 @@ import {
   deleteCustomScene,
 } from '@/lib/scenes';
 import { useWhisper } from '@/lib/use-whisper';
-import { removeVocalsFromVideo } from '@/lib/vocal-remover';
+import { removeVocalsFromVideo, reduceCenteredVocals } from '@/lib/vocal-remover';
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
 import { VideoTrimDialog } from '@/components/video-trim-dialog';
@@ -52,6 +54,22 @@ const COLOR_PALETTE = [
   '#9E8CA9',
   '#AEA932',
 ];
+
+function waveformFromAudio(channel: Float32Array): number[] {
+  const barCount = 140;
+  const step = Math.max(1, Math.floor(channel.length / barCount));
+  const peaks: number[] = [];
+  let maxPeak = 0.01;
+  for (let i = 0; i < barCount; i++) {
+    let peak = 0;
+    const offset = i * step;
+    const limit = Math.min(channel.length, offset + step);
+    for (let j = offset; j < limit; j += 8) peak = Math.max(peak, Math.abs(channel[j]));
+    maxPeak = Math.max(maxPeak, peak);
+    peaks.push(peak);
+  }
+  return peaks.map((peak) => Math.max(0.08, Math.min(1, peak / maxPeak)));
+}
 
 export default function EditorPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -78,6 +96,8 @@ export default function EditorPage() {
 
   // Vokal Kaldırma (İnsan Sesi Temizleme / M&E Track)
   const [instrumentalUrl, setInstrumentalUrl] = useState<string>('');
+  const [vocalError, setVocalError] = useState('');
+  const [vocalNotice, setVocalNotice] = useState('');
   const [isRemovingVocals, setIsRemovingVocals] = useState<boolean>(false);
   const [vocalProgress, setVocalProgress] = useState<number>(0);
   const [, setVocalStage] = useState<string>('');
@@ -120,7 +140,11 @@ export default function EditorPage() {
   // Zaman Çizelgesi Mouse ile Sürükleme, Ses Dalgası ve Yakınlaştırma Durumu
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
-  const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const [timelineZoom, setTimelineZoom] = useState<number>(2);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const videoJobRef = useRef(0);
+  const sourceFileRef = useRef<File | null>(null);
+  const localVideoUrlRef = useRef<string | null>(null);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [isScrubbingTimeline, setIsScrubbingTimeline] = useState(false);
   const [dragging, setDragging] = useState<{
@@ -136,6 +160,10 @@ export default function EditorPage() {
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
   }, []);
 
   // Supabase'den sahneleri çek
@@ -160,6 +188,7 @@ export default function EditorPage() {
       showToast('Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
+    const job = videoJobRef.current;
     try {
       const modelLabel = whisperModel.includes('base')
         ? 'Whisper Base (Yüksek Doğruluk)'
@@ -173,7 +202,10 @@ export default function EditorPage() {
         duration,
         'turkish',
         whisperModel,
+        (audio) => { if (videoJobRef.current === job) setWaveformPeaks(waveformFromAudio(audio)); },
       );
+      if (videoJobRef.current !== job) return;
+      if (result.audioData) setWaveformPeaks(waveformFromAudio(result.audioData));
       if (result.cues && result.cues.length > 0) {
         setCues(result.cues);
         setSelectedCueId(result.cues[0].id);
@@ -184,6 +216,7 @@ export default function EditorPage() {
         showToast('ℹ️ Videoda belirgin bir konuşma sesi bulunamadı.');
       }
     } catch (err) {
+      if (videoJobRef.current !== job) return;
       showToast(`Hata: ${(err as Error).message}`);
     }
   }, [videoUrl, roles, duration, whisper, whisperModel, showToast]);
@@ -197,6 +230,10 @@ export default function EditorPage() {
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
+      if (localVideoUrlRef.current && videoRef.current.src !== localVideoUrlRef.current) {
+        URL.revokeObjectURL(localVideoUrlRef.current);
+        localVideoUrlRef.current = null;
+      }
       const dur = videoRef.current.duration;
       if (dur && !isNaN(dur) && isFinite(dur)) {
         setDuration(dur);
@@ -245,16 +282,18 @@ export default function EditorPage() {
   // Videodan ses dalgası (waveform) verisini çıkar (Zaman çizelgesinde konuşma yerlerini görmek için)
   useEffect(() => {
     if (!videoUrl) return;
+    if (sourceFileRef.current) return;
     let cancelled = false;
     void (async () => {
       try {
-        const fetchUrl =
-          videoUrl.startsWith('blob:') || videoUrl.startsWith('/')
-            ? videoUrl
-            : `/api/video-proxy?url=${encodeURIComponent(videoUrl)}`;
-        const res = await fetch(fetchUrl);
-        if (!res.ok || cancelled) return;
-        const buf = await res.arrayBuffer();
+        let buf: ArrayBuffer;
+        if (sourceFileRef.current) {
+          buf = await sourceFileRef.current.arrayBuffer();
+        } else {
+          const res = await fetch(videoUrl);
+          if (!res.ok || cancelled) return;
+          buf = await res.arrayBuffer();
+        }
         if (buf.byteLength === 0 || cancelled) return;
         const AudioCtx =
           window.AudioContext ||
@@ -264,25 +303,7 @@ export default function EditorPage() {
         const audioBuffer = await ctx.decodeAudioData(buf);
         void ctx.close().catch(() => {});
         if (cancelled) return;
-        const ch = audioBuffer.getChannelData(0);
-        const barCount = 140;
-        const step = Math.max(1, Math.floor(ch.length / barCount));
-        const peaks: number[] = [];
-        let maxPeak = 0.01;
-        for (let i = 0; i < barCount; i++) {
-          let sum = 0;
-          const offset = i * step;
-          const limit = Math.min(ch.length, offset + step);
-          for (let j = offset; j < limit; j += 8) {
-            const v = Math.abs(ch[j]);
-            if (v > sum) sum = v;
-          }
-          if (sum > maxPeak) maxPeak = sum;
-          peaks.push(sum);
-        }
-        setWaveformPeaks(
-          peaks.map((p) => Math.max(0.08, Math.min(1, p / maxPeak))),
-        );
+        setWaveformPeaks(waveformFromAudio(audioBuffer.getChannelData(0)));
       } catch {
         // Ses dalgası çıkarılamazsa varsayılan görünüm
       }
@@ -295,7 +316,7 @@ export default function EditorPage() {
   // Zaman çizelgesinde imleci (playhead) mouse ile sürükleme
   useEffect(() => {
     if (!isScrubbingTimeline) return;
-    const handleMove = (e: MouseEvent) => {
+    const handleMove = (e: PointerEvent) => {
       if (!timelineRef.current) return;
       const rect = timelineRef.current.getBoundingClientRect();
       if (rect.width <= 0) return;
@@ -306,11 +327,13 @@ export default function EditorPage() {
       seekTo(Number((ratio * duration).toFixed(2)));
     };
     const handleUp = () => setIsScrubbingTimeline(false);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
     return () => {
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
     };
   }, [isScrubbingTimeline, duration, seekTo]);
 
@@ -318,7 +341,7 @@ export default function EditorPage() {
   useEffect(() => {
     if (!dragging) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (e: PointerEvent) => {
       const rect = dragging.timelineRect;
       if (!rect || rect.width <= 0) return;
       const effectiveSpan = dragging.spanDuration || duration;
@@ -345,46 +368,39 @@ export default function EditorPage() {
       setDragging(null);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handleMouseMove);
+    window.addEventListener('pointerup', handleMouseUp);
+    window.addEventListener('pointercancel', handleMouseUp);
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handleMouseMove);
+      window.removeEventListener('pointerup', handleMouseUp);
+      window.removeEventListener('pointercancel', handleMouseUp);
     };
   }, [dragging, duration, seekTo]);
 
   // Seçili repliğin başlangıcını şu anki video süresi yap
   const markCurrentTimeAsStart = useCallback(() => {
     const time = Number(currentTime.toFixed(2));
-    setCues((prev) =>
-      prev.map((c) => {
-        if (c.id === selectedCueId) {
-          const end = c.end <= time ? Number((time + 2.0).toFixed(2)) : c.end;
-          return { ...c, start: time, end };
-        }
-        return c;
-      }),
-    );
-    showToast(`Başlangıç [${time.toFixed(2)}s] olarak ayarlandı.`);
-  }, [currentTime, selectedCueId, showToast]);
+    setCues((prev) => {
+      const cue = prev.find((item) => item.id === selectedCueId);
+      if (!cue) return prev;
+      const timing = adjustCueTiming(prev, cue.id, 'start', cue.start, cue.end, time - cue.start, duration);
+      return prev.map((item) => item.id === cue.id ? { ...item, ...timing } : item);
+    });
+    showToast('Başlangıç oynatma imlecine yaklaştırıldı; komşu replik sınırları korundu.');
+  }, [currentTime, selectedCueId, duration, showToast]);
 
   // Seçili repliğin bitişini şu anki video süresi yap
   const markCurrentTimeAsEnd = useCallback(() => {
     const time = Number(currentTime.toFixed(2));
-    setCues((prev) =>
-      prev.map((c) => {
-        if (c.id === selectedCueId) {
-          const start =
-            c.start >= time
-              ? Math.max(0, Number((time - 1.0).toFixed(2)))
-              : c.start;
-          return { ...c, start, end: time };
-        }
-        return c;
-      }),
-    );
-    showToast(`Bitiş [${time.toFixed(2)}s] olarak ayarlandı.`);
-  }, [currentTime, selectedCueId, showToast]);
+    setCues((prev) => {
+      const cue = prev.find((item) => item.id === selectedCueId);
+      if (!cue) return prev;
+      const timing = adjustCueTiming(prev, cue.id, 'end', cue.start, cue.end, time - cue.end, duration);
+      return prev.map((item) => item.id === cue.id ? { ...item, ...timing } : item);
+    });
+    showToast('Bitiş oynatma imlecine yaklaştırıldı; komşu replik sınırları korundu.');
+  }, [currentTime, selectedCueId, duration, showToast]);
 
   // Kısayol tuşları
   useEffect(() => {
@@ -392,6 +408,23 @@ export default function EditorPage() {
       // Eğer kullanıcı bir input/textarea içinde yazıyorsa kısayolları tetikleme
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.key === 'Escape' && timelineExpanded) {
+        setTimelineExpanded(false);
+        return;
+      }
+
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        setCues((prev) => {
+          const cue = prev.find((item) => item.id === selectedCueId);
+          if (!cue) return prev;
+          const delta = e.key === 'ArrowLeft' ? -0.1 : 0.1;
+          const timing = adjustCueTiming(prev, cue.id, 'move', cue.start, cue.end, delta, duration);
+          return prev.map((item) => item.id === cue.id ? { ...item, ...timing } : item);
+        });
+        return;
+      }
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -408,6 +441,15 @@ export default function EditorPage() {
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         seekTo(currentTime + (e.shiftKey ? 0.1 : 1.0));
+      } else if (e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        const ordered = [...cues].sort((a, b) => a.start - b.start);
+        const index = ordered.findIndex((cue) => cue.id === selectedCueId);
+        const next = ordered[index + (e.key.toLowerCase() === 'j' ? -1 : 1)];
+        if (next) {
+          setSelectedCueId(next.id);
+          seekTo(next.start);
+        }
       }
     };
 
@@ -420,6 +462,9 @@ export default function EditorPage() {
     togglePlay,
     duration,
     seekTo,
+    cues,
+    selectedCueId,
+    timelineExpanded,
   ]);
 
   // Seçili repliği oynat
@@ -441,12 +486,20 @@ export default function EditorPage() {
 
   // Yeni replik ekle
   const addCue = () => {
-    const lastCue = cues[cues.length - 1];
-    const requestedStart = lastCue ? lastCue.end + 0.2 : currentTime;
-    const newStart = Number(
-      Math.max(0, Math.min(duration - 0.2, requestedStart)).toFixed(2),
-    );
-    const newEnd = Number(Math.min(duration, newStart + 3.5).toFixed(2));
+    const ordered = [...cues].sort((a, b) => a.start - b.start);
+    let newStart = Math.max(0, currentTime);
+    for (const cue of ordered) {
+      if (cue.end <= newStart) continue;
+      if (cue.start - newStart >= 0.3) break;
+      newStart = cue.end + 0.1;
+    }
+    const nextCue = ordered.find((cue) => cue.start > newStart);
+    const newEnd = Number(Math.min(duration, newStart + 3.5, nextCue ? nextCue.start - 0.1 : duration).toFixed(2));
+    newStart = Number(newStart.toFixed(2));
+    if (newEnd - newStart < 0.2) {
+      showToast('Bu noktada yeni replik için yeterli boşluk yok. Oynatma imlecini başka yere taşıyın.');
+      return;
+    }
     const nextRoleIdx = cues.length % roles.length;
     const role = roles[nextRoleIdx] || roles[0];
 
@@ -460,11 +513,24 @@ export default function EditorPage() {
       text: 'Yeni replik metni...',
     };
 
-    setCues((prev) => [...prev, newCue]);
+    setCues((prev) => [...prev, newCue].sort((a, b) => a.start - b.start));
     setSelectedCueId(newCue.id);
     seekTo(newStart);
     showToast('Yeni replik satırı eklendi.');
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'n' || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target as HTMLElement;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (!videoUrl) return;
+      event.preventDefault();
+      addCue();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   // Replik güncelle
   const updateCue = (id: number, updates: Partial<Cue>) => {
@@ -499,6 +565,17 @@ export default function EditorPage() {
       return prev.map((item) =>
         item.id === cue.id ? { ...item, ...timing } : item,
       );
+    });
+  };
+
+  const setCueBoundary = (cueId: number, type: 'start' | 'end', value: number) => {
+    if (!Number.isFinite(value)) return;
+    setCues((prev) => {
+      const cue = prev.find((item) => item.id === cueId);
+      if (!cue) return prev;
+      const original = type === 'start' ? cue.start : cue.end;
+      const timing = adjustCueTiming(prev, cueId, type, cue.start, cue.end, value - original, duration);
+      return prev.map((item) => item.id === cueId ? { ...item, ...timing } : item);
     });
   };
 
@@ -559,8 +636,20 @@ export default function EditorPage() {
   // Video işleme fonksiyonu (Önizleme + Supabase Yükleme + AI Transkripsiyon)
   const processVideoFile = useCallback(
     (file: File, selectedDuration: number) => {
+      const job = ++videoJobRef.current;
+      sourceFileRef.current = file;
+      setVocalError('');
+      setVocalNotice('');
+      setInstrumentalUrl('');
+      setCues([]);
+      setWaveformPeaks([]);
+      setCurrentTime(0);
+      videoRef.current?.pause();
+      instrumentalAudioRef.current?.pause();
       // 1. Yerel hızlı önizleme
+      if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
       const localUrl = URL.createObjectURL(file);
+      localVideoUrlRef.current = localUrl;
       setVideoUrl(localUrl);
       setDuration(selectedDuration);
       const videoTitle = file.name.replace(/\.[^/.]+$/, '').slice(0, 35);
@@ -571,6 +660,7 @@ export default function EditorPage() {
       tempVideo.crossOrigin = 'anonymous';
       tempVideo.muted = true;
       tempVideo.onloadedmetadata = () => {
+        if (videoJobRef.current !== job) return;
         if (
           tempVideo.duration &&
           !isNaN(tempVideo.duration) &&
@@ -581,6 +671,7 @@ export default function EditorPage() {
         tempVideo.currentTime = Math.min(1, tempVideo.duration / 2);
       };
       tempVideo.onloadeddata = () => {
+        if (videoJobRef.current !== job) return;
         try {
           const canvas = document.createElement('canvas');
           canvas.width = 480;
@@ -601,20 +692,27 @@ export default function EditorPage() {
       setUploadProgress(15);
       uploadVideoToSupabase(file, file.name, (pct) => setUploadProgress(pct))
         .then(({ url }) => {
+          if (videoJobRef.current !== job) return;
           setVideoUrl(url); // Artık herkese açık kalıcı Supabase URL'si
           setIsUploadingToSupabase(false);
           showToast('Video Supabase Storage bulutuna başarıyla yüklendi!');
         })
         .catch((err) => {
+          if (videoJobRef.current !== job) return;
           setIsUploadingToSupabase(false);
+          showToast(`Video yüklenemedi: ${(err as Error).message}`);
           console.warn('Supabase storage uyarısı:', err);
         });
 
       // 3. Yapay zeka ile otomatik konuşma tanıma ve zamanlama
       const videoDur = selectedDuration;
       whisper
-        .transcribe(file, roles, videoDur, 'turkish')
+        .transcribe(file, roles, videoDur, 'turkish', undefined, (audio) => {
+          if (videoJobRef.current === job) setWaveformPeaks(waveformFromAudio(audio));
+        })
         .then((result) => {
+          if (videoJobRef.current !== job) return;
+          if (result.audioData) setWaveformPeaks(waveformFromAudio(result.audioData));
           if (result.cues && result.cues.length > 0) {
             setCues(result.cues);
             setSelectedCueId(result.cues[0].id);
@@ -624,6 +722,7 @@ export default function EditorPage() {
           }
         })
         .catch((err) => {
+          if (videoJobRef.current !== job) return;
           showToast(`Altyazı analizi: ${(err as Error).message}`);
         });
 
@@ -632,12 +731,16 @@ export default function EditorPage() {
       setVocalProgress(15);
       setVocalStage('Splitter AI ile vokaller ayrıştırılıyor...');
       removeVocalsFromVideo(file, file.name, (stage, pct) => {
+        if (videoJobRef.current !== job) return;
         setVocalStage(stage);
         setVocalProgress(pct);
       })
         .then(async (res) => {
+          if (videoJobRef.current !== job) return;
           setInstrumentalUrl(res.url);
           setIsRemovingVocals(false);
+          setVocalError('');
+          setVocalNotice('');
           setAudioMode('instrumental');
           // Sahne zaten kaydedilmişse instrumental_url alanını anında güncelle
           try {
@@ -647,12 +750,13 @@ export default function EditorPage() {
               .update({ instrumental_url: res.url })
               .eq('id', sceneId);
           } catch {}
-          showToast(
-            'Splitter AI: Videodaki vokaller %100 ayrıldı, ses efektleri korundu!',
-          );
+          showToast('AI vokal ayrıştırması tamamlandı. Sonucu dinleyerek kontrol edin.');
         })
         .catch((err) => {
+          if (videoJobRef.current !== job) return;
           setIsRemovingVocals(false);
+          setVocalError((err as Error).message);
+          showToast(`Vokal temizleme başarısız: ${(err as Error).message}`);
           console.warn('Vokal temizleme uyarısı:', err);
         });
     },
@@ -679,6 +783,9 @@ export default function EditorPage() {
       return;
     }
     setIsRemovingVocals(true);
+    setVocalError('');
+    setVocalNotice('');
+    const job = videoJobRef.current;
     setVocalProgress(10);
     setVocalStage('Splitter AI ile vokaller ayrıştırılıyor...');
     try {
@@ -686,13 +793,14 @@ export default function EditorPage() {
         'Splitter AI: İnsan sesleri ayrıştırılıyor, ses efektleri korunuyor...',
       );
       const res = await removeVocalsFromVideo(
-        videoUrl,
+        sourceFileRef.current || videoUrl,
         title || 'instrumental',
         (stage, pct) => {
           setVocalStage(stage);
           setVocalProgress(pct);
         },
       );
+      if (videoJobRef.current !== job) return;
       setInstrumentalUrl(res.url);
       setAudioMode('instrumental');
       try {
@@ -703,24 +811,59 @@ export default function EditorPage() {
           .eq('id', sceneId);
       } catch {}
       showToast(
-        'Splitter AI: İnsan sesleri başarıyla ayrıldı! Vokalsiz efekt kanalı hazır.',
+        'AI vokal ayrıştırması tamamlandı. Sonucu dinleyerek kontrol edin.',
       );
     } catch (err) {
+      if (videoJobRef.current !== job) return;
+      setVocalError((err as Error).message);
       showToast(`Vokal temizleme hatası: ${(err as Error).message}`);
     } finally {
-      setIsRemovingVocals(false);
+      if (videoJobRef.current === job) setIsRemovingVocals(false);
     }
   }, [videoUrl, title, showToast, sceneId]);
+
+  const handleStereoVocalReduction = useCallback(async () => {
+    if (!videoUrl) return;
+    const job = videoJobRef.current;
+    setIsRemovingVocals(true);
+    setVocalError('');
+    try {
+      const result = await reduceCenteredVocals(sourceFileRef.current || videoUrl, title || 'scene', (stage, percent) => {
+        if (videoJobRef.current !== job) return;
+        setVocalStage(stage);
+        setVocalProgress(percent);
+      });
+      if (videoJobRef.current !== job) return;
+      setInstrumentalUrl(result.url);
+      setAudioMode('instrumental');
+      setVocalNotice('Stereo yedek yöntem kullanıldı. Merkezdeki ses azaltılır; bazı efektler de etkilenebilir. Önizlemeden kontrol edin.');
+      const { supabase } = await import('@/lib/supabase');
+      await supabase.from('custom_scenes').update({ instrumental_url: result.url }).eq('id', sceneId);
+      showToast('Stereo yedek ses hazır. Sonucu dinleyerek kontrol edin.');
+    } catch (error) {
+      if (videoJobRef.current !== job) return;
+      setVocalError((error as Error).message);
+    } finally {
+      if (videoJobRef.current === job) setIsRemovingVocals(false);
+    }
+  }, [videoUrl, title, sceneId, showToast]);
 
   // Sahne Yükle (Hem Supabase / Meme hem de Hazır Oyun Sahneleri)
   const loadScene = useCallback(
     (sc: Scene) => {
+      videoJobRef.current += 1;
+      sourceFileRef.current = null;
+      setVocalError('');
+      setVocalNotice('');
+      if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
+      localVideoUrlRef.current = null;
       setSceneId(sc.id);
       setTitle(sc.title);
       setCategory(sc.category || 'Meme & Mizah');
       setMood(sc.mood || 'Doğaçlama komedi');
       setVideoUrl(sc.video);
       setPoster(sc.poster || '');
+      setWaveformPeaks([]);
       setDuration(sc.duration || 20);
 
       // Karakterler / Roller
@@ -751,6 +894,9 @@ export default function EditorPage() {
       if (sc.instrumental) {
         setInstrumentalUrl(sc.instrumental);
         setAudioMode('instrumental');
+        if (sc.instrumental.includes('/stereo_')) {
+          setVocalNotice('Stereo yedek yöntem kullanıldı. Merkezdeki ses azaltılır; bazı efektler de etkilenebilir. Önizlemeden kontrol edin.');
+        }
       } else {
         setInstrumentalUrl('');
         setAudioMode('original');
@@ -773,6 +919,19 @@ export default function EditorPage() {
 
   // Sıfırdan Yeni Sahneye Geç
   const handleStartNewScene = useCallback(() => {
+    videoJobRef.current += 1;
+    sourceFileRef.current = null;
+    if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
+    localVideoUrlRef.current = null;
+    videoRef.current?.pause();
+    instrumentalAudioRef.current?.pause();
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setIsUploadingToSupabase(false);
+    setIsRemovingVocals(false);
+    setWaveformPeaks([]);
+    setVocalError('');
+    setVocalNotice('');
     setSceneId(Date.now());
     setTitle('');
     setCategory('Meme & Mizah');
@@ -801,6 +960,31 @@ export default function EditorPage() {
     setEditingSceneTitle('');
     setIsSceneModalOpen(false);
     showToast('Yeni boş sahne oluşturma moduna geçildi.');
+  }, [showToast]);
+
+  const handleRemoveVideo = useCallback(() => {
+    videoJobRef.current += 1;
+    sourceFileRef.current = null;
+    videoRef.current?.pause();
+    instrumentalAudioRef.current?.pause();
+    if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
+    localVideoUrlRef.current = null;
+    setVideoUrl('');
+    setPoster('');
+    setDuration(20);
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setCues([]);
+    setSelectedCueId(0);
+    setInstrumentalUrl('');
+    setWaveformPeaks([]);
+    setIsUploadingToSupabase(false);
+    setIsRemovingVocals(false);
+    setVocalError('');
+    setVocalNotice('');
+    setPendingVideo(null);
+    setTimelineExpanded(false);
+    showToast('Video düzenleyiciden kaldırıldı. Yeni video ekleyebilirsiniz.');
   }, [showToast]);
 
   // URL query parametresinden sceneId oku ve ilgili sahneyi otomatik yükle
@@ -1082,9 +1266,9 @@ export default function EditorPage() {
       )}
 
       {/* ANA İÇERİK: SOLDA VİDEO, SAĞDA 3 BASİT ADIM */}
-      <div className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* SOL SÜTUN: VİDEO ÖNİZLEME (6 SÜTUN) */}
-        <div className="lg:col-span-6 flex flex-col gap-4 lg:sticky lg:top-20">
+        <div className="lg:col-span-7 flex flex-col gap-4 lg:sticky lg:top-20">
           <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3.5 shadow-xl">
             {/* Otomatik İşlem Durum Bildirimleri (Varsa gösterilir) */}
             {(isUploadingToSupabase ||
@@ -1323,7 +1507,7 @@ export default function EditorPage() {
                         className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1A1A17] hover:bg-[#22221E] text-[#9E8CA9] border border-[#383832] flex items-center gap-1.5 cursor-pointer"
                       >
                         <Music size={14} />
-                        <span>Vokalleri Temizle</span>
+                        <span>{vocalError ? 'Vokal Ayırmayı Yeniden Dene' : 'Vokalleri Temizle'}</span>
                       </button>
                     )}
 
@@ -1334,23 +1518,35 @@ export default function EditorPage() {
                     >
                       Videoyu Değiştir
                     </button>
+                    <button type="button" onClick={handleRemoveVideo} className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#22221E] hover:bg-[#FA5636]/15 text-[#FA8270] border border-[#FA5636]/35 flex items-center gap-1.5 cursor-pointer" title="Videoyu ve repliklerini bu düzenlemeden kaldır">
+                      <Trash2 size={13} /> Videoyu Kaldır
+                    </button>
                   </div>
                 </div>
 
+                {vocalError && (
+                  <div role="alert" className="rounded-xl border border-[#FA5636]/40 bg-[#FA5636]/10 px-3 py-2 text-xs text-[#F4B2A6]">
+                    <p>Vokalsiz ses hazırlanamadı: {vocalError}</p>
+                    <button type="button" onClick={handleStereoVocalReduction} disabled={isRemovingVocals} className="mt-2 rounded-lg border border-[#FA5636]/40 px-3 py-1.5 font-bold hover:bg-[#FA5636]/15 disabled:opacity-50">
+                      Stereo yedek yöntemle azalt
+                    </button>
+                  </div>
+                )}
+                {vocalNotice && <div role="status" className="rounded-xl border border-[#AEA932]/50 bg-[#AEA932]/10 px-3 py-2 text-xs text-[#E4DE8B]">{vocalNotice}</div>}
+
                 {/* GÖRSEL ZAMAN ÇİZELGESİ KUTUSU */}
-                <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-3 flex flex-col gap-2.5">
+                <div className={`editor-timeline-panel bg-[#1A1A17] border border-[#383832] rounded-2xl p-3 flex flex-col gap-3 ${timelineExpanded ? 'editor-timeline-expanded' : ''}`}>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <Clock size={14} className="text-[#F5E636]" />
                       <span className="text-xs font-extrabold text-[#F4F4E9]">
                         Zaman Çizelgesi
                       </span>
-                      <span className="text-[11px] text-[#B8B8AE]">
-                        Kenarlar süreyi ayarlar · Gövde repliği taşır
-                      </span>
+                      <span className="text-[11px] text-[#B8B8AE]">{cues.length} replik · {formatTimecode(duration)}</span>
                     </div>
 
                     {/* Yakınlaştırma (Zoom) Butonları */}
+                    <div className="flex items-center gap-1">
                     <div className="flex items-center gap-1 bg-[#1A1A17] border border-[#383832] rounded-lg p-0.5">
                       {[1, 2, 4].map((z) => (
                         <button
@@ -1367,6 +1563,21 @@ export default function EditorPage() {
                         </button>
                       ))}
                     </div>
+                    <button type="button" onClick={() => setTimelineExpanded((value) => !value)} className="editor-timeline-expand" aria-label={timelineExpanded ? 'Zaman çizelgesini küçült' : 'Zaman çizelgesini büyüt'} title={timelineExpanded ? 'Küçült (Esc)' : 'Geniş düzenleme alanı'}>
+                      {timelineExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                      <span>{timelineExpanded ? 'Küçült' : 'Genişlet'}</span>
+                    </button>
+                    </div>
+                  </div>
+
+                  <div className="editor-shortcut-strip" aria-label="Zaman çizelgesi kısayolları">
+                    <span><kbd>Boşluk</kbd> oynat</span>
+                    <span><kbd>[</kbd> başlangıç</span>
+                    <span><kbd>]</kbd> bitiş</span>
+                    <span><kbd>J</kbd>/<kbd>L</kbd> replik seç</span>
+                    <span><kbd>N</kbd> replik ekle</span>
+                    <span><kbd>⇧ ←/→</kbd> 0,1 sn ilerle</span>
+                    <span><kbd>⌥ ←/→</kbd> repliği kaydır</span>
                   </div>
 
                   {/* Kaydırılabilir Ana Zaman Çizelgesi */}
@@ -1380,7 +1591,7 @@ export default function EditorPage() {
                         width: `${timelineZoom * 100}%`,
                         minWidth: '100%',
                       }}
-                      onMouseDown={(e) => {
+                      onPointerDown={(e) => {
                         if (!timelineRef.current) return;
                         const rect =
                           timelineRef.current.getBoundingClientRect();
@@ -1391,7 +1602,7 @@ export default function EditorPage() {
                         seekTo(Number((ratio * duration).toFixed(1)));
                         setIsScrubbingTimeline(true);
                       }}
-                      className={`relative h-28 bg-[#1A1A17] border rounded-xl overflow-hidden cursor-pointer transition-colors ${
+                      className={`relative h-32 bg-[#11110F] border rounded-xl overflow-hidden cursor-pointer touch-none transition-colors ${
                         dragging ? 'border-[#F5E636]' : 'border-[#383832]'
                       }`}
                     >
@@ -1431,7 +1642,7 @@ export default function EditorPage() {
                       </div>
 
                       {/* Ses Dalgası (Waveform) Arka Planı */}
-                      <div className="absolute inset-x-0 top-5 bottom-0 flex items-center justify-between px-0.5 pointer-events-none opacity-35">
+                      <div className="absolute inset-x-0 top-5 h-8 flex items-center justify-between px-0.5 pointer-events-none opacity-45">
                         {(waveformPeaks.length > 0
                           ? waveformPeaks
                           : Array.from(
@@ -1442,7 +1653,7 @@ export default function EditorPage() {
                           <div
                             key={idx}
                             style={{
-                              height: `${Math.max(12, Math.round(peak * 85))}%`,
+                              height: `${Math.max(12, Math.round(peak * 80))}%`,
                             }}
                             className="w-[2px] rounded-full bg-[#9E8CA9]"
                           />
@@ -1450,7 +1661,7 @@ export default function EditorPage() {
                       </div>
 
                       {/* Replik Blokları (Mouse ile Sürüklenebilir) */}
-                      <div className="absolute inset-x-0 top-6 bottom-1.5">
+                      <div className="absolute inset-x-0 top-14 bottom-3">
                         {cues.map((cue, idx) => {
                           const isSelected = cue.id === selectedCueId;
                           const leftPct = Math.max(
@@ -1479,7 +1690,7 @@ export default function EditorPage() {
                                 borderColor: isSelected ? '#F5E636' : '#9E8CA9',
                                 zIndex: isSelected ? 20 : 10,
                               }}
-                              onMouseDown={(e) => {
+                              onPointerDown={(e) => {
                                 e.stopPropagation();
                                 setSelectedCueId(cue.id);
                                 seekTo(cue.start);
@@ -1505,7 +1716,7 @@ export default function EditorPage() {
                                   spanDuration: duration,
                                 });
                               }}
-                              className={`absolute top-2 bottom-2 rounded-lg border-2 flex items-center justify-between overflow-visible group transition-all cursor-grab active:cursor-grabbing hover:brightness-110 focus-within:ring-2 focus-within:ring-white ${
+                              className={`absolute top-1 bottom-1 rounded-md border flex items-center justify-between overflow-visible group transition-all cursor-grab active:cursor-grabbing hover:brightness-110 focus-within:ring-2 focus-within:ring-white ${
                                 isSelected
                                   ? 'shadow-lg shadow-black/80 ring-2 ring-[#F5E636]'
                                   : 'hover:ring-1 hover:ring-white/70'
@@ -1516,7 +1727,7 @@ export default function EditorPage() {
                               <button
                                 type="button"
                                 aria-label={`Replik ${idx + 1} başlangıcını sürükle`}
-                                onMouseDown={(e) => {
+                                onPointerDown={(e) => {
                                   e.stopPropagation();
                                   setSelectedCueId(cue.id);
                                   if (!timelineRef.current) return;
@@ -1549,10 +1760,10 @@ export default function EditorPage() {
                                     e.key === 'ArrowLeft' ? -0.1 : 0.1,
                                   );
                                 }}
-                                className="h-full w-4 -ml-1 bg-white hover:bg-[#F5E636] focus:bg-[#F5E636] focus:outline-none text-black rounded-l-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                className="h-full w-2.5 bg-black/25 hover:bg-black/60 focus:bg-black/60 focus:outline-none text-black rounded-l-md flex items-center justify-center cursor-ew-resize shrink-0 z-30"
                                 title="Başlangıcı (Start) mouse ile sağa/sola sürükle"
                               >
-                                <div className="w-[3px] h-4 bg-black/70 rounded-full" />
+                                <div className="w-[2px] h-4 bg-black/70 rounded-full" />
                               </button>
 
                               {/* Replik Etiketi */}
@@ -1564,7 +1775,7 @@ export default function EditorPage() {
                               <button
                                 type="button"
                                 aria-label={`Replik ${idx + 1} bitişini sürükle`}
-                                onMouseDown={(e) => {
+                                onPointerDown={(e) => {
                                   e.stopPropagation();
                                   setSelectedCueId(cue.id);
                                   if (!timelineRef.current) return;
@@ -1597,17 +1808,12 @@ export default function EditorPage() {
                                     e.key === 'ArrowLeft' ? -0.1 : 0.1,
                                   );
                                 }}
-                                className="h-full w-4 -mr-1 bg-white hover:bg-[#F5E636] focus:bg-[#F5E636] focus:outline-none text-black rounded-r-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                className="h-full w-2.5 bg-black/25 hover:bg-black/60 focus:bg-black/60 focus:outline-none text-black rounded-r-md flex items-center justify-center cursor-ew-resize shrink-0 z-30"
                                 title="Bitişi (End) mouse ile sağa/sola sürükle"
                               >
-                                <div className="w-[3px] h-4 bg-black/70 rounded-full" />
+                                <div className="w-[2px] h-4 bg-black/70 rounded-full" />
                               </button>
 
-                              {isSelected && (
-                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[#F5E636]/50 bg-[#1A1A17]/95 px-2 py-1 text-[10px] font-mono font-bold text-[#F5E636] shadow-xl pointer-events-none">
-                                  {formatTimecode(cue.start)} — {formatTimecode(cue.end)} · {formatTimecode(cue.end - cue.start)}
-                                </div>
-                              )}
                             </div>
                           );
                         })}
@@ -1647,9 +1853,6 @@ export default function EditorPage() {
                           <span className="truncate text-[#B8B8AE]">
                             “{activeCue.text}”
                           </span>
-                          <span className="shrink-0 font-mono font-bold text-[#F5E636]">
-                            {formatTimecode(activeCue.start)} — {formatTimecode(activeCue.end)}
-                          </span>
                           {overlaps && (
                             <span className="shrink-0 rounded-md bg-[#FA563622] px-2 py-1 text-[10px] font-bold text-[#FA5636]">
                               Çakışma var
@@ -1657,14 +1860,25 @@ export default function EditorPage() {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="editor-timing-controls">
+                          {(['start', 'end'] as const).map((type) => (
+                            <label key={type} className="editor-time-field">
+                              <span>{type === 'start' ? 'Başlangıç' : 'Bitiş'}</span>
+                              <button type="button" onClick={() => nudgeCueBoundary(activeCue, type, -0.1)} aria-label={`${type === 'start' ? 'Başlangıcı' : 'Bitişi'} 0,1 saniye geri al`}>−</button>
+                              <input key={`${activeCue.id}-${type}-${type === 'start' ? activeCue.start : activeCue.end}`} type="number" min={0} max={duration} step={0.1} defaultValue={type === 'start' ? activeCue.start : activeCue.end} onBlur={(event) => { if (event.target.value !== '') setCueBoundary(activeCue.id, type, Number(event.target.value)); }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} aria-label={`Replik ${type === 'start' ? 'başlangıç' : 'bitiş'} saniyesi`} />
+                              <button type="button" onClick={() => nudgeCueBoundary(activeCue, type, 0.1)} aria-label={`${type === 'start' ? 'Başlangıcı' : 'Bitişi'} 0,1 saniye ileri al`}>+</button>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <button
                             type="button"
                             onClick={markCurrentTimeAsStart}
                             className="px-2 py-1 rounded-lg bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] text-[11px] font-bold cursor-pointer"
                             title="Videonun şu anki saniyesini bu repliğin başlangıcı yap"
                           >
-                            Başlangıç = Oynatma İmleci
+                            Başlangıç [
                           </button>
                           <button
                             type="button"
@@ -1672,7 +1886,7 @@ export default function EditorPage() {
                             className="px-2 py-1 rounded-lg bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] text-[11px] font-bold cursor-pointer"
                             title="Videonun şu anki saniyesini bu repliğin bitişi yap"
                           >
-                            Bitiş = Oynatma İmleci
+                            Bitiş ]
                           </button>
                           <button
                             type="button"
@@ -1692,7 +1906,7 @@ export default function EditorPage() {
         </div>
 
         {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME (6 SÜTUN) */}
-        <div className="lg:col-span-6 flex flex-col gap-4">
+        <div className="lg:col-span-5 flex flex-col gap-4">
           {/* ADIM 1: SAHNE ADI */}
           <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-2.5 shadow-lg">
             <div className="flex items-center gap-2">
