@@ -10,6 +10,7 @@
     "build": "vinext build && node scripts/prerender.js",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
+    "test": "node --test lib/*.test.mjs",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate"
   },
