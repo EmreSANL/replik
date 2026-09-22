@@ -726,10 +726,10 @@ export default function EditorPage() {
           showToast(`Altyazı analizi: ${(err as Error).message}`);
         });
 
-      // 4. Videodaki insan seslerini (vokalleri) otomatik temizle (Splitter-AI htdemucs)
+      // 4. Videodaki konuşma kanalını ayır; özel uç nokta tanımlıysa Demucs kullanılır.
       setIsRemovingVocals(true);
       setVocalProgress(15);
-      setVocalStage('Splitter AI ile vokaller ayrıştırılıyor...');
+      setVocalStage('Konuşma müzik ve efektlerden ayrıştırılıyor...');
       removeVocalsFromVideo(file, file.name, (stage, pct) => {
         if (videoJobRef.current !== job) return;
         setVocalStage(stage);
@@ -787,10 +787,10 @@ export default function EditorPage() {
     setVocalNotice('');
     const job = videoJobRef.current;
     setVocalProgress(10);
-    setVocalStage('Splitter AI ile vokaller ayrıştırılıyor...');
+    setVocalStage('Konuşma müzik ve efektlerden ayrıştırılıyor...');
     try {
       showToast(
-        'Splitter AI: İnsan sesleri ayrıştırılıyor, ses efektleri korunuyor...',
+        'Konuşma kanalı ayrıştırılıyor. Sonucu mutlaka dinleyerek kontrol edin.',
       );
       const res = await removeVocalsFromVideo(
         sourceFileRef.current || videoUrl,
