@@ -1292,6 +1292,33 @@ export default function Studio({
                   <span className="microcopy">
                     <Headphones size={14} /> Kayıtta kulaklık kullan.
                   </span>
+
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #2d3423' }}>
+                    <div className="eyebrow" style={{ marginBottom: 6 }}>ODADAKİ OYUNCULAR</div>
+                    <ul className="players">
+                      {room.players.map((p, pIdx) => {
+                        const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
+                        const pDone = pAssigned.length > 0 ? pAssigned.every((c) => p.segments?.includes(c.id)) : p.audio;
+                        const isReady = p.ready === 1 && pDone;
+                        return (
+                          <li key={p.id}>
+                            <span className="avatar">{p.name[0]?.toLocaleUpperCase('tr') || '?'}</span>
+                            <span className="player-details">
+                              <strong>{p.name} {p.id === me.id ? '(Sen)' : ''}</strong>
+                              <small style={{ color: isReady ? '#4ade80' : '#8c8e82' }}>
+                                {isReady ? 'Hazır (Ready) ✓' : `${p.segments?.length || 0}/${pAssigned.length} replik`}
+                              </small>
+                            </span>
+                            {isReady ? (
+                              <Check size={16} color="#4ade80" />
+                            ) : (
+                              <span className="waiting-dot" />
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 </>
               );
             })()

@@ -605,27 +605,6 @@ export default function SegmentRecorder({
         setSelected(next.id);
         setPosition(next.start);
         if (video.current) video.current.currentTime = scene.start + next.start;
-      } else {
-        // Bu oyuncunun tüm replikleri bitti; odadaki diğer oyuncular da bitirdiyse hemen Büyük Final'e geç
-        const updatedPreferredRoles = updatedRoom.players.map((p) => p.role);
-        const everyoneDone = updatedRoom.players.every((p, idx) => {
-          const pAssigned = playerCues(
-            room.scene,
-            idx,
-            updatedRoom!.players.length,
-            customScenes,
-            updatedPreferredRoles,
-          );
-          return pAssigned.every((c) => p.segments?.includes(c.id));
-        });
-        if (everyoneDone && updatedRoom.status !== 'final') {
-          const finalRoom = await executeGameRoomAction(
-            room.code,
-            session.token,
-            'finish',
-          ).catch(() => null);
-          if (finalRoom) onRoom(finalRoom);
-        }
       }
     } catch (e) {
       setError((e as Error).message);
@@ -661,10 +640,46 @@ export default function SegmentRecorder({
         />
       )}
 
-      <div className="cue-stage-heading">
-        <span className="eyebrow">KAYIT STÜDYOSU / BÖLÜM {String(selectedNumber).padStart(2, '0')}</span>
-        <strong>{completed} / {mine.length} replik tamamlandı</strong>
-      </div>
+      {/* Başlık ve Canlı Hazır Durumu */}
+      {(() => {
+        const preferredRoles = room.players.map((p) => p.role);
+        const readyPlayersCount = room.players.filter((p, pIdx) => {
+          const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
+          const pDone = pAssigned.length > 0 ? pAssigned.every((c) => p.segments?.includes(c.id)) : p.audio;
+          return p.ready === 1 && pDone;
+        }).length;
+
+        return (
+          <div className="cue-stage-heading">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span className="eyebrow">KAYIT STÜDYOSU / BÖLÜM {String(selectedNumber).padStart(2, '0')}</span>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  background: completed >= mine.length ? 'rgba(74, 222, 128, 0.15)' : 'rgba(245, 230, 54, 0.15)',
+                  color: completed >= mine.length ? '#4ade80' : '#F5E636',
+                  border: `1px solid ${completed >= mine.length ? 'rgba(74, 222, 128, 0.35)' : 'rgba(245, 230, 54, 0.35)'}`,
+                }}
+              >
+                <span
+                  className="pulse-dot"
+                  style={{ background: completed >= mine.length ? '#4ade80' : '#F5E636' }}
+                />
+                {completed >= mine.length
+                  ? `HAZIRSIN (${readyPlayersCount}/${room.players.length} OYUNCU HAZIR)`
+                  : `${readyPlayersCount}/${room.players.length} OYUNCU HAZIR`}
+              </span>
+            </div>
+            <strong>{completed} / {mine.length} replik tamamlandı</strong>
+          </div>
+        );
+      })()}
       <div className={`video-wrap ${recording ? 'recording-active-glow' : ''}`}>
         <video
           ref={video}
@@ -721,94 +736,137 @@ export default function SegmentRecorder({
       </div>
 
       <div className="cue-editor">
-        {/* Eğer oyuncu tüm repliklerini tamamladıysa Dublaj.io "Sıra Kimde?" Paneli göster */}
+        {/* Eğer oyuncu tüm repliklerini tamamladıysa Canlı Hazır & Turn Tracker Paneli göster */}
         {completed >= mine.length && !recording && !countdown && !listeningOriginal ? (
-          <div className="turn-tracker-card">
-            <div className="turn-tracker-header">
-              <span className="turn-tracker-badge">
-                <span className="pulse-dot" /> CANLI DURUM
-              </span>
-              <h3>Senin kayıtların hazır</h3>
-              <p>Diğer oyuncular tamamladığında final başlayacak.</p>
-            </div>
+          (() => {
+            const preferredRoles = room.players.map((p) => p.role);
+            const readyPlayersCount = room.players.filter((p, pIdx) => {
+              const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
+              const pDone = pAssigned.length > 0 ? pAssigned.every((c) => p.segments?.includes(c.id)) : p.audio;
+              return p.ready === 1 && pDone;
+            }).length;
+            const isAllPlayersReady = room.players.length > 0 && readyPlayersCount === room.players.length;
 
-            <div className="turn-players-list">
-              {room.players.map((p, pIdx) => {
-                const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes);
-                const pDone = pAssigned.length > 0
-                  ? pAssigned.every((c) => p.segments?.includes(c.id))
-                  : p.audio;
-                const pPct = pDone
-                  ? 100
-                  : Math.round((p.segments.length / Math.max(1, pAssigned.length)) * 100);
+            return (
+              <div className="turn-tracker-card">
+                <div className="turn-tracker-header">
+                  <span
+                    className="turn-tracker-badge"
+                    style={{
+                      color: isAllPlayersReady ? '#4ade80' : 'var(--primary)',
+                    }}
+                  >
+                    <span
+                      className="pulse-dot"
+                      style={{
+                        background: isAllPlayersReady ? '#4ade80' : 'var(--primary)',
+                        boxShadow: isAllPlayersReady ? '0 0 8px #4ade80' : undefined,
+                      }}
+                    />
+                    {isAllPlayersReady
+                      ? 'HERKES HAZIR'
+                      : `DİĞER OYUNCULAR BEKLENİYOR (${readyPlayersCount}/${room.players.length})`}
+                  </span>
+                  <h3>
+                    {isAllPlayersReady
+                      ? 'Büyük Final Başlıyor! 🎬'
+                      : 'Repliklerini Tamamladın — Hazırsın!'}
+                  </h3>
+                  <p>
+                    {isAllPlayersReady
+                      ? 'Tüm oyuncular hazır oldu. Odadaki herkesle birlikte senkronize izleme başlıyor...'
+                      : 'Odadaki diğer oyuncular da kendi repliklerini seslendirip hazır olana kadar oyun bitirilmez. Aşağıdan kayıtlarını dinleyebilir veya düzenleyebilirsin.'}
+                  </p>
+                </div>
 
-                return (
-                  <div key={p.id} className={`turn-player-item ${pDone ? 'done' : 'waiting'}`}>
-                    <div className="turn-player-info">
-                      <span className="avatar">
-                        {p.name[0].toLocaleUpperCase('tr')}
-                      </span>
-                      <div>
-                        <strong>
-                          {p.name} {p.id === me.id && <small>(Sen)</small>}
-                        </strong>
-                        <span>
-                          {pDone
-                            ? 'Bütün replikleri tamamladı'
-                            : `${p.segments.length}/${pAssigned.length} replik kaydetti`}
-                        </span>
+                <div className="turn-players-list">
+                  {room.players.map((p, pIdx) => {
+                    const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
+                    const pDone = pAssigned.length > 0
+                      ? pAssigned.every((c) => p.segments?.includes(c.id))
+                      : p.audio;
+                    const pReady = p.ready === 1 && pDone;
+                    const pPct = pDone
+                      ? 100
+                      : Math.round(((p.segments?.length || 0) / Math.max(1, pAssigned.length)) * 100);
+
+                    return (
+                      <div key={p.id} className={`turn-player-item ${pReady ? 'done' : 'waiting'}`}>
+                        <div className="turn-player-info">
+                          <span className="avatar">
+                            {p.name[0]?.toLocaleUpperCase('tr') || '?'}
+                          </span>
+                          <div>
+                            <strong>
+                              {p.name} {p.id === me.id && <small>(Sen)</small>}
+                            </strong>
+                            <span>
+                              {pReady
+                                ? 'Bütün replikleri tamamladı & Hazır ✓'
+                                : pDone
+                                  ? 'Tüm replikleri kaydetti'
+                                  : `${p.segments?.length || 0}/${pAssigned.length} replik kaydetti`}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="turn-player-progress-wrap">
+                          <div className="turn-progress-bar">
+                            <div
+                              className={`turn-progress-fill ${pReady ? 'complete' : ''}`}
+                              style={{ width: `${pPct}%` }}
+                            />
+                          </div>
+                          <span className={`turn-status-badge ${pReady ? 'ready' : 'in-progress'}`}>
+                            {pReady ? (
+                              <>
+                                <Check size={13} /> Hazır (Ready)
+                              </>
+                            ) : (p.segments?.length || 0) > 0 ? (
+                              'Kaydediyor…'
+                            ) : (
+                              'Bekleniyor'
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="turn-player-progress-wrap">
-                      <div className="turn-progress-bar">
-                        <div
-                          className={`turn-progress-fill ${pDone ? 'complete' : ''}`}
-                          style={{ width: `${pPct}%` }}
-                        />
-                      </div>
-                      <span className={`turn-status-badge ${pDone ? 'ready' : 'in-progress'}`}>
-                        {pDone ? (
-                          <>
-                            <Check size={13} /> Tamamlandı
-                          </>
-                        ) : p.segments.length > 0 ? (
-                          'Kaydediyor…'
-                        ) : (
-                          'Bekleniyor'
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="primary"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const finalRoom = await executeGameRoomAction(
-                      room.code,
-                      session.token,
-                      'finish',
                     );
-                    onRoom(finalRoom);
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                style={{ width: '100%', justifyContent: 'center', padding: '14px 20px', fontSize: '15px' }}
-              >
-                <Play size={18} fill="currentColor" /> Finale geç
-              </button>
-            </div>
+                  })}
+                </div>
+
+                {/* Oda Kurucusu (Host) için Opsiyonel Zorla Başlat Butonu (Eğer biri AFK kaldıysa) */}
+                {me.host === 1 && !isAllPlayersReady && room.players.length > 1 && (
+                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      style={{ fontSize: '12px', padding: '6px 12px', opacity: 0.8 }}
+                      onClick={async () => {
+                        const ok = window.confirm(
+                          'Tüm oyuncular henüz dublajlarını tamamlamadı. Yine de finali başlatmak istiyor musunuz?',
+                        );
+                        if (!ok) return;
+                        setBusy(true);
+                        try {
+                          const finalRoom = await executeGameRoomAction(
+                            room.code,
+                            session.token,
+                            'finish',
+                            { force: true },
+                          );
+                          onRoom(finalRoom);
+                        } catch (e) {
+                          setError((e as Error).message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      Oda Kurucusu: Finali Şimdi Başlat (Zorla)
+                    </button>
+                  </div>
+                )}
 
             <div className="turn-listen-box">
               <div className="turn-listen-header">
@@ -877,6 +935,8 @@ export default function SegmentRecorder({
               )}
             </div>
           </div>
+            );
+          })()
         ) : (
           <>
             <div className="cue-timebar">

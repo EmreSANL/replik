@@ -268,12 +268,59 @@ export async function executeGameRoomAction(
     if (activities.length > 30) activities.length = 30;
   };
 
-  if (action === 'ready') {
-    player.ready = extra.ready ? 1 : 0;
-    addLog(
-      `${player.name} ${player.ready ? 'hazır olduğunu bildirdi.' : 'hazırlığını geri aldı.'}`,
-      'ready',
-    );
+  if (action === 'ready' || action === 'recording_ready') {
+    const isReadyRequested = extra.ready !== undefined ? Boolean(extra.ready) : true;
+    if (row.status === 'recording') {
+      const remoteScenes = await getScenesFromSupabase().catch(() => []);
+      const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
+      const preferredRoles = row.players.map((p) => p.role);
+      const assigned = playerCues(
+        row.scene,
+        playerIndex,
+        row.players.length,
+        customList,
+        preferredRoles,
+      );
+      const playerSegs = new Set(player.segments || []);
+      const hasCompletedAll = assigned.length > 0 ? assigned.every((c) => playerSegs.has(c.id)) : true;
+
+      player.audio = hasCompletedAll;
+      player.ready = isReadyRequested && hasCompletedAll ? 1 : 0;
+
+      if (player.ready === 1) {
+        addLog(`${player.name} dublajını tamamladı ve hazır! (Ready) ✓`, 'ready');
+      } else {
+        addLog(`${player.name} kaydını düzenliyor.`, 'ready');
+      }
+
+      // Herkes hazır mı kontrol et
+      const allDone =
+        row.players.length > 0 &&
+        row.players.every((p, idx) => {
+          const pAssigned = playerCues(
+            row.scene,
+            idx,
+            row.players.length,
+            customList,
+            preferredRoles,
+          );
+          const pSegs = new Set(p.segments || []);
+          const pCompleted = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
+          return p.ready === 1 && pCompleted;
+        });
+
+      if (allDone) {
+        row.status = 'final';
+        row.play_at = Date.now() + 3000;
+        addLog('Tüm oyuncular hazır ve dublajlarını tamamladı! 🎬 Büyük Final başlıyor...', 'system');
+      }
+    } else {
+      player.ready = isReadyRequested ? 1 : 0;
+      addLog(
+        `${player.name} ${player.ready ? 'hazır olduğunu bildirdi.' : 'hazırlığını geri aldı.'}`,
+        'ready',
+      );
+    }
   } else if (action === 'mic_tested') {
     player.micTested = true;
     addLog(`${player.name} mikrofon testini tamamladı.`, 'ready');
@@ -328,13 +375,31 @@ export async function executeGameRoomAction(
       }
       p.role = assignedRole;
       usedRoles.add(assignedRole);
+      // Kayıt aşaması için hazır durumunu ve segmentleri sıfırla
+      p.ready = 0;
+      p.audio = false;
+      p.segments = [];
     });
 
     row.status = 'recording';
     addLog('Kayıt aşaması başladı! Sahneye çıkın!', 'system');
   } else if (action === 'play' || action === 'finish') {
+    const remoteScenes = await getScenesFromSupabase().catch(() => []);
+    const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
+    const preferredRoles = row.players.map((p) => p.role);
+    const notReadyPlayers = row.players.filter((p, idx) => {
+      const pAssigned = playerCues(row.scene, idx, row.players.length, customList, preferredRoles);
+      const pSegs = new Set(p.segments || []);
+      const isComplete = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
+      return !isComplete || p.ready !== 1;
+    });
+
+    if (notReadyPlayers.length > 0 && !extra.force && !player.host) {
+      throw new Error(`Diğer oyuncuların dublajı devam ediyor: ${notReadyPlayers.map((p) => p.name).join(', ')} henüz hazır değil.`);
+    }
+
     row.status = 'final';
-    row.play_at = Date.now() + 2800;
+    row.play_at = Date.now() + 3000;
     addLog('Tüm replikler tamamlandı! Büyük final başlıyor, odadaki herkesle birlikte izleniyor... 🎬', 'system');
   } else if (action === 'reaction') {
     const emoji = typeof extra.emoji === 'string' ? extra.emoji : '😂';
@@ -443,7 +508,6 @@ export async function saveAudioRecording(
   }
 
   // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını recordings tablosuyla birleştirerek hesapla
-  const assignedCueIds = new Set<number>();
   const preferredRoles = row.players.map((p) => p.role);
   row.players.forEach((p, idx) => {
     const pCues = playerCues(
@@ -453,25 +517,36 @@ export async function saveAudioRecording(
       customList,
       preferredRoles,
     );
-    pCues.forEach((c) => assignedCueIds.add(c.id));
     const playerRecSegs = recordings.filter((r) => r.player === p.id).map((r) => r.segment);
     const pSegs = new Set([...(p.segments || []), ...playerRecSegs]);
     p.segments = Array.from(pSegs);
-    p.audio = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : pSegs.size > 0;
+    const hasCompletedAll = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : true;
+    p.audio = hasCompletedAll;
+    if (p.id === playerId) {
+      p.ready = hasCompletedAll ? 1 : 0;
+    }
   });
 
-  // Sahne replik kontrolü: Tüm oyuncular kendi repliklerini tamamladıysa otomatik Büyük Final'e geç ve odadaki herkes için senkronize oynatmayı başlat!
-  const recordedCues = new Set(recordings.map((r) => r.segment));
-  const allPlayersFinished = row.players.length > 0 && row.players.every((p) => p.audio);
-  const allAssignedRecorded =
-    assignedCueIds.size > 0 &&
-    Array.from(assignedCueIds).every((cueId) => recordedCues.has(cueId));
-  const allSceneCuesRecorded =
-    sceneCuesList.length > 0 && recordedCues.size >= sceneCuesList.length;
+  // ASLA tek taraf bitirince oyunu sonlandırma!
+  // SADECE VE SADECE odadaki TÜM oyuncular kendi repliklerini 100% tamamlayıp ready verdiğinde finale geç!
+  const allPlayersReadyAndFinished =
+    row.players.length > 0 &&
+    row.players.every((p, idx) => {
+      const pCues = playerCues(
+        row.scene,
+        idx,
+        row.players.length,
+        customList,
+        preferredRoles,
+      );
+      const pSegs = new Set(p.segments || []);
+      const isComplete = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : true;
+      return p.ready === 1 && isComplete;
+    });
 
-  if (allPlayersFinished || allAssignedRecorded || allSceneCuesRecorded) {
+  if (allPlayersReadyAndFinished) {
     row.status = 'final';
-    row.play_at = Date.now() + 2800;
+    row.play_at = Date.now() + 3000;
   }
 
   const activities = [...(row.activities || [])];
