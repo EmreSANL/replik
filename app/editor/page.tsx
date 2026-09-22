@@ -49,6 +49,7 @@ import { removeVocalsFromVideo, reduceCenteredVocals } from '@/lib/vocal-remover
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
 import { VideoTrimDialog } from '@/components/video-trim-dialog';
+import { resolveVideoDuration } from '@/lib/video-trimmer';
 import {
   uploadVideoToSupabase,
   saveSceneToSupabase,
@@ -145,6 +146,7 @@ export default function EditorPage() {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const videoJobRef = useRef(0);
   const sourceFileRef = useRef<File | null>(null);
+  const originalFileRef = useRef<File | null>(null);
   const localVideoUrlRef = useRef<string | null>(null);
   const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
   const [isScrubbingTimeline, setIsScrubbingTimeline] = useState(false);
@@ -275,48 +277,75 @@ export default function EditorPage() {
 
   // Video zaman güncellemesi
   const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime);
+    const vid = videoRef.current;
+    if (!vid) return;
+    const rawTime = vid.currentTime;
+    if (!Number.isFinite(rawTime)) return;
+
+    if (rawTime > duration + 0.05) {
+      setDuration(Number(rawTime.toFixed(2)));
     }
+    setCurrentTime(Math.max(0, rawTime));
   };
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      if (localVideoUrlRef.current && videoRef.current.src !== localVideoUrlRef.current) {
-        URL.revokeObjectURL(localVideoUrlRef.current);
-        localVideoUrlRef.current = null;
-      }
-      const dur = videoRef.current.duration;
-      if (dur && !isNaN(dur) && isFinite(dur)) {
-        setDuration(dur);
-      }
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (localVideoUrlRef.current && vid.src !== localVideoUrlRef.current) {
+      URL.revokeObjectURL(localVideoUrlRef.current);
+      localVideoUrlRef.current = null;
+    }
+    const dur = vid.duration;
+    if (dur && !isNaN(dur) && isFinite(dur) && dur >= 0.5) {
+      setDuration(dur);
+    } else {
+      void resolveVideoDuration(
+        vid,
+        sourceFileRef.current || undefined,
+        duration,
+      ).then((resolved) => {
+        if (Number.isFinite(resolved) && resolved >= 0.5) {
+          setDuration(resolved);
+        }
+      });
     }
   };
 
   const togglePlay = useCallback(() => {
-    if (!videoRef.current) return;
+    const vid = videoRef.current;
+    if (!vid) return;
     if (isPlaying) {
-      videoRef.current.pause();
+      vid.pause();
       instrumentalAudioRef.current?.pause();
       setIsPlaying(false);
     } else {
+      if (
+        vid.ended ||
+        (duration > 0 && vid.currentTime >= duration - 0.08)
+      ) {
+        vid.currentTime = 0;
+        setCurrentTime(0);
+        if (instrumentalAudioRef.current) {
+          instrumentalAudioRef.current.currentTime = 0;
+        }
+      }
       if (
         audioMode === 'instrumental' &&
         instrumentalUrl &&
         instrumentalAudioRef.current
       ) {
-        videoRef.current.muted = true;
-        instrumentalAudioRef.current.currentTime = videoRef.current.currentTime;
+        vid.muted = true;
+        instrumentalAudioRef.current.currentTime = vid.currentTime;
         instrumentalAudioRef.current.muted = isMuted;
         instrumentalAudioRef.current.play().catch(() => {});
       } else {
-        videoRef.current.muted = isMuted;
+        vid.muted = isMuted;
         instrumentalAudioRef.current?.pause();
       }
-      videoRef.current.play().catch(() => {});
+      vid.play().catch(() => {});
       setIsPlaying(true);
     }
-  }, [isPlaying, audioMode, instrumentalUrl, isMuted]);
+  }, [isPlaying, audioMode, instrumentalUrl, isMuted, duration]);
 
   const seekTo = useCallback(
     (time: number) => {
@@ -546,18 +575,37 @@ export default function EditorPage() {
 
     const sameRoleCues = cues.filter((c) => (c.roleIndex ?? 0) === chosenIdx);
     const ordered = [...sameRoleCues].sort((a, b) => a.start - b.start);
-    let newStart = explicitStart !== undefined ? explicitStart : currentTime;
+    const baseTime =
+      explicitStart !== undefined
+        ? explicitStart
+        : currentTime >= duration - 0.3
+          ? Math.max(0, duration - 2.5)
+          : currentTime;
+    let newStart = Math.max(0, Math.min(Math.max(0, duration - 0.5), baseTime));
     for (const cue of ordered) {
       if (cue.end <= newStart) continue;
       if (cue.start - newStart >= 0.3) break;
       newStart = cue.end + 0.1;
     }
-    const nextCue = ordered.find((cue) => cue.start > newStart);
+    if (newStart > duration - 0.3) {
+      // Sonda yer kalmadıysa baştan itibaren ilk boşluğu bul
+      let candidate = 0;
+      for (const cue of ordered) {
+        if (cue.start - candidate >= 0.4) break;
+        candidate = cue.end + 0.05;
+      }
+      if (candidate <= duration - 0.3) {
+        newStart = candidate;
+      } else {
+        newStart = Math.max(0, duration - 1.5);
+      }
+    }
+    const nextCue = ordered.find((cue) => cue.start > newStart + 0.05);
     const newEnd = Number(
       Math.min(
         duration,
-        newStart + 3.0,
-        nextCue ? nextCue.start - 0.1 : duration,
+        newStart + 2.8,
+        nextCue ? Math.max(newStart + 0.4, nextCue.start - 0.05) : duration,
       ).toFixed(2),
     );
     newStart = Number(newStart.toFixed(2));
@@ -836,12 +884,17 @@ export default function EditorPage() {
       showToast('Lütfen bir video dosyası seçin.');
       return;
     }
+    originalFileRef.current = file;
     setPendingVideo(file);
   };
 
   const [isPreparingTrim, setIsPreparingTrim] = useState(false);
 
   const openTrimModal = useCallback(async () => {
+    if (originalFileRef.current) {
+      setPendingVideo(originalFileRef.current);
+      return;
+    }
     if (sourceFileRef.current) {
       setPendingVideo(sourceFileRef.current);
       return;
@@ -949,6 +1002,7 @@ export default function EditorPage() {
     (sc: Scene) => {
       videoJobRef.current += 1;
       sourceFileRef.current = null;
+      originalFileRef.current = null;
       setVocalError('');
       setVocalNotice('');
       if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
@@ -1032,6 +1086,7 @@ export default function EditorPage() {
   const handleStartNewScene = useCallback(() => {
     videoJobRef.current += 1;
     sourceFileRef.current = null;
+    originalFileRef.current = null;
     if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
     localVideoUrlRef.current = null;
     videoRef.current?.pause();
@@ -1076,6 +1131,7 @@ export default function EditorPage() {
   const handleRemoveVideo = useCallback(() => {
     videoJobRef.current += 1;
     sourceFileRef.current = null;
+    originalFileRef.current = null;
     videoRef.current?.pause();
     instrumentalAudioRef.current?.pause();
     if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
@@ -1275,6 +1331,7 @@ export default function EditorPage() {
       {pendingVideo && (
         <VideoTrimDialog
           file={pendingVideo}
+          fallbackDuration={duration}
           onCancel={() => setPendingVideo(null)}
           onConfirm={(file, clipDuration) => {
             setPendingVideo(null);
@@ -1817,7 +1874,7 @@ export default function EditorPage() {
                           seekTo(Number((ratio * duration).toFixed(1)));
                           setIsScrubbingTimeline(true);
                         }}
-                        className={`relative flex flex-col cursor-pointer touch-none transition-colors ${
+                        className={`relative flex flex-col cursor-pointer touch-none overflow-hidden transition-colors ${
                           dragging ? 'ring-1 ring-[#F5E636]' : ''
                         }`}
                       >
@@ -1868,7 +1925,7 @@ export default function EditorPage() {
                         <div
                           className="absolute top-0 bottom-0 z-30 pointer-events-none"
                           style={{
-                            left: `${(currentTime / Math.max(1, duration)) * 100}%`,
+                            left: `${Math.max(0, Math.min(100, (currentTime / Math.max(0.5, duration)) * 100))}%`,
                           }}
                         >
                           <div className="w-[2px] h-full bg-[#FA5636] relative shadow-[0_0_10px_rgba(250,86,54,0.95)]">

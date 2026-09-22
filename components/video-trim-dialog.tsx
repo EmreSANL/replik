@@ -11,18 +11,25 @@ import {
 import {
   formatTrimTime,
   normalizeTrimRange,
+  resolveVideoDuration,
   trimVideoFile,
 } from '@/lib/video-trimmer';
 
 type Props = {
   file: File;
+  fallbackDuration?: number;
   onCancel: () => void;
   onConfirm: (file: File, duration: number) => void;
 };
 
 type DragMode = 'start' | 'end' | 'move' | 'scrub' | null;
 
-export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
+export function VideoTrimDialog({
+  file,
+  fallbackDuration,
+  onCancel,
+  onConfirm,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -243,14 +250,31 @@ export function VideoTrimDialog({ file, onCancel, onConfirm }: Props) {
               playsInline
               preload="metadata"
               onLoadedMetadata={(event) => {
-                const measured = event.currentTarget.duration;
-                if (!Number.isFinite(measured) || measured < 0.5) {
-                  setError('Video süresi okunamadı. Farklı bir dosya deneyin.');
+                const videoEl = event.currentTarget;
+                const measured = videoEl.duration;
+                if (Number.isFinite(measured) && measured >= 0.5) {
+                  setError('');
+                  setDuration(measured);
+                  setRange([0, measured]);
+                  setCurrentTime(0);
                   return;
                 }
-                setDuration(measured);
-                setRange([0, measured]);
-                setCurrentTime(0);
+                void resolveVideoDuration(
+                  videoEl,
+                  file,
+                  fallbackDuration,
+                ).then((resolved) => {
+                  if (Number.isFinite(resolved) && resolved >= 0.5) {
+                    setError('');
+                    setDuration(resolved);
+                    setRange([0, resolved]);
+                    setCurrentTime(0);
+                  } else {
+                    setError(
+                      'Video süresi okunamadı. Farklı bir dosya deneyin.',
+                    );
+                  }
+                });
               }}
               onTimeUpdate={(event) => {
                 const t = event.currentTarget.currentTime;
