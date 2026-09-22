@@ -3,24 +3,21 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import {
   Mic,
-  ArrowUpRight,
   ArrowRight,
   Users,
   User,
   Headphones,
   Play,
   Sparkles,
-  AudioLines,
   Check,
   Plus,
   Edit3,
   Film,
   KeyRound,
   Flame,
-  Zap,
   Volume2,
-  Share2,
   Download,
+  Sliders,
 } from 'lucide-react';
 import {
   Dialog,
@@ -30,7 +27,6 @@ import {
 } from '@/components/ui/dialog';
 import Studio, { request, type Session } from './studio';
 import {
-  getAllScenes,
   getCustomScenes,
   fallbackScene,
   sceneCues,
@@ -55,19 +51,17 @@ export default function Home() {
   });
   const [publishedDubs, setPublishedDubs] = useState<PublishedDub[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('TÜMÜ');
-  const [parked, setParked] = useState<{ session: Session; room: Room } | null>(
-      null,
-    ),
-    [help, setHelp] = useState(false),
-    [modal, setModal] = useState<'create' | 'join' | null>(null),
-    [selected, setSelected] = useState(0),
-    [maxPlayers, setMaxPlayers] = useState(4),
-    [preview, setPreview] = useState<number | null>(null),
-    [name, setName] = useState(''),
-    [code, setCode] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
+  const [parked, setParked] = useState<{ session: Session; room: Room } | null>(null);
+  const [help, setHelp] = useState(false);
+  const [modal, setModal] = useState<'create' | 'join' | null>(null);
+  const [selected, setSelected] = useState(0);
+  const [maxPlayers, setMaxPlayers] = useState(4);
+  const [preview, setPreview] = useState<number | null>(null);
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
   const previewAudio = useRef<HTMLAudioElement | null>(null);
 
   async function refreshPublishedFeed() {
@@ -153,23 +147,41 @@ export default function Home() {
             .includes(selectedCategory.toLocaleLowerCase('tr')),
         );
 
-  const activeCuesCount = sceneCues(activeScene.id, allScenes).length;
+  const activeCues = sceneCues(activeScene.id, allScenes);
+  const activeCuesCount = activeCues.length;
+
+  // Character breakdown for active scene
+  const charStatsMap = new Map<string, number>();
+  activeCues.forEach((c) => {
+    const role = c.roleName || 'Karakter';
+    charStatsMap.set(role, (charStatsMap.get(role) || 0) + 1);
+  });
+  const charStats = Array.from(charStatsMap.entries()).map(([roleName, count]) => ({
+    name: roleName,
+    count,
+    pct: Math.round((count / Math.max(1, activeCuesCount)) * 100),
+  }));
+
+  // Distinct color themes for scene catalog cards
+  const colorThemes = ['theme-lilac', 'theme-yellow', 'theme-sage', 'theme-coral', 'theme-olive'];
 
   return (
-    <div className="app-shell maxi-theme">
+    <div className="bbank-shell">
       {!game && (
-        <header className="topbar maxi-topbar">
-          <Link href="/" className="brand maxi-brand" aria-label="Replik ana sayfa">
-            <span className="brand-icon maxi-brand-icon">
-              <AudioLines size={24} />
+        <header className="bbank-topbar">
+          <div className="bbank-topbar-left">
+            <Link href="/" className="bbank-brand" aria-label="Replik ana sayfa">
+              <span className="bbank-brand-title">Replik</span>
+            </Link>
+            <span className="bbank-date-label">
+              Canlı Doğaçlama Dublaj Odaları · 2026 Edition
             </span>
-            <span className="brand-text">
-              replik<span className="brand-dot">✦</span>
-            </span>
-          </Link>
-          <nav className="maxi-nav">
+          </div>
+
+          <div className="bbank-topbar-right">
             <button
-              className="maxi-nav-link active"
+              type="button"
+              className="bbank-pill-btn bbank-pill-dark"
               onClick={() => {
                 if (game) leave();
                 else
@@ -180,123 +192,228 @@ export default function Home() {
             >
               🎪 Oyun Alanı
             </button>
+            <button
+              type="button"
+              className="bbank-pill-btn bbank-pill-dark"
+              onClick={() => setHelp(true)}
+            >
+              Nasıl Oynanır?
+            </button>
             <a
               href="/editor"
               onClick={(e) => {
                 e.preventDefault();
                 window.location.href = '/editor';
               }}
-              className="maxi-nav-pill-btn"
+              className="bbank-pill-btn bbank-pill-sage"
             >
-              <Sparkles size={14} /> Sahne Editörü 🎬
+              <Sparkles size={13} /> Sahne Editörü
             </a>
-            <button className="maxi-nav-link" onClick={() => setHelp(true)}>
-              ❓ Nasıl Oynanır?
+            <button
+              type="button"
+              className="bbank-pill-btn bbank-pill-coral"
+              onClick={() => {
+                setError('');
+                setModal('join');
+              }}
+            >
+              # ODA KODUYLA GİR
             </button>
             {!game && parked && (
-              <button className="maxi-nav-link" onClick={() => setGame(parked)}>
+              <button
+                type="button"
+                className="bbank-pill-btn bbank-pill-yellow"
+                onClick={() => setGame(parked)}
+              >
                 Odana dön ↗
               </button>
             )}
-          </nav>
-          <div className="maxi-topbar-actions">
-            <span className="maxi-live-badge">
-              <span className="maxi-pulse-dot" /> CANLI ODA
-            </span>
           </div>
         </header>
       )}
 
-      <main className={game ? 'game-mode-main' : 'maxi-main'}>
+      <main className={game ? 'game-mode-main' : 'bbank-main'}>
         {game ? (
           <Studio session={game.session} initial={game.room} onExit={leave} />
         ) : (
           <>
-            {/* HERO SECTION: MAXIMALIST BENTO GRID */}
-            <section className="maxi-hero-bento">
-              {/* Bento 1: Featured Blockbuster Scene (Large) */}
-              <div
-                className="maxi-bento-featured"
-                style={{
-                  backgroundImage: activeScene.poster
-                    ? `linear-gradient(180deg, rgba(6,8,5,0.4) 0%, rgba(6,8,5,0.92) 80%, rgba(6,8,5,0.98) 100%), url('${activeScene.poster}')`
-                    : undefined,
-                }}
-              >
-                <div className="maxi-featured-top">
-                  <div className="maxi-pill-group">
-                    <span className="maxi-pill maxi-pill-lime">
-                      <Sparkles size={13} /> GÜNÜN SAHNESİ
-                    </span>
-                    <span className="maxi-pill maxi-pill-pink">
-                      {activeScene.category.toUpperCase()}
-                    </span>
-                    <span className="maxi-pill maxi-pill-cyan">
-                      ⏱️ 00:{activeScene.duration} SN
-                    </span>
+            {/* ============================================================
+                THE BENTO TILES CANVAS (MATCHING REFERENCE IMAGE EXACTLY)
+                ============================================================ */}
+            <section className="bbank-bento-canvas">
+              {/* Column 1 */}
+              <div className="bbank-bento-col bbank-col-left">
+                {/* Tile 1: Lilac Manifesto Card */}
+                <div className="bbank-tile bbank-tile-lilac">
+                  <span className="bbank-inner-pill">(Replik Manifesto)</span>
+                  <p className="bbank-manifesto-text">
+                    İzlediğin sahneyi baştan seslendir. Arkadaşlarınla rolleri kap,
+                    replikleri patlat. <strong>1 Karakter = 1 Oyuncu</strong> kuralıyla
+                    herkes tek bir sesi sahiplenir, finali canlı birlikte izlersiniz.
+                  </p>
+                  <div className="bbank-manifesto-footer">
+                    <span>✦ Doğaçlama Dublaj</span>
+                    <span>1–4 Kişilik</span>
                   </div>
-                  <button
-                    className="maxi-preview-circle"
-                    aria-label="Seçili sahneyi önizle"
-                    onClick={() => setPreview(selected)}
-                  >
-                    <Play size={20} fill="currentColor" />
-                  </button>
                 </div>
 
-                <div className="maxi-featured-bottom">
-                  <span className="maxi-featured-eyebrow">
-                    🎭 {activeScene.roles.length} KARAKTER · {activeCuesCount} REPLİK
-                  </span>
-                  <h1 className="maxi-featured-title">{activeScene.title}</h1>
-                  <div className="maxi-featured-roles">
-                    {activeScene.roles.map((r, rIdx) => (
-                      <span key={r} className="maxi-role-tag">
-                        🎭 {r}
-                      </span>
-                    ))}
+                {/* Tile 5: Olive Gold Growth / Soundwave Card */}
+                <div className="bbank-tile bbank-tile-olive">
+                  <div className="bbank-tile-head">
+                    <span className="bbank-inner-pill">(Ses Mikseri)</span>
+                    <Sliders size={16} />
                   </div>
-                  <div className="maxi-featured-cta-row">
-                    <button
-                      className="maxi-btn maxi-btn-lime"
-                      onClick={() => openCreate(selected)}
-                    >
-                      <Mic size={18} /> BU SAHNEYLE ODA KUR <ArrowRight size={18} />
-                    </button>
-                    <button
-                      className="maxi-btn maxi-btn-glass"
-                      onClick={() => setPreview(selected)}
-                    >
-                      <Volume2 size={16} /> Orijinal Sesi Dinle
-                    </button>
+                  <strong className="bbank-olive-metric">1.840+</strong>
+                  <span className="bbank-olive-sub">
+                    Tamamlanan Canlı Dublaj &middot; 0 Gecikme
+                  </span>
+
+                  {/* Soundwave Bar Chart Graphic */}
+                  <div className="bbank-waveform-bars">
+                    {[45, 75, 30, 90, 60, 40, 85, 95, 55, 70, 40, 80, 100, 65, 50, 85, 35, 75, 90, 60].map(
+                      (h, idx) => (
+                        <div
+                          key={idx}
+                          className="bbank-wave-bar"
+                          style={{ height: `${h}%` }}
+                        />
+                      ),
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Bento 2: Quick Room Joiner (Vivid Card) */}
-              <div className="maxi-bento-join">
-                <div className="maxi-join-badge">
-                  <Zap size={15} /> EKİBİNE KATIL
-                </div>
-                <h2 className="maxi-join-title">Arkadaşının Odasına Gir</h2>
-                <p className="maxi-join-desc">
-                  Oda kodunu gir, rolünü kap, saniyeler içinde doğaçlama dublaja başla!
-                </p>
+              {/* Column 2: Centerpiece Yellow Engagement Card */}
+              <div className="bbank-bento-col bbank-col-center">
+                {/* Tile 2: Sunny Yellow Scene Spotlight */}
+                <div className="bbank-tile bbank-tile-yellow">
+                  <div className="bbank-tile-head">
+                    <span className="bbank-inner-pill">(Günün Sahnesi)</span>
+                    <button
+                      type="button"
+                      className="bbank-sound-preview-btn"
+                      onClick={() => setPreview(selected)}
+                      title="Orijinal sahne sesini dinle"
+                    >
+                      <Volume2 size={16} /> Dinle
+                    </button>
+                  </div>
 
-                <form
-                  className="maxi-join-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setError('');
-                    setModal('join');
-                  }}
-                >
-                  <label htmlFor="code" className="maxi-join-label">
-                    <KeyRound size={13} /> 6 HANELİ ODA KODU
-                  </label>
-                  <div className="maxi-join-input-wrap">
+                  <div className="bbank-yellow-metric-row">
+                    <strong className="bbank-yellow-metric">
+                      +{activeCuesCount} Replik
+                    </strong>
+                    <span className="bbank-yellow-sub">
+                      5 Karakter · 00:{activeScene.duration} sn
+                    </span>
+                  </div>
+
+                  <h2 className="bbank-yellow-title">{activeScene.title}</h2>
+
+                  {/* Graphic Block Bar (Black & Yellow block from reference) */}
+                  <div className="bbank-graphic-block">
+                    <div className="bbank-graphic-black" />
+                    <div className="bbank-graphic-accent" />
+                  </div>
+
+                  {/* Character pill tags inside yellow tile */}
+                  <div className="bbank-char-pills-row">
+                    {activeScene.roles.map((r) => (
+                      <span key={r} className="bbank-char-tag-pill">
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Action bottom pill button (Just like February 2024 pill button in reference) */}
+                  <button
+                    type="button"
+                    className="bbank-tile-cta-pill"
+                    onClick={() => openCreate(selected)}
+                  >
+                    <span>▶ Sahneye Çık & Odayı Kur</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
+
+                {/* Wide Pill Action Buttons (Matching [TRADE CRYPTO] and [BANKWITHBBANK]) */}
+                <div className="bbank-action-pills-row">
+                  <button
+                    type="button"
+                    className="bbank-wide-pill bbank-pill-sage"
+                    onClick={() => openCreate(selected)}
+                  >
+                    <Mic size={18} /> <strong>DUBLAJA BAŞLA</strong>
+                  </button>
+                  <button
+                    type="button"
+                    className="bbank-wide-pill bbank-pill-coral"
+                    onClick={() => {
+                      setError('');
+                      setModal('join');
+                    }}
+                  >
+                    <KeyRound size={18} /> <strong># ODAYA GİR</strong>
+                  </button>
+                </div>
+              </div>
+
+              {/* Column 3: Right Side (Direct Debits Mint & Account Coral) */}
+              <div className="bbank-bento-col bbank-col-right">
+                {/* Tile 3: Sage Mint Character Breakdown ("Direct Debits" style) */}
+                <div className="bbank-tile bbank-tile-sage">
+                  <div className="bbank-tile-head">
+                    <div>
+                      <strong className="bbank-sage-title">Karakter Dağılımı</strong>
+                      <span className="bbank-sage-subtitle">1 Karakter = 1 Oyuncu</span>
+                    </div>
+                    <span className="bbank-inner-pill">
+                      {activeScene.roles.length} Karakter
+                    </span>
+                  </div>
+
+                  {/* Spending limits style breakdown list */}
+                  <div className="bbank-breakdown-list">
+                    {charStats.map((cs) => (
+                      <div key={cs.name} className="bbank-breakdown-item">
+                        <div className="bbank-breakdown-text">
+                          <span className="bbank-char-name">{cs.name}</span>
+                          <strong className="bbank-char-cues">
+                            {cs.count} Replik
+                          </strong>
+                        </div>
+                        {/* Horizontal black indicator bar */}
+                        <div className="bbank-breakdown-bar-track">
+                          <div
+                            className="bbank-breakdown-bar-fill"
+                            style={{ width: `${Math.max(12, cs.pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tile 4: Coral Orange Account / Quick Joiner */}
+                <div className="bbank-tile bbank-tile-coral">
+                  <div className="bbank-tile-head">
+                    <span className="bbank-inner-pill">(Odaya Katıl)</span>
+                    <KeyRound size={16} />
+                  </div>
+
+                  <form
+                    className="bbank-coral-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setError('');
+                      setModal('join');
+                    }}
+                  >
+                    <label htmlFor="bbank-code" className="bbank-coral-label">
+                      6 HANELİ ODA KODU
+                    </label>
                     <input
-                      id="code"
+                      id="bbank-code"
                       placeholder="ABC123"
                       value={code}
                       onChange={(e) =>
@@ -306,141 +423,212 @@ export default function Home() {
                             .replace(/[^A-Z0-9]/g, ''),
                         )
                       }
-                      required
-                      minLength={6}
                       maxLength={6}
                       autoComplete="off"
-                      className="maxi-join-input"
+                      className="bbank-coral-input"
                     />
-                    <button type="submit" className="maxi-join-submit-btn" aria-label="Odaya katıl">
-                      <ArrowRight size={18} />
+
+                    <button type="submit" className="bbank-coral-submit-btn">
+                      Odaya Gir ➔
                     </button>
+                  </form>
+
+                  <div className="bbank-coral-footer">
+                    <Headphones size={13} />
+                    <span>Kulaklığını tak, sahnede konuş!</span>
                   </div>
-                </form>
+                </div>
 
-                <div className="maxi-join-divider">VEYA</div>
+                {/* Tile 6: Ivory Mint Typography Specimen Card */}
+                <div className="bbank-tile bbank-tile-ivory">
+                  <div className="bbank-ivory-head">
+                    <span>REPLİK.IO</span>
+                    <span>© 2026</span>
+                  </div>
+                  <div className="bbank-ivory-specimen">
+                    <strong>DOĞAÇLAMA DUBLAJ</strong>
+                    <span>1 KARAKTER = 1 OYUNCU</span>
+                    <span>MP4 4K VIDEO EXPORT</span>
+                  </div>
+                  <div className="bbank-ivory-code-pill">
+                    ✦ 01 &middot; 02 &middot; 03 &middot; 04 &middot; 05
+                  </div>
+                </div>
+              </div>
+            </section>
 
-                <button
-                  type="button"
-                  className="maxi-btn maxi-btn-pink maxi-full-btn"
-                  onClick={() => openCreate()}
+            {/* ============================================================
+                SCENE CATALOG (SOLID COLOR BENTO TILES)
+                ============================================================ */}
+            <section id="sahneler" className="bbank-catalog-section">
+              <div className="bbank-section-heading">
+                <div>
+                  <h2 className="bbank-section-title">Sahne Kataloğu</h2>
+                  <p className="bbank-section-desc">
+                    Tüm sahnelerde 1 karakter = 1 oyuncu kuralı geçerlidir.
+                  </p>
+                </div>
+
+                {/* Category Pills matching the palette */}
+                <div className="bbank-cat-pills">
+                  {categories.map((cat, idx) => {
+                    const theme = colorThemes[idx % colorThemes.length];
+                    const isActive = selectedCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        className={`bbank-cat-pill ${theme} ${isActive ? 'is-active' : ''}`}
+                        onClick={() => setSelectedCategory(cat)}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Grid of solid color bento cards */}
+              <div className="bbank-scenes-grid">
+                {filteredScenes.map((s, i) => {
+                  const cues = sceneCues(s.id, allScenes);
+                  const theme = colorThemes[i % colorThemes.length];
+                  const isSelected = selected === i;
+
+                  return (
+                    <div
+                      key={s.id}
+                      role="button"
+                      tabIndex={0}
+                      className={`bbank-scene-tile ${theme} ${isSelected ? 'is-selected' : ''}`}
+                      onClick={() => {
+                        setSelected(i);
+                        setPreview(i);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setSelected(i);
+                          setPreview(i);
+                        }
+                      }}
+                    >
+                      <div className="bbank-scene-tile-top">
+                        <span className="bbank-scene-badge">#{i + 1}</span>
+                        <span className="bbank-scene-dur">00:{s.duration} sn</span>
+                      </div>
+
+                      {/* Poster frame */}
+                      <div
+                        className="bbank-scene-poster-frame"
+                        style={
+                          s.poster
+                            ? {
+                                backgroundImage: `url('${s.poster}')`,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center',
+                              }
+                            : undefined
+                        }
+                      >
+                        <a
+                          href={`/editor?sceneId=${s.id}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.location.href = `/editor?sceneId=${s.id}`;
+                          }}
+                          className="bbank-scene-edit-btn"
+                          title="Editörde Düzenle"
+                        >
+                          <Edit3 size={12} /> Düzenle
+                        </a>
+                      </div>
+
+                      <div className="bbank-scene-tile-body">
+                        <span className="bbank-scene-cat-label">{s.category}</span>
+                        <h3 className="bbank-scene-name">{s.title}</h3>
+
+                        <div className="bbank-scene-meta-row">
+                          <span>{s.roles.length} Karakter</span>
+                          <span>&middot;</span>
+                          <span>{cues.length} Replik</span>
+                        </div>
+
+                        <div className="bbank-scene-tile-actions">
+                          <button
+                            type="button"
+                            className="bbank-scene-start-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCreate(i);
+                            }}
+                          >
+                            <Mic size={14} /> Oda Kur
+                          </button>
+                          <button
+                            type="button"
+                            className="bbank-scene-listen-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreview(i);
+                            }}
+                          >
+                            <Play size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Add Custom Meme Tile */}
+                <a
+                  href="/editor"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.location.href = '/editor';
+                  }}
+                  className="bbank-scene-tile bbank-add-tile"
                 >
-                  <Plus size={18} /> Yeni Oda Oluştur
-                </button>
-
-                <div className="maxi-join-hint">
-                  <Headphones size={13} /> Kulaklığını tak, sahneye çık!
-                </div>
+                  <div className="bbank-add-icon">
+                    <Plus size={28} />
+                  </div>
+                  <h3>Kendi Sahnini Ekle</h3>
+                  <p>Video yükle & altyazı repliklerini mouse ile zamanla 🎬</p>
+                  <span className="bbank-add-btn-tag">Editöre Git ➔</span>
+                </a>
               </div>
             </section>
 
-            {/* BENTO STATS & FEATURES STRIP */}
-            <section className="maxi-stats-bento">
-              <div className="maxi-stat-card maxi-stat-lime">
-                <div className="maxi-stat-icon">
-                  <Flame size={22} />
+            {/* ============================================================
+                TOPLULUK DUBLAJLARI (YAYINLANANLAR VİTRİNİ)
+                ============================================================ */}
+            <section id="yayinlanan-dublajlar" className="bbank-catalog-section">
+              <div className="bbank-section-heading">
+                <div>
+                  <h2 className="bbank-section-title">İnsanların Yaptığı Dublajlar</h2>
+                  <p className="bbank-section-desc">
+                    Finalde &ldquo;Yayınla&rdquo; butonuna basılan topluluk dublajları.
+                  </p>
                 </div>
-                <div className="maxi-stat-info">
-                  <strong className="maxi-stat-val">1.8K+</strong>
-                  <span className="maxi-stat-label">Tamamlanan Dublaj</span>
-                </div>
-              </div>
-
-              <div className="maxi-stat-card maxi-stat-pink">
-                <div className="maxi-stat-icon">
-                  <Users size={22} />
-                </div>
-                <div className="maxi-stat-info">
-                  <strong className="maxi-stat-val">1 Karakter</strong>
-                  <span className="maxi-stat-label">1 Oyuncu (Adil Bölüşüm)</span>
-                </div>
-              </div>
-
-              <div className="maxi-stat-card maxi-stat-cyan">
-                <div className="maxi-stat-icon">
-                  <AudioLines size={22} />
-                </div>
-                <div className="maxi-stat-info">
-                  <strong className="maxi-stat-val">0 Gecikme</strong>
-                  <span className="maxi-stat-label">Senkron M&E Ses Mikseri</span>
-                </div>
-              </div>
-
-              <div className="maxi-stat-card maxi-stat-orange">
-                <div className="maxi-stat-icon">
-                  <Download size={22} />
-                </div>
-                <div className="maxi-stat-info">
-                  <strong className="maxi-stat-val">MP4 İndir</strong>
-                  <span className="maxi-stat-label">Tek Tıkla Reels & TikTok</span>
-                </div>
-              </div>
-            </section>
-
-            {/* 4-STEP HOW-TO-PLAY BENTO CARDS */}
-            <section className="maxi-steps-section">
-              <div className="maxi-section-head">
-                <div className="maxi-section-badge">
-                  <Sparkles size={13} /> ADIM ADIM REPLİK DENEYİMİ
-                </div>
-                <h2 className="maxi-section-title">Nasıl Oynanır?</h2>
-              </div>
-
-              <div className="maxi-steps-grid">
-                <div className="maxi-step-card maxi-step-lime">
-                  <span className="maxi-step-num">01</span>
-                  <h3>Sahneni Seç & Odanı Kur</h3>
-                  <p>1–4 kişilik oda seçeneğini belirle, oda kodunu arkadaşlarınla paylaş.</p>
-                </div>
-
-                <div className="maxi-step-card maxi-step-pink">
-                  <span className="maxi-step-num">02</span>
-                  <h3>Karakterini Gör</h3>
-                  <p>Karakter & Replik tablosundan seslendireceğin replikleri keşfet.</p>
-                </div>
-
-                <div className="maxi-step-card maxi-step-cyan">
-                  <span className="maxi-step-num">03</span>
-                  <h3>Mikrofonla Doğaçla</h3>
-                  <p>Önce orijinal sesi dinle, ardından mikrofona kendi yorumunu kaydet.</p>
-                </div>
-
-                <div className="maxi-step-card maxi-step-orange">
-                  <span className="maxi-step-num">04</span>
-                  <h3>Büyük Finali Birlikte İzle</h3>
-                  <p>Herkes bitirdiğinde odadakilerle aynı anda izle, reaksiyon ver ve MP4 indir!</p>
-                </div>
-              </div>
-            </section>
-
-            {/* TOPLULUK DUBLAJLARI: YAYINLANAN DUBLAJLAR VİTRİNİ */}
-            <section id="yayinlanan-dublajlar" className="maxi-published-section">
-              <div className="maxi-section-head">
-                <div className="maxi-section-badge">
-                  <Flame size={13} /> CANLI TOPLULUK VİTRİNİ
-                </div>
-                <h2 className="maxi-section-title">İnsanların Yaptığı Dublajlar</h2>
-                <p className="maxi-section-desc">
-                  Büyük finalde &ldquo;Yayınla&rdquo; butonuna basılan en komik ve yaratıcı dublajlar.
-                </p>
               </div>
 
               {publishedDubs.length === 0 ? (
-                <div className="maxi-empty-published-card">
-                  <Sparkles size={28} className="maxi-empty-sparkle" />
+                <div className="bbank-empty-card">
+                  <Sparkles size={24} />
                   <div>
-                    <strong>Henüz vitrinde yayınlanmış bir dublaj yok!</strong>
+                    <strong>Henüz yayınlanmış bir dublaj yok!</strong>
                     <p>
-                      Bir sahneye girip dublajını kaydet, finalde{' '}
+                      Dublajını tamamla, finaldeki{' '}
                       <b>&ldquo;Dublajı Ana Sayfada Yayınla&rdquo;</b> butonuna basarak ilk yayını sen yap!
                     </p>
                   </div>
                 </div>
               ) : (
-                <div className="maxi-published-grid">
+                <div className="bbank-published-grid">
                   {publishedDubs.map((dub) => (
-                    <article key={dub.id} className="maxi-published-card">
-                      <div className="maxi-pub-video-wrap">
+                    <article key={dub.id} className="bbank-pub-card">
+                      <div className="bbank-pub-video-frame">
                         <video
                           src={dub.videoUrl}
                           poster={dub.posterUrl || undefined}
@@ -448,19 +636,19 @@ export default function Home() {
                           playsInline
                           preload="metadata"
                         />
-                        <span className="maxi-pub-room-pill">
+                        <span className="bbank-pub-room-pill">
                           ODA #{dub.roomCode}
                         </span>
                       </div>
-                      <div className="maxi-pub-content">
-                        <div className="maxi-pub-header-row">
+                      <div className="bbank-pub-body">
+                        <div className="bbank-pub-head">
                           <div>
-                            <span className="maxi-pub-category">{dub.category}</span>
-                            <h3 className="maxi-pub-title">{dub.sceneTitle}</h3>
+                            <span className="bbank-pub-cat">{dub.category}</span>
+                            <h3 className="bbank-pub-title">{dub.sceneTitle}</h3>
                           </div>
                           <button
                             type="button"
-                            className="maxi-pub-like-pill"
+                            className="bbank-pub-like-btn"
                             onClick={async () => {
                               setPublishedDubs((prev) =>
                                 prev.map((x) =>
@@ -473,16 +661,16 @@ export default function Home() {
                               if (updated) setPublishedDubs(updated);
                             }}
                           >
-                            🔥 {dub.likes || 1}
+                            <Flame size={14} /> {dub.likes || 1}
                           </button>
                         </div>
 
-                        <div className="maxi-pub-cast-pills">
+                        <div className="bbank-pub-players-row">
                           {dub.players.map((p, idx) => (
-                            <span key={idx} className="maxi-pub-cast-tag">
+                            <span key={idx} className="bbank-pub-player-chip">
                               <span
-                                className="maxi-pub-cast-dot"
-                                style={{ background: p.roleColor || '#d8fb51' }}
+                                className="bbank-pub-player-dot"
+                                style={{ background: p.roleColor || '#F5E636' }}
                               />
                               <strong>{p.name}</strong> <small>({p.roleName})</small>
                             </span>
@@ -494,329 +682,130 @@ export default function Home() {
                 </div>
               )}
             </section>
-
-            {/* SCENE CATALOG BENTO GRID */}
-            <section id="sahneler" className="maxi-catalog-section">
-              <div className="maxi-section-head">
-                <div className="maxi-section-badge">
-                  <Film size={13} /> SAHNE KATALOĞU
-                </div>
-                <h2 className="maxi-section-title">Bir Sahne, Bin İhtimal</h2>
-                <p className="maxi-section-desc">
-                  İster popüler meme&apos;leri seslendir, ister kendi sahnini yükle!
-                </p>
-              </div>
-
-              {/* Category Filter Chips */}
-              <div className="maxi-category-chips">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    className={`maxi-category-chip ${selectedCategory === cat ? 'active' : ''}`}
-                    onClick={() => setSelectedCategory(cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              {/* Scene Grid */}
-              <div className="maxi-scenes-grid">
-                {filteredScenes.map((s, i) => {
-                  const isCur = selected === i;
-                  const cues = sceneCues(s.id, allScenes);
-                  return (
-                    <div
-                      key={s.id}
-                      role="button"
-                      tabIndex={0}
-                      className={`maxi-scene-card ${isCur ? 'is-selected' : ''}`}
-                      onClick={() => {
-                        setSelected(i);
-                        setPreview(i);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setSelected(i);
-                          setPreview(i);
-                        }
-                      }}
-                    >
-                      <div
-                        className="maxi-scene-poster"
-                        style={
-                          s.poster
-                            ? {
-                                backgroundImage: `linear-gradient(180deg, rgba(14,18,11,0.2) 0%, rgba(14,18,11,0.85) 100%), url('${s.poster}')`,
-                              }
-                            : undefined
-                        }
-                      >
-                        <div className="maxi-scene-poster-top">
-                          <span className="maxi-scene-index-badge">
-                            #{String(i + 1).padStart(2, '0')}
-                          </span>
-                          <span className="maxi-scene-dur-pill">
-                            ⏱️ 00:{s.duration}
-                          </span>
-                        </div>
-
-                        {s.isCustom && (
-                          <span className="maxi-custom-scene-tag">
-                            MEME / ÖZEL
-                          </span>
-                        )}
-
-                        <div className="maxi-scene-poster-bottom">
-                          <span className="maxi-scene-cat-badge">{s.category}</span>
-                        </div>
-                      </div>
-
-                      <div className="maxi-scene-body">
-                        <div className="maxi-scene-title-row">
-                          <h3 className="maxi-scene-title">{s.title}</h3>
-                          <a
-                            href={`/editor?sceneId=${s.id}`}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              window.location.href = `/editor?sceneId=${s.id}`;
-                            }}
-                            className="maxi-edit-shortcut"
-                            title="Bu sahneyi editörde düzenle"
-                          >
-                            <Edit3 size={13} />
-                          </a>
-                        </div>
-
-                        <div className="maxi-scene-tags-row">
-                          <span className="maxi-scene-mini-pill">
-                            🎭 {s.roles.length} Karakter
-                          </span>
-                          <span className="maxi-scene-mini-pill">
-                            📝 {cues.length} Replik
-                          </span>
-                        </div>
-
-                        <div className="maxi-scene-actions">
-                          <button
-                            type="button"
-                            className="maxi-btn maxi-btn-lime maxi-scene-start-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openCreate(i);
-                            }}
-                          >
-                            <Mic size={15} /> Oda Kur
-                          </button>
-                          <button
-                            type="button"
-                            className="maxi-btn maxi-btn-dark maxi-scene-preview-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPreview(i);
-                            }}
-                          >
-                            <Play size={14} /> Dinle
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Create Custom Meme Scene Bento Tile */}
-                <a
-                  href="/editor"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.location.href = '/editor';
-                  }}
-                  className="maxi-add-scene-card"
-                >
-                  <div className="maxi-add-scene-icon">
-                    <Plus size={26} />
-                  </div>
-                  <h3>Kendi Meme / Sahnini Yükle</h3>
-                  <p>YouTube veya yerel video yükle, replikleri saniyeler içinde altyazılandır 🎬</p>
-                  <span className="maxi-add-scene-btn">
-                    Editöre Git <ArrowRight size={15} />
-                  </span>
-                </a>
-              </div>
-            </section>
           </>
         )}
       </main>
 
-      {/* HELP MODAL */}
+      {/* ============================================================
+          HELP DIALOG (SOLID BENTO STYLE)
+          ============================================================ */}
       <Dialog open={help} onOpenChange={setHelp}>
-        <DialogContent className="help-dialog maxi-dialog">
-          <DialogTitle className="maxi-dialog-title">
-            <Sparkles size={18} /> Her Ses Başka Bir Hikâye
+        <DialogContent className="bbank-dialog">
+          <DialogTitle className="bbank-dialog-title">
+            Her Ses Başka Bir Hikâye
           </DialogTitle>
-          <DialogDescription className="maxi-dialog-desc">
-            1–4 kişiyle, dört adımda kendi dublajınızı yaratın.
+          <DialogDescription className="bbank-dialog-desc">
+            1–4 kişiyle, dört adımda kendi dublajınız.
           </DialogDescription>
-          <ol className="help-list maxi-help-list">
+          <ol className="bbank-help-list">
             <li>
-              <strong>1. Bir Oda Kur:</strong> Sahneni seç, oyuncu adını yaz. Oda kodunu arkadaşlarınla paylaş.
+              <strong>1. Odanı Kur:</strong> Sahneni seç, oyuncu adını yaz. Oda kodunu arkadaşlarınla paylaş.
             </li>
             <li>
-              <strong>2. Rolünü Keşfet:</strong> Herkes hazır olduğunda kurucu başlatır. 1 Karakter = 1 Oyuncu kuralıyla karakterler adil dağıtılır.
+              <strong>2. Rolünü Keşfet:</strong> 1 Karakter = 1 Oyuncu kuralıyla karakterler bölünmeden adil dağıtılır.
             </li>
             <li>
-              <strong>3. Bölümünü Kaydet:</strong> Önce orijinal sahne sesi çalar, ardından mikrofona doğaçlama seslendir.
+              <strong>3. Bölümünü Kaydet:</strong> Önce orijinal sahne sesi çalar, ardından mikrofona kendi doğaçlamanı kaydet.
             </li>
             <li>
-              <strong>4. Finali Birlikte İzle:</strong> Herkes sesleri yüklediğinde senkronize sinema başlar. Reaksiyonlar ver ve MP4 indir!
+              <strong>4. Finali Birlikte İzle:</strong> Herkes bitirdiğinde odadakilerle aynı anda izle, reaksiyon ver ve MP4 indir!
             </li>
           </ol>
         </DialogContent>
       </Dialog>
 
-      {/* CREATE & JOIN ROOM MODAL */}
+      {/* ============================================================
+          CREATE & JOIN ROOM MODAL (SOLID COLOR TILES)
+          ============================================================ */}
       <Dialog
         open={modal !== null}
         onOpenChange={(open) => {
           if (!open && !busy) setModal(null);
         }}
       >
-        <DialogContent className="create-room-dialog maxi-dialog">
-          <div className="create-room-container">
-            {/* Header */}
-            <div className="create-room-header">
-              <div className="create-room-title-row">
-                <span className="create-room-header-badge">
-                  {modal === 'create' ? <Sparkles size={16} /> : <Users size={16} />}
-                  {modal === 'create' ? 'ODANI KUR' : 'EKİBİNE KATIL'}
-                </span>
-                <span className="create-room-mode-tag">
-                  {modal === 'create' ? `${maxPlayers} Kişilik Oda` : 'Canlı Oda'}
-                </span>
-              </div>
-              <DialogTitle className="sr-only">
-                {modal === 'create' ? 'Odanı Kur' : 'Ekibine Katıl'}
+        <DialogContent className="bbank-dialog bbank-modal-content">
+          <div className="bbank-modal-inner">
+            <div className="bbank-modal-header">
+              <span className="bbank-inner-pill">
+                {modal === 'create' ? 'ODANI KUR' : 'EKİBİNE KATIL'}
+              </span>
+              <DialogTitle className="bbank-modal-title">
+                {modal === 'create' ? activeScene.title : 'Canlı Odaya Katıl'}
               </DialogTitle>
-              <DialogDescription className="create-room-subtitle">
+              <DialogDescription className="bbank-modal-desc">
                 {modal === 'create'
-                  ? `${activeScene.title} · ${activeScene.category}`
-                  : 'Arkadaşının paylaştığı 6 haneli oda koduyla hemen dublaj ekibine katıl.'}
+                  ? `${activeScene.roles.length} Karakter · ${activeCuesCount} Replik · 00:${activeScene.duration} sn`
+                  : 'Arkadaşının paylaştığı 6 haneli kodla ekibe dahil ol.'}
               </DialogDescription>
             </div>
 
-            {/* Selected Scene Spotlight Card (Only in Create Mode) */}
-            {modal === 'create' && (
-              <div className="create-room-scene-card">
-                <div className="create-room-scene-top">
-                  <div className="create-room-scene-icon">
-                    <Film size={16} />
-                  </div>
-                  <div className="create-room-scene-info">
-                    <span className="create-room-scene-eyebrow">SEÇİLİ SAHNE</span>
-                    <strong className="create-room-scene-title">{activeScene.title}</strong>
-                  </div>
-                </div>
-                <div className="create-room-scene-tags">
-                  <span className="create-scene-tag">⏱️ 00:{activeScene.duration} sn</span>
-                  <span className="create-scene-tag">🎭 {activeScene.roles.length} Karakter</span>
-                  <span className="create-scene-tag">📝 {sceneCues(activeScene.id, allScenes).length} Replik</span>
-                  <span className="create-scene-tag">🎬 {activeScene.category}</span>
-                </div>
-                {activeScene.roles && activeScene.roles.length > 0 && (
-                  <div className="create-room-char-pills">
-                    {activeScene.roles.map((r) => (
-                      <span key={r} className="create-char-mini-tag">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={enter} className="create-room-form">
-              <div className="create-room-field-group">
-                <label htmlFor="name" className="create-room-label">
-                  <User size={13} /> Oyuncu Adın
-                </label>
-                <div className="create-room-input-wrap">
-                  <input
-                    id="name"
-                    className="create-room-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    maxLength={24}
-                    required
-                    placeholder="Sahnede sana ne diyelim?"
-                    autoComplete="off"
-                  />
-                </div>
+            <form onSubmit={enter} className="bbank-modal-form">
+              <div className="bbank-form-field">
+                <label htmlFor="player-name">OYUNCU ADIN</label>
+                <input
+                  id="player-name"
+                  className="bbank-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={24}
+                  required
+                  placeholder="Sahnede sana ne diyelim?"
+                  autoComplete="off"
+                />
               </div>
 
+              {/* Player Count Selection (4 Solid Color Tiles) */}
               {modal === 'create' && (() => {
-                const totalCuesCount = sceneCues(activeScene.id, allScenes).length;
                 const options = [
                   {
                     count: 1,
                     label: '1 Kişi',
                     badge: 'Solo',
-                    desc: `Tüm roller & ${totalCuesCount} replik sana ait`,
-                    icon: User,
+                    desc: `Tüm roller & ${activeCuesCount} replik`,
+                    theme: 'tile-yellow',
                   },
                   {
                     count: 2,
                     label: '2 Kişi',
                     badge: 'Düet',
-                    desc: `~${Math.round(totalCuesCount / 2)}'şer replik (Karakter bölüşümü)`,
-                    icon: Users,
+                    desc: `~${Math.round(activeCuesCount / 2)}'şer replik`,
+                    theme: 'tile-coral',
                   },
                   {
                     count: 3,
                     label: '3 Kişi',
                     badge: 'Trio',
-                    desc: `~${Math.round(totalCuesCount / 3)}'er replik (3'lü ekip)`,
-                    icon: Users,
+                    desc: `~${Math.round(activeCuesCount / 3)}'er replik`,
+                    theme: 'tile-sage',
                   },
                   {
                     count: 4,
                     label: '4 Kişi',
                     badge: 'Ekip',
-                    desc: `~${Math.max(1, Math.round(totalCuesCount / 4))}'er replik (Tam kadro)`,
-                    icon: Users,
+                    desc: `~${Math.max(1, Math.round(activeCuesCount / 4))}'er replik`,
+                    theme: 'tile-lilac',
                   },
                 ];
 
                 return (
-                  <div className="player-count-picker">
-                    <div className="player-count-title">
-                      <Users size={13} /> KİŞİ SAYISI SEÇENEĞİ
-                    </div>
-                    <div className="player-count-grid">
+                  <div className="bbank-player-count-box">
+                    <label>KİŞİ SAYISI SEÇENEĞİ</label>
+                    <div className="bbank-player-tiles-grid">
                       {options.map((opt) => {
-                        const Icon = opt.icon;
                         const isSelected = maxPlayers === opt.count;
                         return (
                           <button
                             type="button"
                             key={opt.count}
-                            className={`player-count-card ${isSelected ? 'selected' : ''}`}
+                            className={`bbank-player-choice-tile ${opt.theme} ${isSelected ? 'is-selected' : ''}`}
                             onClick={() => setMaxPlayers(opt.count)}
                           >
-                            <div className="player-count-card-header">
-                              <span className="count-badge-icon">
-                                <Icon size={13} />
-                              </span>
-                              <span className="count-badge-type">{opt.badge}</span>
+                            <div className="bbank-choice-head">
+                              <span className="bbank-choice-type">{opt.badge}</span>
+                              {isSelected && <Check size={14} className="bbank-choice-check" />}
                             </div>
-                            <strong className="count-val">{opt.label}</strong>
-                            <span className="count-subdesc">{opt.desc}</span>
-                            {isSelected && (
-                              <span className="count-selected-check">
-                                <Check size={10} />
-                              </span>
-                            )}
+                            <strong className="bbank-choice-val">{opt.label}</strong>
+                            <span className="bbank-choice-desc">{opt.desc}</span>
                           </button>
                         );
                       })}
@@ -826,50 +815,43 @@ export default function Home() {
               })()}
 
               {modal === 'join' && (
-                <div className="create-room-field-group">
-                  <label htmlFor="join-code" className="create-room-label">
-                    <KeyRound size={13} /> 6 Haneli Oda Kodu
-                  </label>
-                  <div className="create-room-input-wrap">
-                    <input
-                      id="join-code"
-                      className="create-room-input join-code-input"
-                      value={code}
-                      onChange={(e) =>
-                        setCode(
-                          e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''),
-                        )
-                      }
-                      minLength={6}
-                      maxLength={6}
-                      required
-                      placeholder="ABC123"
-                      autoComplete="off"
-                    />
-                  </div>
+                <div className="bbank-form-field">
+                  <label htmlFor="join-code">6 HANELİ ODA KODU</label>
+                  <input
+                    id="join-code"
+                    className="bbank-input bbank-code-input"
+                    value={code}
+                    onChange={(e) =>
+                      setCode(
+                        e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''),
+                      )
+                    }
+                    minLength={6}
+                    maxLength={6}
+                    required
+                    placeholder="ABC123"
+                    autoComplete="off"
+                  />
                 </div>
               )}
 
-              <button className="primary create-room-submit-btn" disabled={busy}>
+              <button type="submit" className="bbank-modal-submit-btn" disabled={busy}>
                 {busy
                   ? 'Odaya giriliyor…'
                   : modal === 'create'
-                    ? 'Odamı Oluştur ve Başla'
-                    : 'Odaya Katıl'}
-                <ArrowRight size={17} />
+                    ? 'Odamı Oluştur ve Sahneye Çık ➔'
+                    : 'Odaya Katıl ➔'}
               </button>
 
-              {error && (
-                <p className="error" role="alert">
-                  {error}
-                </p>
-              )}
+              {error && <p className="bbank-error">{error}</p>}
             </form>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* SCENE PREVIEW MODAL */}
+      {/* ============================================================
+          SCENE PREVIEW DIALOG
+          ============================================================ */}
       <Dialog
         open={preview !== null}
         onOpenChange={(open) => {
@@ -879,10 +861,12 @@ export default function Home() {
           }
         }}
       >
-        <DialogContent className="preview-dialog maxi-dialog">
-          <DialogTitle>{previewScene?.title}</DialogTitle>
-          <DialogDescription>
-            {previewScene?.duration} saniye · {previewScene?.roles.length} oyuncu ·{' '}
+        <DialogContent className="bbank-dialog">
+          <DialogTitle className="bbank-dialog-title">
+            {previewScene?.title}
+          </DialogTitle>
+          <DialogDescription className="bbank-dialog-desc">
+            {previewScene?.duration} saniye · {previewScene?.roles.length} karakter ·{' '}
             {previewScene?.instrumental
               ? 'Vokalsiz (Ses Efektli M&E) Önizleme'
               : 'Sahne Önizlemesi'}
@@ -907,7 +891,7 @@ export default function Home() {
                   playsInline
                   style={{
                     width: '100%',
-                    borderRadius: 14,
+                    borderRadius: 16,
                     aspectRatio: '16/9',
                     backgroundColor: '#000',
                   }}
@@ -919,7 +903,7 @@ export default function Home() {
                   alt={previewScene.title}
                   style={{
                     width: '100%',
-                    borderRadius: 14,
+                    borderRadius: 16,
                     aspectRatio: '16/9',
                     objectFit: 'cover',
                   }}
@@ -930,22 +914,23 @@ export default function Home() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginTop: 14,
+                  marginTop: 16,
                 }}
               >
-                <div style={{ fontSize: 13, color: '#9ba889' }}>
-                  Roller: {previewScene.roles.join(', ')}
+                <div style={{ fontSize: 13, color: '#a0a0a0' }}>
+                  Karakterler: {previewScene.roles.join(', ')}
                 </div>
                 <button
-                  className="primary"
-                  style={{ padding: '10px 18px', fontSize: '14px' }}
+                  type="button"
+                  className="bbank-pill-btn bbank-pill-yellow"
+                  style={{ padding: '10px 20px', fontSize: '14px' }}
                   onClick={() => {
                     previewAudio.current?.pause();
                     setPreview(null);
                     openCreate(selected);
                   }}
                 >
-                  Bu Sahneyle Başla <ArrowRight size={16} />
+                  Bu Sahneyle Başla ➔
                 </button>
               </div>
             </>
