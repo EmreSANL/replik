@@ -14,6 +14,8 @@ import {
   Check,
   Plus,
   Edit3,
+  Film,
+  KeyRound,
 } from 'lucide-react';
 import {
   Dialog,
@@ -22,7 +24,14 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import Studio, { request, type Session } from './studio';
-import { getAllScenes, getCustomScenes, fallbackScene, type Scene, type Room } from '@/lib/scenes';
+import {
+  getAllScenes,
+  getCustomScenes,
+  fallbackScene,
+  sceneCues,
+  type Scene,
+  type Room,
+} from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
 import {
   getPublishedDubsFromSupabase,
@@ -586,135 +595,189 @@ export default function Home() {
           if (!open && !busy) setModal(null);
         }}
       >
-        <DialogContent>
-          <DialogTitle>
-            {modal === 'create' ? 'ODANI KUR' : 'EKİBİNE KATIL'}
-          </DialogTitle>
-          <DialogDescription>
-            {modal === 'create'
-              ? `${activeScene.title} · ${activeScene.category} · ${maxPlayers} kişilik oda`
-              : 'Arkadaşının paylaştığı 6 haneli oda koduyla katıl.'}
-          </DialogDescription>
-
-          {modal === 'create' && (
-            <div className="lobby-scene-preview" style={{ margin: '8px 0 16px' }}>
-              <span className="lobby-scene-label">Seçili Sahne:</span>
-              <strong>{activeScene.title}</strong>
-              <small>{activeScene.roles.length} Karakter · 00:{activeScene.duration} sn · {activeScene.roles.join(', ')}</small>
+        <DialogContent className="create-room-dialog">
+          <div className="create-room-container">
+            {/* Header */}
+            <div className="create-room-header">
+              <div className="create-room-title-row">
+                <span className="create-room-header-badge">
+                  {modal === 'create' ? <Sparkles size={14} /> : <Users size={14} />}
+                  {modal === 'create' ? 'ODANI KUR' : 'EKİBİNE KATIL'}
+                </span>
+                <span className="create-room-mode-tag">
+                  {modal === 'create' ? `${maxPlayers} Kişilik Oda` : 'Canlı Oda'}
+                </span>
+              </div>
+              <DialogTitle className="sr-only">
+                {modal === 'create' ? 'Odanı Kur' : 'Ekibine Katıl'}
+              </DialogTitle>
+              <DialogDescription className="create-room-subtitle">
+                {modal === 'create'
+                  ? `${activeScene.title} · ${activeScene.category}`
+                  : 'Arkadaşının paylaştığı 6 haneli oda koduyla hemen dublaj ekibine katıl.'}
+              </DialogDescription>
             </div>
-          )}
 
-          <form onSubmit={enter} className="entry-form">
-            <label htmlFor="name">Oyuncu adın</label>
-            <input
-              id="name"
-              className="field"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={24}
-              required
-              placeholder="Sahnede sana ne diyelim?"
-              autoComplete="off"
-            />
-
+            {/* Selected Scene Spotlight Card (Only in Create Mode) */}
             {modal === 'create' && (
-              <div className="player-count-picker">
-                <div className="player-count-title">
-                  <Users size={14} /> KİŞİ SAYISI SEÇENEĞİ
+              <div className="create-room-scene-card">
+                <div className="create-room-scene-top">
+                  <div className="create-room-scene-icon">
+                    <Film size={16} />
+                  </div>
+                  <div className="create-room-scene-info">
+                    <span className="create-room-scene-eyebrow">SEÇİLİ SAHNE</span>
+                    <strong className="create-room-scene-title">{activeScene.title}</strong>
+                  </div>
                 </div>
-                <div className="player-count-grid">
-                  {[
-                    {
-                      count: 1,
-                      label: '1 Kişi',
-                      badge: 'Solo',
-                      desc: '4 repliğin hepsi sana ait',
-                      icon: User,
-                    },
-                    {
-                      count: 2,
-                      label: '2 Kişi',
-                      badge: 'Düet',
-                      desc: "2'şer replik paylaşırsınız",
-                      icon: Users,
-                    },
-                    {
-                      count: 3,
-                      label: '3 Kişi',
-                      badge: 'Trio',
-                      desc: '1-2 replik paylaşırsınız',
-                      icon: Users,
-                    },
-                    {
-                      count: 4,
-                      label: '4 Kişi',
-                      badge: 'Ekip',
-                      desc: "1'er replik tam kadro",
-                      icon: Users,
-                    },
-                  ].map((opt) => {
-                    const Icon = opt.icon;
-                    const isSelected = maxPlayers === opt.count;
-                    return (
-                      <button
-                        type="button"
-                        key={opt.count}
-                        className={`player-count-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setMaxPlayers(opt.count)}
-                      >
-                        <div className="player-count-card-header">
-                          <span className="count-badge-icon">
-                            <Icon size={14} />
-                          </span>
-                          <span className="count-badge-type">{opt.badge}</span>
-                        </div>
-                        <strong className="count-val">{opt.label}</strong>
-                        <span className="count-subdesc">{opt.desc}</span>
-                        {isSelected && (
-                          <span className="count-selected-check">
-                            <Check size={11} />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="create-room-scene-tags">
+                  <span className="create-scene-tag">⏱️ 00:{activeScene.duration} sn</span>
+                  <span className="create-scene-tag">🎭 {activeScene.roles.length} Karakter</span>
+                  <span className="create-scene-tag">📝 {sceneCues(activeScene.id, customScenes).length} Replik</span>
+                  <span className="create-scene-tag">🎬 {activeScene.category}</span>
                 </div>
+                {activeScene.roles && activeScene.roles.length > 0 && (
+                  <div className="create-room-char-pills">
+                    {activeScene.roles.map((r) => (
+                      <span key={r} className="create-char-mini-tag">
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-            {modal === 'join' && (
-              <>
-                <label htmlFor="join-code">Oda kodu</label>
-                <input
-                  id="join-code"
-                  className="field"
-                  value={code}
-                  onChange={(e) =>
-                    setCode(
-                      e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''),
-                    )
-                  }
-                  minLength={6}
-                  maxLength={6}
-                  required
-                  placeholder="ABC123"
-                  autoComplete="off"
-                />
-              </>
-            )}
-            <button className="primary" disabled={busy}>
-              {busy
-                ? 'Odaya giriliyor…'
-                : modal === 'create'
-                  ? 'Odamı oluştur'
-                  : 'Odaya katıl'}
-              <ArrowRight size={17} />
-            </button>
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-          </form>
+
+            <form onSubmit={enter} className="create-room-form">
+              <div className="create-room-field-group">
+                <label htmlFor="name" className="create-room-label">
+                  <User size={13} /> Oyuncu Adın
+                </label>
+                <div className="create-room-input-wrap">
+                  <input
+                    id="name"
+                    className="create-room-input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    maxLength={24}
+                    required
+                    placeholder="Sahnede sana ne diyelim?"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
+              {modal === 'create' && (() => {
+                const totalCuesCount = sceneCues(activeScene.id, customScenes).length;
+                const options = [
+                  {
+                    count: 1,
+                    label: '1 Kişi',
+                    badge: 'Solo',
+                    desc: `Tüm roller & ${totalCuesCount} replik sana ait`,
+                    icon: User,
+                  },
+                  {
+                    count: 2,
+                    label: '2 Kişi',
+                    badge: 'Düet',
+                    desc: `~${Math.round(totalCuesCount / 2)}'şer replik (Karakter bölüşümü)`,
+                    icon: Users,
+                  },
+                  {
+                    count: 3,
+                    label: '3 Kişi',
+                    badge: 'Trio',
+                    desc: `~${Math.round(totalCuesCount / 3)}'er replik (3'lü ekip)`,
+                    icon: Users,
+                  },
+                  {
+                    count: 4,
+                    label: '4 Kişi',
+                    badge: 'Ekip',
+                    desc: `~${Math.max(1, Math.round(totalCuesCount / 4))}'er replik (Tam kadro)`,
+                    icon: Users,
+                  },
+                ];
+
+                return (
+                  <div className="player-count-picker">
+                    <div className="player-count-title">
+                      <Users size={13} /> KİŞİ SAYISI SEÇENEĞİ
+                    </div>
+                    <div className="player-count-grid">
+                      {options.map((opt) => {
+                        const Icon = opt.icon;
+                        const isSelected = maxPlayers === opt.count;
+                        return (
+                          <button
+                            type="button"
+                            key={opt.count}
+                            className={`player-count-card ${isSelected ? 'selected' : ''}`}
+                            onClick={() => setMaxPlayers(opt.count)}
+                          >
+                            <div className="player-count-card-header">
+                              <span className="count-badge-icon">
+                                <Icon size={13} />
+                              </span>
+                              <span className="count-badge-type">{opt.badge}</span>
+                            </div>
+                            <strong className="count-val">{opt.label}</strong>
+                            <span className="count-subdesc">{opt.desc}</span>
+                            {isSelected && (
+                              <span className="count-selected-check">
+                                <Check size={10} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {modal === 'join' && (
+                <div className="create-room-field-group">
+                  <label htmlFor="join-code" className="create-room-label">
+                    <KeyRound size={13} /> 6 Haneli Oda Kodu
+                  </label>
+                  <div className="create-room-input-wrap">
+                    <input
+                      id="join-code"
+                      className="create-room-input join-code-input"
+                      value={code}
+                      onChange={(e) =>
+                        setCode(
+                          e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''),
+                        )
+                      }
+                      minLength={6}
+                      maxLength={6}
+                      required
+                      placeholder="ABC123"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button className="primary create-room-submit-btn" disabled={busy}>
+                {busy
+                  ? 'Odaya giriliyor…'
+                  : modal === 'create'
+                    ? 'Odamı Oluştur ve Başla'
+                    : 'Odaya Katıl'}
+                <ArrowRight size={17} />
+              </button>
+
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog

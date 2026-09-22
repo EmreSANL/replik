@@ -2842,9 +2842,222 @@ audio {
   width: 100%;
 }
 
-/* 15. Kişi Sayısı Seçenekleri (Player Count Selector) */
+/* 15. Odayı Kur & Katıl Modalı (Create & Join Room Dialog) */
+.create-room-dialog {
+  max-width: min(520px, calc(100vw - 24px)) !important;
+  max-height: min(90dvh, 780px) !important;
+  background: #13170e !important;
+  border: 1px solid #37442a !important;
+  border-radius: 18px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.9), 0 0 35px rgba(216, 251, 81, 0.08) !important;
+}
+
+.create-room-container {
+  display: flex;
+  flex-direction: column;
+  max-height: min(90dvh, 780px);
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 22px;
+  gap: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.create-room-header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.create-room-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.create-room-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.create-room-mode-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: #9eb186;
+  background: #212918;
+  border: 1px solid #364426;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.create-room-subtitle {
+  font-size: 12.5px;
+  color: #8f9e7d;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Scene Spotlight Card */
+.create-room-scene-card {
+  background: #182013;
+  border: 1px solid #2f3c22;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.create-room-scene-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.create-room-scene-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #25311b;
+  border: 1px solid #3c4f2b;
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.create-room-scene-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.create-room-scene-eyebrow {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #879774;
+  text-transform: uppercase;
+}
+
+.create-room-scene-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.create-room-scene-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.create-scene-tag {
+  font-size: 11px;
+  font-weight: 700;
+  background: #202a18;
+  border: 1px solid #344326;
+  color: #cbd8b8;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.create-room-char-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.create-char-mini-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a4b58e;
+  background: #141a0f;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: capitalize;
+}
+
+/* Form */
+.create-room-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.create-room-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.create-room-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #cbd7ba;
+  letter-spacing: 0.3px;
+}
+
+.create-room-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.create-room-input {
+  width: 100%;
+  background: #182013;
+  border: 1px solid #354327;
+  border-radius: 10px;
+  color: #f4f8ed;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.create-room-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(216, 251, 81, 0.18);
+  background: #1c2516;
+}
+
+.create-room-input::placeholder {
+  color: #6a7858;
+  font-weight: 500;
+}
+
+.join-code-input {
+  letter-spacing: 4px;
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-family: monospace;
+  text-align: center;
+}
+
+/* Player Count Picker */
 .player-count-picker {
-  margin: 14px 0 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2854,10 +3067,11 @@ audio {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 800;
-  letter-spacing: 1px;
-  color: #a7b693;
+  letter-spacing: 0.8px;
+  color: #9cb086;
+  text-transform: uppercase;
 }
 
 .player-count-grid {
@@ -2866,7 +3080,7 @@ audio {
   gap: 8px;
 }
 
-@media (max-width: 580px) {
+@media (max-width: 500px) {
   .player-count-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2878,25 +3092,25 @@ audio {
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
-  background: #1e2418;
-  border: 1.5px solid #364028;
+  background: #171f12;
+  border: 1.5px solid #2e3c22;
   border-radius: 10px;
-  padding: 10px;
+  padding: 9px 10px;
   cursor: pointer;
   transition: all 0.18s ease;
   user-select: none;
 }
 
 .player-count-card:hover {
-  background: #27301f;
-  border-color: #52633d;
+  background: #1f2a18;
+  border-color: #4a5e37;
   transform: translateY(-1px);
 }
 
 .player-count-card.selected {
-  background: #243216;
+  background: #202d15;
   border-color: var(--primary);
-  box-shadow: 0 0 16px rgba(216, 251, 81, 0.25);
+  box-shadow: 0 0 16px rgba(216, 251, 81, 0.2);
 }
 
 .player-count-card-header {
@@ -2904,11 +3118,11 @@ audio {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .count-badge-icon {
-  color: #a4b391;
+  color: #8c9e78;
   display: grid;
   place-items: center;
 }
@@ -2918,23 +3132,23 @@ audio {
 }
 
 .count-badge-type {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  background: #2e3822;
-  color: #cbd8b7;
-  padding: 2px 6px;
+  background: #27341e;
+  color: #b8c8a4;
+  padding: 1px 6px;
   border-radius: 4px;
 }
 
 .player-count-card.selected .count-badge-type {
   background: var(--primary);
-  color: #14170d;
+  color: #12150d;
 }
 
 .count-val {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   color: #ffffff;
   margin-bottom: 2px;
@@ -2942,26 +3156,39 @@ audio {
 
 .count-subdesc {
   font-size: 10px;
-  color: #8f9e7d;
+  color: #859672;
   line-height: 1.3;
 }
 
 .player-count-card.selected .count-subdesc {
-  color: #b5c79e;
+  color: #b1c49b;
 }
 
 .count-selected-check {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: -5px;
+  right: -5px;
   background: var(--primary);
   color: #12140d;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.create-room-submit-btn {
+  width: 100%;
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  margin-top: 4px;
 }
 
 .lobby-waiting-players-hint {
