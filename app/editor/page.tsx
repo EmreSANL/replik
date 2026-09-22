@@ -115,8 +115,12 @@ export default function EditorPage() {
   const [sceneSearch, setSceneSearch] = useState('');
   const hasLoadedUrlScene = useRef(false);
 
-  // Zaman Çizelgesi Mouse ile Sürükleme ve Genişletme Durumu
+  // Zaman Çizelgesi Mouse ile Sürükleme, Ses Dalgası ve Yakınlaştırma Durumu
   const timelineRef = useRef<HTMLDivElement>(null);
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([]);
+  const [isScrubbingTimeline, setIsScrubbingTimeline] = useState(false);
   const [dragging, setDragging] = useState<{
     cueId: number;
     type: 'start' | 'end' | 'move';
@@ -124,6 +128,7 @@ export default function EditorPage() {
     initialStart: number;
     initialEnd: number;
     timelineRect: { left: number; width: number };
+    spanDuration?: number;
   } | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -234,6 +239,75 @@ export default function EditorPage() {
     setCurrentTime(clamped);
   }, [duration]);
 
+  // Videodan ses dalgası (waveform) verisini çıkar (Zaman çizelgesinde konuşma yerlerini görmek için)
+  useEffect(() => {
+    if (!videoUrl) {
+      setWaveformPeaks([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetchUrl =
+          videoUrl.startsWith('blob:') || videoUrl.startsWith('/')
+            ? videoUrl
+            : `/api/video-proxy?url=${encodeURIComponent(videoUrl)}`;
+        const res = await fetch(fetchUrl);
+        if (!res.ok || cancelled) return;
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength === 0 || cancelled) return;
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new AudioCtx();
+        const audioBuffer = await ctx.decodeAudioData(buf);
+        void ctx.close().catch(() => {});
+        if (cancelled) return;
+        const ch = audioBuffer.getChannelData(0);
+        const barCount = 140;
+        const step = Math.max(1, Math.floor(ch.length / barCount));
+        const peaks: number[] = [];
+        let maxPeak = 0.01;
+        for (let i = 0; i < barCount; i++) {
+          let sum = 0;
+          const offset = i * step;
+          const limit = Math.min(ch.length, offset + step);
+          for (let j = offset; j < limit; j += 8) {
+            const v = Math.abs(ch[j]);
+            if (v > sum) sum = v;
+          }
+          if (sum > maxPeak) maxPeak = sum;
+          peaks.push(sum);
+        }
+        setWaveformPeaks(peaks.map((p) => Math.max(0.08, Math.min(1, p / maxPeak))));
+      } catch {
+        // Ses dalgası çıkarılamazsa varsayılan görünüm
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoUrl]);
+
+  // Zaman çizelgesinde imleci (playhead) mouse ile sürükleme
+  useEffect(() => {
+    if (!isScrubbingTimeline) return;
+    const handleMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      seekTo(Number((ratio * duration).toFixed(2)));
+    };
+    const handleUp = () => setIsScrubbingTimeline(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isScrubbingTimeline, duration, seekTo]);
+
   // Zaman çizelgesinde mouse ile repliğin başını/sonunu uzatma veya taşıma dinleyicisi
   useEffect(() => {
     if (!dragging) return;
@@ -241,32 +315,36 @@ export default function EditorPage() {
     const handleMouseMove = (e: MouseEvent) => {
       const rect = dragging.timelineRect;
       if (!rect || rect.width <= 0) return;
+      const effectiveSpan = dragging.spanDuration || duration;
       const deltaPixels = e.clientX - dragging.initialMouseX;
-      const deltaTime = (deltaPixels / rect.width) * duration;
-      const minDuration = 0.25;
+      const deltaTime = (deltaPixels / rect.width) * effectiveSpan;
+      const minDuration = 0.2;
 
       setCues((prev) =>
         prev.map((c) => {
           if (c.id !== dragging.cueId) return c;
 
           if (dragging.type === 'start') {
-            // Başlangıcı sola/sağa genişlet veya daralt
-            let newStart = Number((dragging.initialStart + deltaTime).toFixed(2));
-            newStart = Math.max(0, Math.min(newStart, c.end - minDuration));
+            // Başlangıcı sola/sağa genişlet veya daralt (0.1 sn hassasiyet)
+            let newStart = Number((dragging.initialStart + deltaTime).toFixed(1));
+            newStart = Math.max(0, Math.min(newStart, Number((c.end - minDuration).toFixed(1))));
             seekTo(newStart);
             return { ...c, start: newStart };
           } else if (dragging.type === 'end') {
-            // Bitişi sağa/sola genişlet veya daralt
-            let newEnd = Number((dragging.initialEnd + deltaTime).toFixed(2));
-            newEnd = Math.min(duration, Math.max(newEnd, c.start + minDuration));
+            // Bitişi sağa/sola genişlet veya daralt (0.1 sn hassasiyet)
+            let newEnd = Number((dragging.initialEnd + deltaTime).toFixed(1));
+            newEnd = Math.min(
+              Number(duration.toFixed(1)),
+              Math.max(newEnd, Number((c.start + minDuration).toFixed(1))),
+            );
             seekTo(newEnd);
             return { ...c, end: newEnd };
           } else if (dragging.type === 'move') {
             // Repliği blok halinde zamanda kaydır
-            const length = dragging.initialEnd - dragging.initialStart;
-            let newStart = Number((dragging.initialStart + deltaTime).toFixed(2));
-            newStart = Math.max(0, Math.min(newStart, duration - length));
-            const newEnd = Number((newStart + length).toFixed(2));
+            const length = Number((dragging.initialEnd - dragging.initialStart).toFixed(1));
+            let newStart = Number((dragging.initialStart + deltaTime).toFixed(1));
+            newStart = Math.max(0, Math.min(newStart, Number((duration - length).toFixed(1))));
+            const newEnd = Number((newStart + length).toFixed(1));
             seekTo(newStart);
             return { ...c, start: newStart, end: newEnd };
           }
@@ -1089,20 +1167,10 @@ export default function EditorPage() {
               )}
             </div>
 
-            {/* SADE VİDEO KONTROL ÇUBUĞU */}
+            {/* ETKİLEŞİMLİ ZAMAN ÇİZELGESİ (MOUSE İLE BAŞLANGIÇ & BİTİŞ AYARLAMA) */}
             {videoUrl && (
-              <div className="flex flex-col gap-2.5">
-                {/* Tek Çizgi İlerleme Çubuğu */}
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(1, duration)}
-                  step={0.1}
-                  value={currentTime}
-                  onChange={(e) => seekTo(parseFloat(e.target.value))}
-                  className="w-full accent-[#d8fb51] h-2 bg-[#25281e] rounded-lg cursor-pointer"
-                />
-
+              <div className="flex flex-col gap-3">
+                {/* Üst Kontroller: Oynat, Süre, Ses Modu */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <button
@@ -1114,8 +1182,8 @@ export default function EditorPage() {
                       <span>{isPlaying ? 'Durdur' : 'Oynat'}</span>
                     </button>
 
-                    <span className="text-xs font-mono text-[#a4a896] bg-[#12130e] px-3 py-2 rounded-xl border border-[#26291f]">
-                      {timeLabel(currentTime)} / {timeLabel(duration)}
+                    <span className="text-xs font-mono text-[#d8fb51] bg-[#12130e] px-3 py-2 rounded-xl border border-[#26291f] font-bold">
+                      {currentTime.toFixed(1)} sn / {duration.toFixed(1)} sn
                     </span>
                   </div>
 
@@ -1177,6 +1245,371 @@ export default function EditorPage() {
                       Videoyu Değiştir
                     </button>
                   </div>
+                </div>
+
+                {/* GÖRSEL ZAMAN ÇİZELGESİ KUTUSU */}
+                <div className="bg-[#11130d] border border-[#2b3022] rounded-2xl p-3 flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Clock size={14} className="text-[#d8fb51]" />
+                      <span className="text-xs font-extrabold text-[#f4f4e9]">
+                        Zaman Çizelgesi
+                      </span>
+                      <span className="text-[11px] text-[#959c88]">
+                        (Kenarlardan mouse ile tutup başlangıç ve bitişi sürükleyin)
+                      </span>
+                    </div>
+
+                    {/* Yakınlaştırma (Zoom) Butonları */}
+                    <div className="flex items-center gap-1 bg-[#181b13] border border-[#2c3123] rounded-lg p-0.5">
+                      {[1, 2, 4].map((z) => (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => setTimelineZoom(z)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition cursor-pointer ${
+                            timelineZoom === z
+                              ? 'bg-[#d8fb51] text-[#11120d]'
+                              : 'text-[#9ca28e] hover:text-white'
+                          }`}
+                        >
+                          {z}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Kaydırılabilir Ana Zaman Çizelgesi */}
+                  <div
+                    ref={timelineScrollRef}
+                    className="w-full overflow-x-auto pb-1 select-none"
+                  >
+                    <div
+                      ref={timelineRef}
+                      style={{ width: `${timelineZoom * 100}%`, minWidth: '100%' }}
+                      onMouseDown={(e) => {
+                        if (!timelineRef.current) return;
+                        const rect = timelineRef.current.getBoundingClientRect();
+                        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        seekTo(Number((ratio * duration).toFixed(1)));
+                        setIsScrubbingTimeline(true);
+                      }}
+                      className="relative h-24 bg-[#171a12] border border-[#2a2f21] rounded-xl overflow-hidden cursor-pointer"
+                    >
+                      {/* Saniye Cetveli (Ruler) */}
+                      <div className="absolute top-0 left-0 right-0 h-5 bg-[#13160f] border-b border-[#252a1d] flex items-center pointer-events-none z-10">
+                        {Array.from({
+                          length: Math.max(2, Math.floor(duration / (timelineZoom >= 4 ? 2 : timelineZoom >= 2 ? 5 : 10)) + 1),
+                        }).map((_, idx) => {
+                          const stepSec = timelineZoom >= 4 ? 2 : timelineZoom >= 2 ? 5 : 10;
+                          const sec = idx * stepSec;
+                          if (sec > duration) return null;
+                          const leftPct = (sec / Math.max(1, duration)) * 100;
+                          return (
+                            <div
+                              key={sec}
+                              style={{ left: `${leftPct}%` }}
+                              className="absolute top-0 bottom-0 flex items-center"
+                            >
+                              <div className="h-2.5 w-[1px] bg-[#3d4431]" />
+                              <span className="text-[9.5px] font-mono text-[#889079] ml-1">
+                                {sec}s
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Ses Dalgası (Waveform) Arka Planı */}
+                      <div className="absolute inset-x-0 top-5 bottom-0 flex items-center justify-between px-0.5 pointer-events-none opacity-35">
+                        {(waveformPeaks.length > 0
+                          ? waveformPeaks
+                          : Array.from({ length: 90 }, (_, i) => 0.2 + ((i * 7) % 5) * 0.12)
+                        ).map((peak, idx) => (
+                          <div
+                            key={idx}
+                            style={{ height: `${Math.max(12, Math.round(peak * 85))}%` }}
+                            className="w-[2px] rounded-full bg-[#38bdf8]"
+                          />
+                        ))}
+                      </div>
+
+                      {/* Replik Blokları (Mouse ile Sürüklenebilir) */}
+                      <div className="absolute inset-x-0 top-6 bottom-1.5">
+                        {cues.map((cue, idx) => {
+                          const isSelected = cue.id === selectedCueId;
+                          const leftPct = Math.max(0, Math.min(99.5, (cue.start / Math.max(1, duration)) * 100));
+                          const widthPct = Math.max(
+                            1.2,
+                            Math.min(100 - leftPct, ((cue.end - cue.start) / Math.max(1, duration)) * 100),
+                          );
+
+                          return (
+                            <div
+                              key={cue.id}
+                              style={{
+                                left: `${leftPct}%`,
+                                width: `${widthPct}%`,
+                                backgroundColor: isSelected
+                                  ? `${cue.roleColor}dd`
+                                  : `${cue.roleColor}88`,
+                                borderColor: isSelected ? '#ffffff' : cue.roleColor,
+                                zIndex: isSelected ? 20 : 10,
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setSelectedCueId(cue.id);
+                                seekTo(cue.start);
+                                document
+                                  .getElementById(`cue-card-${cue.id}`)
+                                  ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                if (!timelineRef.current) return;
+                                const rect = timelineRef.current.getBoundingClientRect();
+                                setDragging({
+                                  cueId: cue.id,
+                                  type: 'move',
+                                  initialMouseX: e.clientX,
+                                  initialStart: cue.start,
+                                  initialEnd: cue.end,
+                                  timelineRect: { left: rect.left, width: rect.width },
+                                  spanDuration: duration,
+                                });
+                              }}
+                              className={`absolute top-1 bottom-1 rounded-lg border-2 flex items-center justify-between overflow-visible group transition-shadow cursor-grab active:cursor-grabbing ${
+                                isSelected ? 'shadow-lg shadow-black/80 ring-2 ring-[#d8fb51]' : ''
+                              }`}
+                              title={`#${idx + 1} ${cue.roleName}: ${cue.start}sn - ${cue.end}sn (Ortadan sürükle taşı, kenarlardan uzat/kısalt)`}
+                            >
+                              {/* SOL TUTAMAÇ: BAŞLANGIÇ (START) MOUSE SÜRGÜSÜ */}
+                              <div
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCueId(cue.id);
+                                  if (!timelineRef.current) return;
+                                  const rect = timelineRef.current.getBoundingClientRect();
+                                  setDragging({
+                                    cueId: cue.id,
+                                    type: 'start',
+                                    initialMouseX: e.clientX,
+                                    initialStart: cue.start,
+                                    initialEnd: cue.end,
+                                    timelineRect: { left: rect.left, width: rect.width },
+                                    spanDuration: duration,
+                                  });
+                                }}
+                                className="h-full w-3 -ml-1 bg-white/95 hover:bg-[#d8fb51] text-black rounded-l-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                title="Başlangıcı (Start) mouse ile sağa/sola sürükle"
+                              >
+                                <div className="w-[3px] h-4 bg-black/70 rounded-full" />
+                              </div>
+
+                              {/* Replik Etiketi */}
+                              <div className="px-1.5 truncate text-[10.5px] font-black text-black pointer-events-none select-none leading-tight">
+                                #{idx + 1} {cue.roleName}
+                              </div>
+
+                              {/* SAĞ TUTAMAÇ: BİTİŞ (END) MOUSE SÜRGÜSÜ */}
+                              <div
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCueId(cue.id);
+                                  if (!timelineRef.current) return;
+                                  const rect = timelineRef.current.getBoundingClientRect();
+                                  setDragging({
+                                    cueId: cue.id,
+                                    type: 'end',
+                                    initialMouseX: e.clientX,
+                                    initialStart: cue.start,
+                                    initialEnd: cue.end,
+                                    timelineRect: { left: rect.left, width: rect.width },
+                                    spanDuration: duration,
+                                  });
+                                }}
+                                className="h-full w-3 -mr-1 bg-white/95 hover:bg-[#d8fb51] text-black rounded-r-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                title="Bitişi (End) mouse ile sağa/sola sürükle"
+                              >
+                                <div className="w-[3px] h-4 bg-black/70 rounded-full" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Kırmızı/Sarı Oynatma İmleci (Playhead) */}
+                      <div
+                        style={{
+                          left: `${Math.max(0, Math.min(100, (currentTime / Math.max(1, duration)) * 100))}%`,
+                        }}
+                        className="absolute top-0 bottom-0 w-[2px] bg-[#d8fb51] pointer-events-none z-30 shadow-[0_0_8px_#d8fb51]"
+                      >
+                        <div className="w-3 h-3 -ml-[5px] rounded-full bg-[#d8fb51] border-2 border-black" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEÇİLİ REPLİK İÇİN BÜYÜK & HASSAS MOUSE SÜRGÜ ÇUBUĞU */}
+                  {(() => {
+                    const activeCue = cues.find((c) => c.id === selectedCueId) || cues[0];
+                    if (!activeCue) return null;
+                    const activeIndex = cues.findIndex((c) => c.id === activeCue.id);
+                    // Seçili repliğin etrafında yakınlaştırılmış 12 saniyelik pencere (Çok kolay mouse kontrolü için)
+                    const windowPad = 4;
+                    const winStart = Math.max(0, Math.floor(activeCue.start - windowPad));
+                    const winEnd = Math.min(
+                      Math.max(duration, activeCue.end + 1),
+                      Math.ceil(activeCue.end + windowPad),
+                    );
+                    const winSpan = Math.max(3, winEnd - winStart);
+                    const startPct = Math.max(
+                      0,
+                      Math.min(96, ((activeCue.start - winStart) / winSpan) * 100),
+                    );
+                    const endPct = Math.max(
+                      startPct + 3,
+                      Math.min(100, ((activeCue.end - winStart) / winSpan) * 100),
+                    );
+
+                    return (
+                      <div className="bg-[#181c13] border border-[#303724] rounded-xl p-2.5 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span
+                              className="px-2 py-0.5 rounded-md font-extrabold text-black text-[11px]"
+                              style={{ backgroundColor: activeCue.roleColor }}
+                            >
+                              Seçili Replik #{activeIndex + 1} · {activeCue.roleName}
+                            </span>
+                            <span className="font-mono font-bold text-[#d8fb51]">
+                              Başlangıç: {activeCue.start.toFixed(1)} sn — Bitiş: {activeCue.end.toFixed(1)} sn
+                            </span>
+                            <span className="text-[#8e9581] text-[11px]">
+                              (Süre: {(activeCue.end - activeCue.start).toFixed(1)} sn)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={markCurrentTimeAsStart}
+                              className="px-2 py-1 rounded-lg bg-[#24291d] hover:bg-[#313827] text-[#d8fb51] border border-[#3c4530] text-[11px] font-bold cursor-pointer"
+                              title="Videonun şu anki saniyesini bu repliğin başlangıcı yap"
+                            >
+                              [ Başlangıcı Anlık Saniye Yap
+                            </button>
+                            <button
+                              type="button"
+                              onClick={markCurrentTimeAsEnd}
+                              className="px-2 py-1 rounded-lg bg-[#24291d] hover:bg-[#313827] text-[#d8fb51] border border-[#3c4530] text-[11px] font-bold cursor-pointer"
+                              title="Videonun şu anki saniyesini bu repliğin bitişi yap"
+                            >
+                              Bitişi Anlık Saniye Yap ]
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => playCueOnly(activeCue)}
+                              className="px-2.5 py-1 rounded-lg bg-[#d8fb51] text-[#11120d] text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Play size={11} fill="currentColor" /> Dinle
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Yakınlaştırılmış Çift Tutamaçlı Mouse Barı */}
+                        <div
+                          onMouseDown={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                            seekTo(Number((winStart + ratio * winSpan).toFixed(1)));
+                          }}
+                          className="relative h-11 bg-[#11130d] border border-[#2c3322] rounded-xl overflow-hidden select-none cursor-pointer"
+                        >
+                          {/* Pencere Başlangıç/Bitiş Etiketleri */}
+                          <span className="absolute left-2 top-1 text-[10px] font-mono text-[#767d68] pointer-events-none">
+                            {winStart.toFixed(1)}s
+                          </span>
+                          <span className="absolute right-2 top-1 text-[10px] font-mono text-[#767d68] pointer-events-none">
+                            {winEnd.toFixed(1)}s
+                          </span>
+
+                          {/* Aktif Replik Aralığı ve Büyük Sürükleme Tutamaçları */}
+                          <div
+                            style={{
+                              left: `${startPct}%`,
+                              width: `${Math.max(3, endPct - startPct)}%`,
+                              backgroundColor: `${activeCue.roleColor}44`,
+                              borderColor: activeCue.roleColor,
+                            }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              const parentRect =
+                                e.currentTarget.parentElement?.getBoundingClientRect();
+                              if (!parentRect) return;
+                              setDragging({
+                                cueId: activeCue.id,
+                                type: 'move',
+                                initialMouseX: e.clientX,
+                                initialStart: activeCue.start,
+                                initialEnd: activeCue.end,
+                                timelineRect: { left: parentRect.left, width: parentRect.width },
+                                spanDuration: winSpan,
+                              });
+                            }}
+                            className="absolute top-1.5 bottom-1.5 border-2 rounded-lg flex items-center justify-between cursor-grab active:cursor-grabbing"
+                          >
+                            {/* SOL BÜYÜK TUTAMAÇ (BAŞLANGIÇ) */}
+                            <div
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                const parentRect =
+                                  e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                if (!parentRect) return;
+                                setDragging({
+                                  cueId: activeCue.id,
+                                  type: 'start',
+                                  initialMouseX: e.clientX,
+                                  initialStart: activeCue.start,
+                                  initialEnd: activeCue.end,
+                                  timelineRect: { left: parentRect.left, width: parentRect.width },
+                                  spanDuration: winSpan,
+                                });
+                              }}
+                              className="h-full px-2 bg-[#d8fb51] hover:bg-white text-[#11120d] font-black text-[10.5px] rounded-l-md flex items-center gap-1 cursor-ew-resize shadow-md shrink-0"
+                              title="Mouse ile sola/sağa çekerek başlangıcı ayarla"
+                            >
+                              ◀ Başlangıç ({activeCue.start.toFixed(1)}s)
+                            </div>
+
+                            <span className="text-[11px] font-bold text-white/90 truncate px-2 pointer-events-none">
+                              “{activeCue.text}”
+                            </span>
+
+                            {/* SAĞ BÜYÜK TUTAMAÇ (BİTİŞ) */}
+                            <div
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                const parentRect =
+                                  e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                if (!parentRect) return;
+                                setDragging({
+                                  cueId: activeCue.id,
+                                  type: 'end',
+                                  initialMouseX: e.clientX,
+                                  initialStart: activeCue.start,
+                                  initialEnd: activeCue.end,
+                                  timelineRect: { left: parentRect.left, width: parentRect.width },
+                                  spanDuration: winSpan,
+                                });
+                              }}
+                              className="h-full px-2 bg-[#d8fb51] hover:bg-white text-[#11120d] font-black text-[10.5px] rounded-r-md flex items-center gap-1 cursor-ew-resize shadow-md shrink-0"
+                              title="Mouse ile sola/sağa çekerek bitişi ayarla"
+                            >
+                              Bitiş ({activeCue.end.toFixed(1)}s) ▶
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1309,6 +1742,7 @@ export default function EditorPage() {
                   const isSelected = cue.id === selectedCueId;
                   return (
                     <div
+                      id={`cue-card-${cue.id}`}
                       key={cue.id}
                       onClick={() => {
                         setSelectedCueId(cue.id);
@@ -1352,7 +1786,7 @@ export default function EditorPage() {
                           <div className="flex items-center gap-1 bg-[#181a13] px-2 py-1 rounded-lg border border-[#2c3022]">
                             <input
                               type="number"
-                              step="0.5"
+                              step="0.1"
                               min="0"
                               max={duration}
                               value={cue.start}
@@ -1368,7 +1802,7 @@ export default function EditorPage() {
                           <div className="flex items-center gap-1 bg-[#181a13] px-2 py-1 rounded-lg border border-[#2c3022]">
                             <input
                               type="number"
-                              step="0.5"
+                              step="0.1"
                               min="0"
                               max={duration}
                               value={cue.end}
@@ -1399,6 +1833,106 @@ export default function EditorPage() {
                             <Trash2 size={13} />
                           </button>
                         </div>
+                      </div>
+
+                      {/* Kart İçi Mouse ile Başlangıç & Bitiş Sürgü Çubuğu */}
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="relative h-7 bg-[#14170f] border border-[#2c3222] rounded-lg overflow-hidden select-none flex items-center"
+                      >
+                        {(() => {
+                          const pad = 3.5;
+                          const cWinStart = Math.max(0, Math.floor(cue.start - pad));
+                          const cWinEnd = Math.min(
+                            Math.max(duration, cue.end + 1),
+                            Math.ceil(cue.end + pad),
+                          );
+                          const cSpan = Math.max(2.5, cWinEnd - cWinStart);
+                          const cStartPct = Math.max(
+                            0,
+                            Math.min(92, ((cue.start - cWinStart) / cSpan) * 100),
+                          );
+                          const cEndPct = Math.max(
+                            cStartPct + 6,
+                            Math.min(100, ((cue.end - cWinStart) / cSpan) * 100),
+                          );
+
+                          return (
+                            <div
+                              style={{
+                                left: `${cStartPct}%`,
+                                width: `${Math.max(6, cEndPct - cStartPct)}%`,
+                                backgroundColor: `${cue.roleColor}44`,
+                                borderColor: cue.roleColor,
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setSelectedCueId(cue.id);
+                                const parentRect =
+                                  e.currentTarget.parentElement?.getBoundingClientRect();
+                                if (!parentRect) return;
+                                setDragging({
+                                  cueId: cue.id,
+                                  type: 'move',
+                                  initialMouseX: e.clientX,
+                                  initialStart: cue.start,
+                                  initialEnd: cue.end,
+                                  timelineRect: { left: parentRect.left, width: parentRect.width },
+                                  spanDuration: cSpan,
+                                });
+                              }}
+                              className="absolute top-0.5 bottom-0.5 border rounded-md flex items-center justify-between cursor-grab active:cursor-grabbing"
+                            >
+                              <div
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCueId(cue.id);
+                                  const parentRect =
+                                    e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                  if (!parentRect) return;
+                                  setDragging({
+                                    cueId: cue.id,
+                                    type: 'start',
+                                    initialMouseX: e.clientX,
+                                    initialStart: cue.start,
+                                    initialEnd: cue.end,
+                                    timelineRect: { left: parentRect.left, width: parentRect.width },
+                                    spanDuration: cSpan,
+                                  });
+                                }}
+                                className="h-full px-1.5 bg-[#d8fb51] hover:bg-white text-[#11120d] text-[10px] font-black rounded-l flex items-center cursor-ew-resize shrink-0"
+                                title="Mouse ile başlangıcı sürükle"
+                              >
+                                ◀ {cue.start.toFixed(1)}s
+                              </div>
+                              <span className="text-[10px] text-[#cfd6c2] font-mono px-1 truncate pointer-events-none">
+                                ↔ Mouse ile sürükle
+                              </span>
+                              <div
+                                onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedCueId(cue.id);
+                                  const parentRect =
+                                    e.currentTarget.parentElement?.parentElement?.getBoundingClientRect();
+                                  if (!parentRect) return;
+                                  setDragging({
+                                    cueId: cue.id,
+                                    type: 'end',
+                                    initialMouseX: e.clientX,
+                                    initialStart: cue.start,
+                                    initialEnd: cue.end,
+                                    timelineRect: { left: parentRect.left, width: parentRect.width },
+                                    spanDuration: cSpan,
+                                  });
+                                }}
+                                className="h-full px-1.5 bg-[#d8fb51] hover:bg-white text-[#11120d] text-[10px] font-black rounded-r flex items-center cursor-ew-resize shrink-0"
+                                title="Mouse ile bitişi sürükle"
+                              >
+                                {cue.end.toFixed(1)}s ▶
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Replik Sözü */}
