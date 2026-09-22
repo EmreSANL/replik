@@ -21,13 +21,13 @@ import {
   Trash2,
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
+import { formatTimecode } from '@/lib/timecode';
 import MicTestDialog from '@/components/mic-test-dialog';
 import RoleRevealDialog from '@/components/role-reveal-dialog';
 import ScenePickerDialog from '@/components/scene-picker-dialog';
 import {
   sceneCues,
   playerCues,
-  timeLabel,
   getSceneById,
   getCustomScenes,
   type Room,
@@ -696,7 +696,7 @@ export default function Studio({
       const playersInfo = room.players.map((p) => ({
         name: p.name,
         roleName: scene.roles?.[p.role >= 0 ? p.role : 0] || 'Oyuncu',
-        roleColor: scene.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#d8fb51',
+        roleColor: scene.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#9E8CA9',
       }));
 
       await publishRoomDubbingToSupabase(
@@ -713,7 +713,7 @@ export default function Studio({
         setPublishProgress(100);
         setIsPublished(true);
         isPublishedRef.current = true;
-        setNotice('🎉 Dublajınız ana sayfada yayınlandı! Geçici kayıt parçaları temizlendi.');
+        setNotice('Dublaj ana sayfada yayınlandı. Geçici kayıt parçaları temizlendi.');
       }
     } catch (e) {
       if (mounted.current) {
@@ -920,24 +920,7 @@ export default function Studio({
                         setLobbyPlaying(true);
                       }
                     }}
-                    style={{
-                      position: 'absolute',
-                      bottom: '14px',
-                      right: '14px',
-                      zIndex: 10,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 14px',
-                      borderRadius: '999px',
-                      background: 'rgba(20, 21, 17, 0.85)',
-                      backdropFilter: 'blur(8px)',
-                      border: '1px solid rgba(255, 255, 255, 0.16)',
-                      color: '#fff',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
+                    className="studio-preview-button"
                   >
                     {lobbyPlaying ? <Pause size={15} /> : <Volume2 size={15} />}
                     {lobbyPlaying
@@ -962,7 +945,7 @@ export default function Studio({
                   >
                     <Volume2 size={20} className="pulse-icon" />
                     <div className="autoplay-prompt-info">
-                      <strong>Dublajı Sesli Başlatmak İçin Tıkla ▶</strong>
+                      <strong>Dublajı oynat</strong>
                       <span>Tarayıcın otomatik başlatmayı durdurdu.</span>
                     </div>
                   </button>
@@ -999,10 +982,7 @@ export default function Studio({
                 {/* Senkronize Dublaj Altyazısı */}
                 {activeSubtitle && (
                   <div className="final-subtitle-overlay">
-                    <span
-                      className="final-char-badge"
-                      style={{ backgroundColor: activeSubtitle.roleColor }}
-                    >
+                    <span className="final-char-badge">
                       {activeSubtitle.roleName} ({activeSubtitle.playerName})
                     </span>
                     <p className="final-subtitle-line">
@@ -1071,9 +1051,9 @@ export default function Studio({
                       className="final-scrubber-slider"
                     />
                     <div className="final-timer-badge">
-                      <span>{timeLabel(playbackTime)}</span>
+                      <span>{formatTimecode(playbackTime)}</span>
                       <span className="timer-sep">/</span>
-                      <span>{timeLabel(scene.duration)}</span>
+                      <span>{formatTimecode(scene.duration)}</span>
                     </div>
                   </div>
                   <button
@@ -1106,7 +1086,6 @@ export default function Studio({
                     className="reaction-badge-btn"
                     onClick={() => act('reaction', { emoji })}
                   >
-                    <span className="reaction-badge-emoji">{emoji}</span>
                     <span className="reaction-badge-count">
                       {room.reactions?.[emoji] || 0}
                     </span>
@@ -1128,9 +1107,9 @@ export default function Studio({
             <div className="timeline">
               {sceneCues(room.scene, customScenes).map((c) => (
                 <div key={c.id}>
-                  <span style={{ color: c.roleColor }}>{c.roleName}</span>
-                  <strong>{timeLabel(c.start)}</strong>
-                  <span>Bitiş {timeLabel(c.end)}</span>
+                  <span>{c.roleName}</span>
+                  <strong>{formatTimecode(c.start)}</strong>
+                  <span>Bitiş {formatTimecode(c.end)}</span>
                 </div>
               ))}
             </div>
@@ -1139,22 +1118,19 @@ export default function Studio({
           {/* Jenerik / Seslendirenler Kadrosu */}
           {room.status === 'final' && (
             <div className="cast-credits-box">
-              <h3>🎙️ DUBLAJ KADROSU</h3>
+              <h3>DUBLAJ KADROSU</h3>
               <div className="cast-grid">
                 {room.players.map((p, i) => {
                   const roleIdx = p.role >= 0 ? p.role : i % scene.roles.length;
                   const roleDetail = scene.roleDetails[roleIdx];
                   return (
                     <div key={p.id} className="cast-card">
-                      <div
-                        className="cast-avatar"
-                        style={{ borderColor: roleDetail?.color || '#d8fb51' }}
-                      >
+                      <div className="cast-avatar">
                         {p.name[0].toLocaleUpperCase('tr')}
                       </div>
                       <div className="cast-info">
                         <strong>{p.name}</strong>
-                        <span style={{ color: roleDetail?.color || '#d8fb51' }}>
+                        <span>
                           {roleDetail?.name || scene.roles[roleIdx]}
                         </span>
                       </div>
@@ -1177,14 +1153,12 @@ export default function Studio({
                 <Users />
               </div>
               <h2>
-                {room.maxPlayers === 1
-                  ? 'Solo Dublaj Odası'
-                  : 'Kadro tamam mı?'}
+                {room.maxPlayers === 1 ? 'Solo oda' : 'Oyuncular toplansın'}
               </h2>
               <p>
                 {room.maxPlayers === 1
-                  ? 'Tek başına dublaj modu seçtin. Tüm karakter ve replikler sana ait! Hazır olduğunda hemen başla.'
-                  : `Hedef ${room.maxPlayers || 4} oyuncu. Oda kodunu paylaş, arkadaşların katılsın.`}
+                  ? 'Bütün replikler sende. Hazır olduğunda başla.'
+                  : 'Oda kodunu paylaş. Herkes hazır olunca roller dağıtılacak.'}
               </p>
 
               <div className="lobby-scene-preview">
@@ -1215,12 +1189,8 @@ export default function Studio({
                         </span>
                       )}
                     </div>
-                    <span className={p.ready ? 'ready' : ''}>
-                      {p.ready ? (
-                        <Check size={16} />
-                      ) : (
-                        <span className="waiting-dot" />
-                      )}
+                    <span className={`player-ready-status ${p.ready ? 'ready' : ''}`}>
+                      {p.ready ? <><Check size={16} /> Hazır</> : 'Bekleniyor'}
                     </span>
                   </li>
                 ))}
@@ -1281,22 +1251,12 @@ export default function Studio({
                 myRoleNames.join(' + ') ||
                 scene.roles?.[me.role >= 0 ? me.role : 0] ||
                 'Karakter';
-              const displayRoleColor =
-                myAssignedCues[0]?.roleColor ||
-                scene.roleDetails?.[me.role >= 0 ? me.role : 0]?.color ||
-                '#d8fb51';
-
               return (
                 <>
                   <div className="eyebrow">
                     {myRoleNames.length > 1 ? 'SENİN KARAKTERLERİN' : 'SENİN KARAKTERİN'}
                   </div>
-                  <h2
-                    className="role-name"
-                    style={{
-                      color: displayRoleColor,
-                    }}
-                  >
+                  <h2 className="role-name">
                     {displayRoleName}
                   </h2>
                   <p>{scene.mood}</p>
@@ -1306,11 +1266,10 @@ export default function Studio({
                     style={{ width: '100%', marginBottom: 10 }}
                     onClick={() => setRoleRevealOpen(true)}
                   >
-                    <Users size={15} /> Karakter & Replik Tablosunu Gör
+                    <Users size={15} /> Rol dağılımını gör
                   </button>
                   <p>
-                    İşaretli bölümü izle, geri sayımdan sonra seslendir. Her kaydı
-                    dinleyip onayladığında sıradaki repliğin açılır.
+                    Bölümü izle. Geri sayımdan sonra seslendir. Kaydını dinleyip kullan.
                   </p>
                   <ul className="assigned-cues">
                     {myAssignedCues.map((c, cIdx) => (
@@ -1320,7 +1279,7 @@ export default function Studio({
                           {c.roleName ? `(${c.roleName})` : ''}
                         </span>
                         <strong>
-                          {timeLabel(c.start)} — {timeLabel(c.end)}
+                          {formatTimecode(c.start)} — {formatTimecode(c.end)}
                         </strong>
                         {me.segments?.includes(c.id) ? (
                           <Check size={16} />
@@ -1341,16 +1300,15 @@ export default function Studio({
               <div className="small-icon">
                 <Volume2 />
               </div>
-              <h2>Şimdi birlikte dinleyin.</h2>
+              <h2>Final hazır</h2>
               <p>
-                Herkes sesleri yükleyip hazır olsun. Oda kurucusu finali
-                birlikte başlatır.
+                Birlikte başlatınca 3 saniyelik geri sayımın ardından video ve sesler oynar.
               </p>
               <ul className="players">
                 {room.players.map((p) => (
                   <li key={p.id}>
                     <span className="avatar">{p.name[0]}</span>
-                    <span>{p.name}</span>
+                    <span className="player-details">{p.name}</span>
                     {p.ready ? (
                       <Check size={16} />
                     ) : (
@@ -1408,22 +1366,9 @@ export default function Studio({
 
               {/* Ana Sayfada Yayınla Butonu */}
               <button
-                className={isPublished ? 'secondary publish-btn is-published' : 'primary publish-btn'}
+                className={isPublished ? 'secondary publish-btn is-published' : 'secondary publish-btn'}
                 disabled={publishing || exporting || playing || countdown > 0}
                 onClick={isPublished ? onExit : publishVideo}
-                style={
-                  isPublished
-                    ? {
-                        borderColor: '#34d399',
-                        color: '#6ee7b7',
-                        background: 'rgba(52, 211, 153, 0.12)',
-                      }
-                    : {
-                        background: 'linear-gradient(135deg, #34d399 0%, #d8fb51 100%)',
-                        color: '#11160d',
-                        fontWeight: 800,
-                      }
-                }
               >
                 {publishing ? (
                   <>
@@ -1468,8 +1413,8 @@ export default function Studio({
                   disabled={publishing || exporting}
                   onClick={handleExitRoom}
                   style={{
-                    borderColor: 'rgba(248, 113, 113, 0.35)',
-                    color: '#fca5a5',
+                    borderColor: '#FA5636',
+                    color: '#FA5636',
                   }}
                 >
                   <Trash2 size={16} />
@@ -1489,8 +1434,8 @@ export default function Studio({
                 }}
               >
                 {isPublished
-                  ? '✅ Bu dublaj ana sayfadaki "Topluluk Dublajları" vitrininde yayınlandı. Gereksiz ses parçaları Supabase\'den temizlendi.'
-                  : '💡 "Dublajı Ana Sayfada Yayınla" butonuna basarsan videonuz ana sayfada herkesin izleyebileceği vitrine eklenir. Yayınlamadan çıkarsan Supabase\'de yer kaplamaması için kayıtlar otomatik olarak silinir.'}
+                  ? 'Dublaj ana sayfada yayınlandı. Geçici ses parçaları temizlendi.'
+                  : 'Yayınlarsan video ana sayfada görünür. Yayınlamadan çıkarsan geçici kayıtlar silinir.'}
               </p>
 
               {/* Yeniden Oyna / Yeni Sahne Butonu (Aynı Ekiple) */}

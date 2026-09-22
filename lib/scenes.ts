@@ -37,8 +37,8 @@ export const fallbackScene: Scene = {
   mood: 'Lütfen bir sahne seçin veya editörden video yükleyin.',
   roles: ['1. Karakter', '2. Karakter'],
   roleDetails: [
-    { id: 0, name: '1. Karakter', color: '#ef4444', description: '' },
-    { id: 1, name: '2. Karakter', color: '#38bdf8', description: '' },
+    { id: 0, name: '1. Karakter', color: '#9E8CA9', description: '' },
+    { id: 1, name: '2. Karakter', color: '#AEA932', description: '' },
   ],
   prompts: [],
 };
@@ -152,7 +152,7 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
           ...c,
           roleIndex: balancedIdx,
           roleName: detail ? detail.name : roles[balancedIdx] || `Karakter ${balancedIdx + 1}`,
-          roleColor: detail ? detail.color : c.roleColor || '#d8fb51',
+          roleColor: detail ? detail.color : c.roleColor || '#9E8CA9',
         };
       });
     }
@@ -173,7 +173,7 @@ export function sceneCues(sceneId: number, customList?: Scene[]): Cue[] {
       id,
       roleIndex: roleIdx,
       roleName: detail ? detail.name : roles[roleIdx] || `Karakter ${roleIdx + 1}`,
-      roleColor: detail ? detail.color : '#d8fb51',
+      roleColor: detail ? detail.color : '#9E8CA9',
       text,
       start: Number((id * step).toFixed(2)),
       end: Number(((id + 1) * step).toFixed(2)),
@@ -218,7 +218,7 @@ export function getPlayerCharacterMap(
     return roleToPlayer;
   }
 
-  const playerLoad = new Array(playerCount).fill(0);
+  const playerLoad = Array.from({ length: playerCount }, () => 0);
   const assignedRoles = new Set<number>();
 
   // 2. Önce oyuncuların lobide seçtiği ana rolleri (her oyuncuya 1 benzersiz karakter) ata

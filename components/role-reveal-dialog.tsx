@@ -1,5 +1,5 @@
 'use client';
-import { Sparkles, Mic, ArrowRight, Users, Scale, CheckCircle2 } from 'lucide-react';
+import { Mic, ArrowRight, Users, Scale, CheckCircle2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -46,7 +46,7 @@ export default function RoleRevealDialog({
   const myRoleGroups = new Map<string, { color: string; count: number }>();
   myCues.forEach((c) => {
     const name = c.roleName || 'Karakter';
-    const color = c.roleColor || '#d8fb51';
+    const color = '#F5E636';
     const curr = myRoleGroups.get(name) || { color, count: 0 };
     curr.count += 1;
     myRoleGroups.set(name, curr);
@@ -57,11 +57,6 @@ export default function RoleRevealDialog({
   });
 
   const isSolo = room.players.length <= 1;
-  const primaryRoleColor =
-    myDistinctRoles[0]?.color ||
-    scene.roleDetails?.[myIdx % Math.max(1, scene.roleDetails?.length || 1)]?.color ||
-    '#d8fb51';
-
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent className="role-reveal-dialog">
@@ -69,7 +64,7 @@ export default function RoleRevealDialog({
           {/* Header */}
           <div className="role-reveal-top-bar">
             <div className="role-reveal-badge">
-              <Sparkles size={14} /> KARAKTER & REPLİK DAĞILIMI
+              ROL DAĞILIMI / {scene.title}
             </div>
             <DialogTitle className="sr-only">
               Karakter ve Replik Dağılım Tablosu
@@ -82,20 +77,14 @@ export default function RoleRevealDialog({
           {/* Scrollable Content */}
           <div className="role-reveal-scrollable">
             {/* Hero Card for Current Player */}
-            <div
-              className="role-hero-card"
-              style={{
-                borderColor: `${primaryRoleColor}55`,
-                boxShadow: `0 8px 32px ${primaryRoleColor}18`,
-              }}
-            >
+            <div className="role-hero-card">
               <div className="role-hero-header">
                 <span className="role-hero-eyebrow">
                   {isSolo
-                    ? '🎬 SOLO DUBLAJ MODU'
+                    ? 'SOLO MOD'
                     : myDistinctRoles.length > 1
-                      ? '🎭 SENİN KARAKTERLERİN'
-                      : '🎭 SENİN KARAKTERİN'}
+                      ? 'SENİN KARAKTERLERİN'
+                      : 'SENİN KARAKTERİN'}
                 </span>
                 <span className="role-hero-count-pill">
                   {myCues.length} / {allCues.length} Replik ({Math.round((myCues.length / Math.max(1, allCues.length)) * 100)}%)
@@ -108,20 +97,14 @@ export default function RoleRevealDialog({
                   <div
                     key={r.name}
                     className="role-hero-char-badge"
-                    style={{
-                      borderColor: `${r.color}66`,
-                      background: `${r.color}15`,
-                      color: '#ffffff',
-                    }}
                   >
                     <span
                       className="role-char-dot"
-                      style={{ background: r.color }}
+                      style={{ background: '#F5E636' }}
                     />
                     <strong className="role-char-title">{r.name}</strong>
                     <span
                       className="role-char-cue-tag"
-                      style={{ background: `${r.color}33`, color: r.color }}
                     >
                       {r.count} Replik
                     </span>
@@ -138,7 +121,7 @@ export default function RoleRevealDialog({
             <div className="role-rule-pill-box">
               <Scale size={15} className="role-rule-icon" />
               <span>
-                <strong>1 Karakter = 1 Oyuncu:</strong> Aynı karakteri iki farklı kişi seslendirmez! Roller bölünmeden dengelendi.
+                <strong>1 karakter = 1 oyuncu.</strong> Aynı sesi yalnızca bir oyuncu seslendirir.
               </span>
             </div>
 
@@ -161,7 +144,7 @@ export default function RoleRevealDialog({
                   const pRoleGroup = new Map<string, { color: string; count: number }>();
                   pCues.forEach((c) => {
                     const name = c.roleName || scene.roles?.[idx % Math.max(1, scene.roles.length)] || `${idx + 1}. Karakter`;
-                    const color = c.roleColor || scene.roleDetails?.[idx % Math.max(1, scene.roleDetails?.length || 1)]?.color || '#d8fb51';
+                    const color = c.roleColor || '#9E8CA9';
                     const curr = pRoleGroup.get(name) || { color, count: 0 };
                     curr.count += 1;
                     pRoleGroup.set(name, curr);
@@ -170,19 +153,16 @@ export default function RoleRevealDialog({
                   pRoleGroup.forEach((val, name) => pRoles.push({ name, color: val.color, count: val.count }));
 
                   const isMe = p.id === playerId;
-                  const pPrimaryColor = pRoles[0]?.color || '#d8fb51';
 
                   return (
                     <div
                       key={p.id}
                       className={`role-dist-player-card ${isMe ? 'is-me' : ''}`}
-                      style={{ borderColor: isMe ? `${pPrimaryColor}77` : undefined }}
                     >
                       <div className="role-dist-player-top">
                         <div className="role-dist-player-name-wrap">
                           <span
                             className="role-dist-avatar"
-                            style={{ background: `${pPrimaryColor}22`, color: pPrimaryColor, borderColor: `${pPrimaryColor}55` }}
                           >
                             {p.name[0]?.toLocaleUpperCase('tr') || '?'}
                           </span>
@@ -199,13 +179,8 @@ export default function RoleRevealDialog({
                           <span
                             key={pr.name}
                             className="role-dist-char-tag"
-                            style={{
-                              borderColor: `${pr.color}44`,
-                              color: pr.color,
-                              background: `${pr.color}14`,
-                            }}
                           >
-                            🎭 {pr.name} <small>({pr.count})</small>
+                            {pr.name} <small>({pr.count})</small>
                           </span>
                         ))}
                       </div>
@@ -219,11 +194,11 @@ export default function RoleRevealDialog({
             <div className="role-quick-hints">
               <div className="role-hint-item">
                 <CheckCircle2 size={13} className="role-hint-icon" />
-                <span>Replikten önce sahnenin orijinal sesi oynatılır, ardından mikrofonun kayda geçer.</span>
+                <span>Önce orijinal bölüm oynar. Geri sayımdan sonra kaydın başlar.</span>
               </div>
               <div className="role-hint-item">
                 <CheckCircle2 size={13} className="role-hint-icon" />
-                <span>Herkes bitirdiği anda <strong>Büyük Final</strong> odadaki tüm oyuncularla birlikte eşzamanlı izlenir!</span>
+                <span>Herkes bitirdiğinde finali birlikte izleyebilirsiniz.</span>
               </div>
             </div>
           </div>
@@ -231,7 +206,7 @@ export default function RoleRevealDialog({
           {/* Fixed Bottom Action Bar */}
           <div className="role-reveal-bottom-bar">
             <button className="primary role-start-btn" onClick={onStart}>
-              <Mic size={18} /> Tabloyu Gördüm · Sahneye Çık & Başla{' '}
+              <Mic size={18} /> Kayıt stüdyosuna geç{' '}
               <ArrowRight size={18} />
             </button>
           </div>

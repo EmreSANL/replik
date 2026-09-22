@@ -700,15 +700,18 @@ export async function publishRoomDubbingToSupabase(
   await removeRoomStorageRecordings(cleanCode, room.recordings || []);
 
   // 3. Odayı "published" olarak işaretle
-  await supabase
-    .from('game_rooms')
-    .update({
-      status: 'published',
-      recordings: [{ player: '__published_mp4__', segment: -1, url: videoUrl }],
-      updated_at: new Date().toISOString(),
-    })
-    .eq('code', cleanCode)
-    .catch(() => {});
+  try {
+    await supabase
+      .from('game_rooms')
+      .update({
+        status: 'published',
+        recordings: [{ player: '__published_mp4__', segment: -1, url: videoUrl }],
+        updated_at: new Date().toISOString(),
+      })
+      .eq('code', cleanCode);
+  } catch {
+    // The published video and feed can still succeed if this status update fails.
+  }
 
   // 4. Ana sayfa yayın akışı (published/feed.json) listesini güncelle
   try {

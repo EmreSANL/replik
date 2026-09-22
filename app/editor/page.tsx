@@ -40,6 +40,7 @@ import {
 import { useWhisper } from '@/lib/use-whisper';
 import { removeVocalsFromVideo } from '@/lib/vocal-remover';
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
+import { formatTimecode } from '@/lib/timecode';
 import {
   uploadVideoToSupabase,
   saveSceneToSupabase,
@@ -48,14 +49,8 @@ import {
 } from '@/lib/supabase';
 
 const COLOR_PALETTE = [
-  '#ef4444', // Kırmızı
-  '#38bdf8', // Açık Mavi
-  '#f59e0b', // Turuncu
-  '#a855f7', // Mor
-  '#10b981', // Yeşil
-  '#ec4899', // Pembe
-  '#d8fb51', // Neon Sarı/Yeşil
-  '#f97316', // Turuncu-Kırmızı
+  '#9E8CA9',
+  '#AEA932',
 ];
 
 export default function EditorPage() {
@@ -99,13 +94,13 @@ export default function EditorPage() {
     {
       id: 0,
       name: '1. Karakter',
-      color: '#ef4444',
+      color: '#9E8CA9',
       description: 'İlk konuşan karakter',
     },
     {
       id: 1,
       name: '2. Karakter',
-      color: '#38bdf8',
+      color: '#AEA932',
       description: 'İkinci karakter',
     },
   ]);
@@ -161,7 +156,7 @@ export default function EditorPage() {
 
   const handleAutoSubtitle = useCallback(async () => {
     if (!videoUrl) {
-      showToast('⚠️ Lütfen önce bir video seçin veya yükleyin.');
+      showToast('Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
     try {
@@ -169,7 +164,7 @@ export default function EditorPage() {
         ? 'Whisper Base (Yüksek Doğruluk)'
         : 'Whisper Tiny (Hızlı)';
       showToast(
-        `🤖 ${modelLabel} ile ses analiz ediliyor ve Türkçe konuşmalar tanınıyor...`,
+        `${modelLabel} ile ses analiz ediliyor ve Türkçe konuşmalar tanınıyor...`,
       );
       const result = await whisper.transcribe(
         videoUrl,
@@ -182,13 +177,13 @@ export default function EditorPage() {
         setCues(result.cues);
         setSelectedCueId(result.cues[0].id);
         showToast(
-          `🎉 ${result.cues.length} replik ses dalgasına (VAD) kilitlenerek eksiksiz oluşturuldu!`,
+          `${result.cues.length} replik ses dalgasına (VAD) kilitlenerek eksiksiz oluşturuldu!`,
         );
       } else {
         showToast('ℹ️ Videoda belirgin bir konuşma sesi bulunamadı.');
       }
     } catch (err) {
-      showToast(`❌ Hata: ${(err as Error).message}`);
+      showToast(`Hata: ${(err as Error).message}`);
     }
   }, [videoUrl, roles, duration, whisper, whisperModel, showToast]);
 
@@ -369,7 +364,7 @@ export default function EditorPage() {
         return c;
       }),
     );
-    showToast(`⏱️ Başlangıç [${time.toFixed(2)}s] olarak ayarlandı.`);
+    showToast(`Başlangıç [${time.toFixed(2)}s] olarak ayarlandı.`);
   }, [currentTime, selectedCueId, showToast]);
 
   // Seçili repliğin bitişini şu anki video süresi yap
@@ -387,7 +382,7 @@ export default function EditorPage() {
         return c;
       }),
     );
-    showToast(`⏱️ Bitiş [${time.toFixed(2)}s] olarak ayarlandı.`);
+    showToast(`Bitiş [${time.toFixed(2)}s] olarak ayarlandı.`);
   }, [currentTime, selectedCueId, showToast]);
 
   // Kısayol tuşları
@@ -467,7 +462,7 @@ export default function EditorPage() {
     setCues((prev) => [...prev, newCue]);
     setSelectedCueId(newCue.id);
     seekTo(newStart);
-    showToast('✨ Yeni replik satırı eklendi.');
+    showToast('Yeni replik satırı eklendi.');
   };
 
   // Replik güncelle
@@ -509,7 +504,7 @@ export default function EditorPage() {
   // Replik sil
   const removeCue = (id: number) => {
     if (cues.length <= 1) {
-      showToast('⚠️ En az bir replik satırı bulunmalıdır.');
+      showToast('En az bir replik satırı bulunmalıdır.');
       return;
     }
     setCues((prev) => prev.filter((c) => c.id !== id));
@@ -522,7 +517,7 @@ export default function EditorPage() {
   // Karakter Ekle
   const addRole = () => {
     if (roles.length >= 6) {
-      showToast('⚠️ Maksimum 6 karakter eklenebilir.');
+      showToast('Maksimum 6 karakter eklenebilir.');
       return;
     }
     const id = roles.length;
@@ -533,7 +528,7 @@ export default function EditorPage() {
       description: 'Karakter rol açıklaması',
     };
     setRoles((prev) => [...prev, newRole]);
-    showToast(`🎭 ${newRole.name} eklendi.`);
+    showToast(`${newRole.name} eklendi.`);
   };
 
   // Karakter Güncelle
@@ -596,7 +591,7 @@ export default function EditorPage() {
       };
 
       showToast(
-        `🎬 Video seçildi! Supabase bulutuna yükleniyor ve yapay zeka analiz ediyor...`,
+        `Video seçildi! Supabase bulutuna yükleniyor ve yapay zeka analiz ediyor...`,
       );
 
       // 2. Supabase Storage bulutuna arka planda yükle
@@ -606,7 +601,7 @@ export default function EditorPage() {
         .then(({ url }) => {
           setVideoUrl(url); // Artık herkese açık kalıcı Supabase URL'si
           setIsUploadingToSupabase(false);
-          showToast('☁️ Video Supabase Storage bulutuna başarıyla yüklendi!');
+          showToast('Video Supabase Storage bulutuna başarıyla yüklendi!');
         })
         .catch((err) => {
           setIsUploadingToSupabase(false);
@@ -621,13 +616,13 @@ export default function EditorPage() {
           if (result.cues && result.cues.length > 0) {
             setCues(result.cues);
             setSelectedCueId(result.cues[0].id);
-            showToast(`🎉 ${result.cues.length} replik otomatik oluşturuldu!`);
+            showToast(`${result.cues.length} replik otomatik oluşturuldu!`);
           } else {
             showToast('ℹ️ Videoda belirgin konuşma tespit edilemedi.');
           }
         })
         .catch((err) => {
-          showToast(`⚠️ Altyazı analizi: ${(err as Error).message}`);
+          showToast(`Altyazı analizi: ${(err as Error).message}`);
         });
 
       // 4. Videodaki insan seslerini (vokalleri) otomatik temizle (Splitter-AI htdemucs)
@@ -651,7 +646,7 @@ export default function EditorPage() {
               .eq('id', sceneId);
           } catch {}
           showToast(
-            '🎵 Splitter AI: Videodaki vokaller %100 ayrıldı, ses efektleri korundu!',
+            'Splitter AI: Videodaki vokaller %100 ayrıldı, ses efektleri korundu!',
           );
         })
         .catch((err) => {
@@ -669,7 +664,7 @@ export default function EditorPage() {
 
   const handleManualVocalRemoval = useCallback(async () => {
     if (!videoUrl) {
-      showToast('⚠️ Lütfen önce bir video seçin veya yükleyin.');
+      showToast('Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
     setIsRemovingVocals(true);
@@ -677,7 +672,7 @@ export default function EditorPage() {
     setVocalStage('Splitter AI ile vokaller ayrıştırılıyor...');
     try {
       showToast(
-        '🎙️ Splitter AI: İnsan sesleri ayrıştırılıyor, ses efektleri korunuyor...',
+        'Splitter AI: İnsan sesleri ayrıştırılıyor, ses efektleri korunuyor...',
       );
       const res = await removeVocalsFromVideo(
         videoUrl,
@@ -697,10 +692,10 @@ export default function EditorPage() {
           .eq('id', sceneId);
       } catch {}
       showToast(
-        '🎵 Splitter AI: İnsan sesleri başarıyla ayrıldı! Vokalsiz efekt kanalı hazır.',
+        'Splitter AI: İnsan sesleri başarıyla ayrıldı! Vokalsiz efekt kanalı hazır.',
       );
     } catch (err) {
-      showToast(`⚠️ Vokal temizleme hatası: ${(err as Error).message}`);
+      showToast(`Vokal temizleme hatası: ${(err as Error).message}`);
     } finally {
       setIsRemovingVocals(false);
     }
@@ -760,7 +755,7 @@ export default function EditorPage() {
       }
       setIsPlaying(false);
 
-      showToast(`✏️ "${sc.title}" sahnesi düzenleme için yüklendi!`);
+      showToast(`"${sc.title}" sahnesi düzenleme için yüklendi!`);
     },
     [supabaseScenes, showToast],
   );
@@ -778,13 +773,13 @@ export default function EditorPage() {
       {
         id: 0,
         name: '1. Karakter',
-        color: '#ef4444',
+        color: '#9E8CA9',
         description: 'İlk konuşan karakter',
       },
       {
         id: 1,
         name: '2. Karakter',
-        color: '#38bdf8',
+        color: '#AEA932',
         description: 'İkinci karakter',
       },
     ]);
@@ -794,7 +789,7 @@ export default function EditorPage() {
     setIsEditingExisting(false);
     setEditingSceneTitle('');
     setIsSceneModalOpen(false);
-    showToast('✨ Yeni boş sahne oluşturma moduna geçildi.');
+    showToast('Yeni boş sahne oluşturma moduna geçildi.');
   }, [showToast]);
 
   // URL query parametresinden sceneId oku ve ilgili sahneyi otomatik yükle
@@ -861,21 +856,21 @@ export default function EditorPage() {
       if (sceneId === id) {
         handleStartNewScene();
       }
-      showToast(`🗑️ "${scTitle}" Supabase'den silindi.`);
+      showToast(`"${scTitle}" Supabase'den silindi.`);
     } catch {
       deleteCustomScene(id);
       setSupabaseScenes((prev) => prev.filter((s) => s.id !== id));
       if (sceneId === id) {
         handleStartNewScene();
       }
-      showToast(`🗑️ "${scTitle}" silindi.`);
+      showToast(`"${scTitle}" silindi.`);
     }
   };
 
   // Sahneyi Kaydet (Mevcut olanı güncelle veya yeni kopya olarak kaydet)
   const handleSaveScene = async (asNewCopy: boolean = false) => {
     if (!videoUrl) {
-      showToast('⚠️ Lütfen önce bir video seçin veya yükleyin.');
+      showToast('Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
     const sortedCues = [...cues].sort((a, b) => a.start - b.start);
@@ -907,7 +902,7 @@ export default function EditorPage() {
     };
 
     try {
-      showToast('☁️ Sahne kaydediliyor ve oyuna ekleniyor...');
+      showToast('Sahne kaydediliyor ve oyuna ekleniyor...');
       await saveSceneToSupabase(newScene);
       saveCustomScene(newScene); // yerel yedek
       setSupabaseScenes((prev) => [
@@ -920,8 +915,8 @@ export default function EditorPage() {
       setEditingSceneTitle(targetTitle);
       showToast(
         asNewCopy
-          ? `🎉 "${targetTitle}" yeni bir sahne olarak oyuna eklendi!`
-          : `💾 "${targetTitle}" sahnesindeki değişiklikler başarıyla güncellendi!`,
+          ? `"${targetTitle}" yeni bir sahne olarak oyuna eklendi!`
+          : `"${targetTitle}" sahnesindeki değişiklikler başarıyla güncellendi!`,
       );
     } catch (err) {
       saveCustomScene(newScene);
@@ -930,7 +925,7 @@ export default function EditorPage() {
       setIsEditingExisting(true);
       setEditingSceneTitle(targetTitle);
       showToast(
-        `⚠️ Supabase uyarısı: ${(err as Error).message}. Yerel olarak kaydedildi.`,
+        `Supabase uyarısı: ${(err as Error).message}. Yerel olarak kaydedildi.`,
       );
     }
   };
@@ -950,9 +945,9 @@ export default function EditorPage() {
         if (data.poster) setPoster(data.poster);
         if (data.roles) setRoles(data.roles);
         if (data.cues) setCues(data.cues);
-        showToast('📤 Sahne JSON dosyası başarıyla aktarıldı.');
+        showToast('Sahne JSON dosyası başarıyla aktarıldı.');
       } catch {
-        showToast('❌ Geçersiz JSON dosyası.');
+        showToast('Geçersiz JSON dosyası.');
       }
     };
     reader.readAsText(file);
@@ -964,7 +959,7 @@ export default function EditorPage() {
   }, [cues, currentTime]);
 
   return (
-    <div className="min-h-screen bg-[#10110d] text-[#f4f4e9] flex flex-col font-sans">
+    <div className="replik-editor min-h-screen bg-[#090909] text-[#F4F4E9] flex flex-col font-sans">
       {/* Gizli Dosya Seçiciler */}
       <input
         ref={fileInputRef}
@@ -982,30 +977,30 @@ export default function EditorPage() {
       />
 
       {/* SADE ÜST ÇUBUK (Sadece 3 Temel Buton) */}
-      <header className="border-b border-[#25271e] bg-[#151611] px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
+      <header className="border-b border-[#383832] bg-[#1A1A17] px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <Link
             href="/"
-            className="px-4 py-2 rounded-xl text-xs font-extrabold bg-[#20221a] hover:bg-[#d8fb51] text-[#d8fb51] hover:text-[#11120d] border border-[#323628] flex items-center gap-2 transition cursor-pointer no-underline"
+            className="px-4 py-2 rounded-xl text-xs font-extrabold bg-[#22221E] hover:bg-[#F5E636] text-[#F5E636] hover:text-[#090909] border border-[#383832] flex items-center gap-2 transition cursor-pointer no-underline"
           >
             <ArrowLeft size={15} />
             <span>Oyuna Dön</span>
           </Link>
-          <div className="h-5 w-[1px] bg-[#2a2d22] hidden sm:block" />
+          <div className="h-5 w-[1px] bg-[#383832] hidden sm:block" />
           <div
             style={{
               fontSize: '16px',
               letterSpacing: 'normal',
               lineHeight: 1.3,
             }}
-            className="font-extrabold text-[#f4f4e9] flex items-center gap-2"
+            className="font-extrabold text-[#F4F4E9] flex items-center gap-2"
           >
-            <Film size={18} className="text-[#d8fb51] shrink-0" />
+            <Film size={18} className="text-[#F5E636] shrink-0" />
             <span>Sahne Stüdyosu</span>
             {isEditingExisting && title && (
               <span
                 style={{ fontSize: '13px', letterSpacing: 'normal' }}
-                className="font-semibold text-[#a8b097] hidden md:inline"
+                className="font-semibold text-[#B8B8AE] hidden md:inline"
               >
                 — “{title}”
               </span>
@@ -1017,9 +1012,9 @@ export default function EditorPage() {
           <button
             type="button"
             onClick={() => setIsSceneModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#20221a] hover:bg-[#2b2e23] text-[#f4f4e9] border border-[#323628] flex items-center gap-2 transition cursor-pointer"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F4F4E9] border border-[#383832] flex items-center gap-2 transition cursor-pointer"
           >
-            <FolderOpen size={15} className="text-[#d8fb51]" />
+            <FolderOpen size={15} className="text-[#F5E636]" />
             <span>Kayıtlı Sahneler ({allScenesList.length})</span>
           </button>
 
@@ -1027,7 +1022,7 @@ export default function EditorPage() {
             <button
               type="button"
               onClick={handleStartNewScene}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#20221a] hover:bg-[#2b2e23] text-[#c7cbb8] border border-[#323628] flex items-center gap-1.5 transition cursor-pointer"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F4F4E9] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
             >
               <Plus size={15} />
               <span className="hidden sm:inline">Yeni Video Yükle</span>
@@ -1037,19 +1032,20 @@ export default function EditorPage() {
           <button
             type="button"
             onClick={() => handleSaveScene(false)}
-            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#d8fb51] hover:bg-[#e3ff6e] text-[#11120d] flex items-center gap-2 shadow-lg shadow-[#d8fb51]/15 transition cursor-pointer"
+            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-lg shadow-[#F5E636]/15 transition cursor-pointer"
           >
             <Check size={16} strokeWidth={2.5} />
-            <span>
+            <span className="editor-save-label-full">
               {isEditingExisting ? 'Değişiklikleri Kaydet' : 'Sahneyi Kaydet'}
             </span>
+            <span className="editor-save-label-short">Kaydet</span>
           </button>
         </div>
       </header>
 
       {/* TOAST BİLDİRİMİ */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#1c1f15] border border-[#d8fb51] text-[#f4f4e9] px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-sm font-semibold">
+        <div className="fixed bottom-6 right-6 z-50 bg-[#1A1A17] border border-[#F5E636] text-[#F4F4E9] px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 text-sm font-semibold">
           <span>{toastMessage}</span>
         </div>
       )}
@@ -1058,14 +1054,14 @@ export default function EditorPage() {
       <div className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* SOL SÜTUN: VİDEO ÖNİZLEME (6 SÜTUN) */}
         <div className="lg:col-span-6 flex flex-col gap-4 lg:sticky lg:top-20">
-          <div className="bg-[#161812] border border-[#282b20] rounded-2xl p-4 flex flex-col gap-3.5 shadow-xl">
+          <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3.5 shadow-xl">
             {/* Otomatik İşlem Durum Bildirimleri (Varsa gösterilir) */}
             {(isUploadingToSupabase ||
               isRemovingVocals ||
               whisper.isProcessing) && (
-              <div className="flex flex-col gap-2 bg-[#1e2117] border border-[#384126] rounded-xl p-3">
+              <div className="flex flex-col gap-2 bg-[#22221E] border border-[#383832] rounded-xl p-3">
                 {isUploadingToSupabase && (
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#38bdf8]">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#9E8CA9]">
                     <span className="flex items-center gap-2">
                       <Loader2 size={14} className="animate-spin" />
                       Video buluta yükleniyor...
@@ -1074,7 +1070,7 @@ export default function EditorPage() {
                   </div>
                 )}
                 {isRemovingVocals && (
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#c084fc]">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#9E8CA9]">
                     <span className="flex items-center gap-2">
                       <Loader2 size={14} className="animate-spin" />
                       Konuşma sesleri ayrıştırılıyor, ses efektleri korunuyor...
@@ -1083,7 +1079,7 @@ export default function EditorPage() {
                   </div>
                 )}
                 {whisper.isProcessing && (
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#d8fb51]">
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#F5E636]">
                     <span className="flex items-center gap-2">
                       <Loader2 size={14} className="animate-spin" />
                       {whisper.statusMessage ||
@@ -1096,7 +1092,7 @@ export default function EditorPage() {
             )}
 
             {/* VİDEO KUTUSU */}
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-[#2a2d22] flex items-center justify-center">
+            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-[#383832] flex items-center justify-center">
               {!videoUrl ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -1110,23 +1106,23 @@ export default function EditorPage() {
                     const f = e.dataTransfer.files?.[0];
                     if (f) processVideoFile(f);
                   }}
-                  className="w-full h-full flex flex-col items-center justify-center gap-4 p-8 text-center border-2 border-dashed border-[#383c2c] hover:border-[#d8fb51] bg-[#12130e] transition cursor-pointer group"
+                  className="w-full h-full flex flex-col items-center justify-center gap-4 p-8 text-center border-2 border-dashed border-[#383832] hover:border-[#F5E636] bg-[#1A1A17] transition cursor-pointer group"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-[#1d2016] border border-[#323726] flex items-center justify-center text-[#d8fb51] group-hover:scale-105 transition">
+                  <div className="w-16 h-16 rounded-2xl bg-[#22221E] border border-[#383832] flex items-center justify-center text-[#F5E636] group-hover:scale-105 transition">
                     <Upload size={30} />
                   </div>
                   <div className="flex flex-col gap-1 max-w-sm">
-                    <h3 className="text-base font-extrabold text-[#f4f4e9]">
+                    <h3 className="text-base font-extrabold text-[#F4F4E9]">
                       Videonu Buraya Bırak veya Seç
                     </h3>
-                    <p className="text-xs text-[#8e9283]">
+                    <p className="text-xs text-[#B8B8AE]">
                       Videoyu yüklediğinde konuşmalar ve ses efektleri otomatik
                       olarak hazırlanır.
                     </p>
                   </div>
                   <button
                     type="button"
-                    className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-[#d8fb51] text-[#11120d] flex items-center gap-2 shadow-md"
+                    className="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-md"
                   >
                     <Upload size={15} />
                     Bilgisayardan Video Seç
@@ -1210,7 +1206,7 @@ export default function EditorPage() {
                     <button
                       type="button"
                       onClick={togglePlay}
-                      className="absolute p-4 rounded-full bg-black/65 text-[#d8fb51] border border-white/20 hover:scale-105 transition shadow-2xl cursor-pointer"
+                      className="absolute p-4 rounded-full bg-black/65 text-[#F5E636] border border-white/20 hover:scale-105 transition shadow-2xl cursor-pointer"
                       aria-label="Oynat"
                     >
                       <Play size={30} fill="currentColor" />
@@ -1229,7 +1225,7 @@ export default function EditorPage() {
                     <button
                       type="button"
                       onClick={togglePlay}
-                      className="px-3.5 py-2 rounded-xl bg-[#d8fb51] text-[#11120d] font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-[#F5E636] text-[#090909] font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
                     >
                       {isPlaying ? (
                         <Pause size={15} />
@@ -1239,15 +1235,15 @@ export default function EditorPage() {
                       <span>{isPlaying ? 'Durdur' : 'Oynat'}</span>
                     </button>
 
-                    <span className="text-xs font-mono text-[#d8fb51] bg-[#12130e] px-3 py-2 rounded-xl border border-[#26291f] font-bold">
-                      {currentTime.toFixed(1)} sn / {duration.toFixed(1)} sn
+                    <span className="text-xs font-mono text-[#F5E636] bg-[#1A1A17] px-3 py-2 rounded-xl border border-[#383832] font-bold">
+                      {formatTimecode(currentTime)} / {formatTimecode(duration)}
                     </span>
                   </div>
 
                   {/* Ses Modu Seçimi (Vokalsiz Efektli vs Orijinal) */}
                   <div className="flex items-center gap-1.5">
                     {instrumentalUrl ? (
-                      <div className="flex items-center bg-[#12130e] border border-[#2b2e22] rounded-xl p-1">
+                      <div className="flex items-center bg-[#1A1A17] border border-[#383832] rounded-xl p-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -1264,11 +1260,11 @@ export default function EditorPage() {
                           }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                             audioMode === 'instrumental'
-                              ? 'bg-[#d8fb51] text-[#11120d]'
-                              : 'text-[#9ca28e] hover:text-white'
+                              ? 'bg-[#F5E636] text-[#090909]'
+                              : 'text-[#B8B8AE] hover:text-white'
                           }`}
                         >
-                          🔊 Vokalsiz (Efektli)
+                          Vokalsiz (Efektli)
                         </button>
                         <button
                           type="button"
@@ -1281,11 +1277,11 @@ export default function EditorPage() {
                           }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                             audioMode === 'original'
-                              ? 'bg-[#d8fb51] text-[#11120d]'
-                              : 'text-[#9ca28e] hover:text-white'
+                              ? 'bg-[#F5E636] text-[#090909]'
+                              : 'text-[#B8B8AE] hover:text-white'
                           }`}
                         >
-                          🎙️ Orijinal Ses
+                          Orijinal Ses
                         </button>
                       </div>
                     ) : (
@@ -1293,7 +1289,7 @@ export default function EditorPage() {
                         type="button"
                         onClick={handleManualVocalRemoval}
                         disabled={isRemovingVocals}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#231a31] hover:bg-[#312345] text-[#d8b4fe] border border-[#4c356b] flex items-center gap-1.5 cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1A1A17] hover:bg-[#22221E] text-[#9E8CA9] border border-[#383832] flex items-center gap-1.5 cursor-pointer"
                       >
                         <Music size={14} />
                         <span>Vokalleri Temizle</span>
@@ -1303,7 +1299,7 @@ export default function EditorPage() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#20221a] hover:bg-[#2c2f24] text-[#c7cbb8] border border-[#323628] cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#22221E] hover:bg-[#22221E] text-[#F4F4E9] border border-[#383832] cursor-pointer"
                     >
                       Videoyu Değiştir
                     </button>
@@ -1311,20 +1307,20 @@ export default function EditorPage() {
                 </div>
 
                 {/* GÖRSEL ZAMAN ÇİZELGESİ KUTUSU */}
-                <div className="bg-[#11130d] border border-[#2b3022] rounded-2xl p-3 flex flex-col gap-2.5">
+                <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-3 flex flex-col gap-2.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <Clock size={14} className="text-[#d8fb51]" />
-                      <span className="text-xs font-extrabold text-[#f4f4e9]">
+                      <Clock size={14} className="text-[#F5E636]" />
+                      <span className="text-xs font-extrabold text-[#F4F4E9]">
                         Zaman Çizelgesi
                       </span>
-                      <span className="text-[11px] text-[#959c88]">
+                      <span className="text-[11px] text-[#B8B8AE]">
                         Kenarlar süreyi ayarlar · Gövde repliği taşır
                       </span>
                     </div>
 
                     {/* Yakınlaştırma (Zoom) Butonları */}
-                    <div className="flex items-center gap-1 bg-[#181b13] border border-[#2c3123] rounded-lg p-0.5">
+                    <div className="flex items-center gap-1 bg-[#1A1A17] border border-[#383832] rounded-lg p-0.5">
                       {[1, 2, 4].map((z) => (
                         <button
                           key={z}
@@ -1332,8 +1328,8 @@ export default function EditorPage() {
                           onClick={() => setTimelineZoom(z)}
                           className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition cursor-pointer ${
                             timelineZoom === z
-                              ? 'bg-[#d8fb51] text-[#11120d]'
-                              : 'text-[#9ca28e] hover:text-white'
+                              ? 'bg-[#F5E636] text-[#090909]'
+                              : 'text-[#B8B8AE] hover:text-white'
                           }`}
                         >
                           {z}x
@@ -1364,12 +1360,12 @@ export default function EditorPage() {
                         seekTo(Number((ratio * duration).toFixed(1)));
                         setIsScrubbingTimeline(true);
                       }}
-                      className={`relative h-28 bg-[#171a12] border rounded-xl overflow-hidden cursor-pointer transition-colors ${
-                        dragging ? 'border-[#d8fb51]' : 'border-[#2a2f21]'
+                      className={`relative h-28 bg-[#1A1A17] border rounded-xl overflow-hidden cursor-pointer transition-colors ${
+                        dragging ? 'border-[#F5E636]' : 'border-[#383832]'
                       }`}
                     >
                       {/* Saniye Cetveli (Ruler) */}
-                      <div className="absolute top-0 left-0 right-0 h-5 bg-[#13160f] border-b border-[#252a1d] flex items-center pointer-events-none z-10">
+                      <div className="absolute top-0 left-0 right-0 h-5 bg-[#1A1A17] border-b border-[#383832] flex items-center pointer-events-none z-10">
                         {Array.from({
                           length: Math.max(
                             2,
@@ -1394,9 +1390,9 @@ export default function EditorPage() {
                               style={{ left: `${leftPct}%` }}
                               className="absolute top-0 bottom-0 flex items-center"
                             >
-                              <div className="h-2.5 w-[1px] bg-[#3d4431]" />
-                              <span className="text-[9.5px] font-mono text-[#889079] ml-1">
-                                {sec}s
+                              <div className="h-2.5 w-[1px] bg-[#383832]" />
+                              <span className="text-[9.5px] font-mono text-[#B8B8AE] ml-1">
+                                {formatTimecode(sec)}
                               </span>
                             </div>
                           );
@@ -1417,7 +1413,7 @@ export default function EditorPage() {
                             style={{
                               height: `${Math.max(12, Math.round(peak * 85))}%`,
                             }}
-                            className="w-[2px] rounded-full bg-[#38bdf8]"
+                            className="w-[2px] rounded-full bg-[#9E8CA9]"
                           />
                         ))}
                       </div>
@@ -1448,12 +1444,8 @@ export default function EditorPage() {
                               style={{
                                 left: `${leftPct}%`,
                                 width: `${widthPct}%`,
-                                backgroundColor: isSelected
-                                  ? `${cue.roleColor}dd`
-                                  : `${cue.roleColor}88`,
-                                borderColor: isSelected
-                                  ? '#ffffff'
-                                  : cue.roleColor,
+                                backgroundColor: isSelected ? '#F5E636' : '#9E8CA9',
+                                borderColor: isSelected ? '#F5E636' : '#9E8CA9',
                                 zIndex: isSelected ? 20 : 10,
                               }}
                               onMouseDown={(e) => {
@@ -1484,10 +1476,10 @@ export default function EditorPage() {
                               }}
                               className={`absolute top-2 bottom-2 rounded-lg border-2 flex items-center justify-between overflow-visible group transition-all cursor-grab active:cursor-grabbing hover:brightness-110 focus-within:ring-2 focus-within:ring-white ${
                                 isSelected
-                                  ? 'shadow-lg shadow-black/80 ring-2 ring-[#d8fb51]'
+                                  ? 'shadow-lg shadow-black/80 ring-2 ring-[#F5E636]'
                                   : 'hover:ring-1 hover:ring-white/70'
                               }`}
-                              title={`#${idx + 1} ${cue.roleName}: ${cue.start}sn - ${cue.end}sn (Ortadan sürükle taşı, kenarlardan uzat/kısalt)`}
+                              title={`#${idx + 1} ${cue.roleName}: ${formatTimecode(cue.start)}–${formatTimecode(cue.end)} (ortadan taşı, kenarlardan ayarla)`}
                             >
                               {/* SOL TUTAMAÇ: BAŞLANGIÇ (START) MOUSE SÜRGÜSÜ */}
                               <button
@@ -1526,7 +1518,7 @@ export default function EditorPage() {
                                     e.key === 'ArrowLeft' ? -0.1 : 0.1,
                                   );
                                 }}
-                                className="h-full w-4 -ml-1 bg-white hover:bg-[#d8fb51] focus:bg-[#d8fb51] focus:outline-none text-black rounded-l-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                className="h-full w-4 -ml-1 bg-white hover:bg-[#F5E636] focus:bg-[#F5E636] focus:outline-none text-black rounded-l-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
                                 title="Başlangıcı (Start) mouse ile sağa/sola sürükle"
                               >
                                 <div className="w-[3px] h-4 bg-black/70 rounded-full" />
@@ -1574,17 +1566,15 @@ export default function EditorPage() {
                                     e.key === 'ArrowLeft' ? -0.1 : 0.1,
                                   );
                                 }}
-                                className="h-full w-4 -mr-1 bg-white hover:bg-[#d8fb51] focus:bg-[#d8fb51] focus:outline-none text-black rounded-r-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
+                                className="h-full w-4 -mr-1 bg-white hover:bg-[#F5E636] focus:bg-[#F5E636] focus:outline-none text-black rounded-r-md flex items-center justify-center cursor-ew-resize shrink-0 shadow-md z-30"
                                 title="Bitişi (End) mouse ile sağa/sola sürükle"
                               >
                                 <div className="w-[3px] h-4 bg-black/70 rounded-full" />
                               </button>
 
                               {isSelected && (
-                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[#d8fb51]/50 bg-[#0b0c09]/95 px-2 py-1 text-[10px] font-mono font-bold text-[#d8fb51] shadow-xl pointer-events-none">
-                                  {cue.start.toFixed(1)} sn —{' '}
-                                  {cue.end.toFixed(1)} sn ·{' '}
-                                  {(cue.end - cue.start).toFixed(1)} sn
+                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[#F5E636]/50 bg-[#1A1A17]/95 px-2 py-1 text-[10px] font-mono font-bold text-[#F5E636] shadow-xl pointer-events-none">
+                                  {formatTimecode(cue.start)} — {formatTimecode(cue.end)} · {formatTimecode(cue.end - cue.start)}
                                 </div>
                               )}
                             </div>
@@ -1597,9 +1587,9 @@ export default function EditorPage() {
                         style={{
                           left: `${Math.max(0, Math.min(100, (currentTime / Math.max(1, duration)) * 100))}%`,
                         }}
-                        className="absolute top-0 bottom-0 w-[2px] bg-[#d8fb51] pointer-events-none z-30 shadow-[0_0_8px_#d8fb51]"
+                        className="absolute top-0 bottom-0 w-[2px] bg-[#F5E636] pointer-events-none z-30 shadow-[0_0_8px_#F5E636]"
                       >
-                        <div className="w-3 h-3 -ml-[5px] rounded-full bg-[#d8fb51] border-2 border-black" />
+                        <div className="w-3 h-3 -ml-[5px] rounded-full bg-[#F5E636] border-2 border-black" />
                       </div>
                     </div>
                   </div>
@@ -1615,7 +1605,7 @@ export default function EditorPage() {
                     const overlaps = hasCueOverlap(cues, activeCue.id);
 
                     return (
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-[#303724] bg-[#181c13] px-3 py-2.5 flex-wrap">
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-[#383832] bg-[#1A1A17] px-3 py-2.5 flex-wrap">
                         <div className="flex min-w-0 items-center gap-2 text-xs">
                           <span
                             className="shrink-0 rounded-md px-2 py-1 text-[11px] font-extrabold text-black"
@@ -1623,15 +1613,14 @@ export default function EditorPage() {
                           >
                             #{activeIndex + 1} · {activeCue.roleName}
                           </span>
-                          <span className="truncate text-[#b7bca9]">
+                          <span className="truncate text-[#B8B8AE]">
                             “{activeCue.text}”
                           </span>
-                          <span className="shrink-0 font-mono font-bold text-[#d8fb51]">
-                            {activeCue.start.toFixed(1)} —{' '}
-                            {activeCue.end.toFixed(1)} sn
+                          <span className="shrink-0 font-mono font-bold text-[#F5E636]">
+                            {formatTimecode(activeCue.start)} — {formatTimecode(activeCue.end)}
                           </span>
                           {overlaps && (
-                            <span className="shrink-0 rounded-md bg-[#512323] px-2 py-1 text-[10px] font-bold text-[#ffaaaa]">
+                            <span className="shrink-0 rounded-md bg-[#FA563622] px-2 py-1 text-[10px] font-bold text-[#FA5636]">
                               Çakışma var
                             </span>
                           )}
@@ -1641,7 +1630,7 @@ export default function EditorPage() {
                           <button
                             type="button"
                             onClick={markCurrentTimeAsStart}
-                            className="px-2 py-1 rounded-lg bg-[#24291d] hover:bg-[#313827] text-[#d8fb51] border border-[#3c4530] text-[11px] font-bold cursor-pointer"
+                            className="px-2 py-1 rounded-lg bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] text-[11px] font-bold cursor-pointer"
                             title="Videonun şu anki saniyesini bu repliğin başlangıcı yap"
                           >
                             Başlangıç = Oynatma İmleci
@@ -1649,7 +1638,7 @@ export default function EditorPage() {
                           <button
                             type="button"
                             onClick={markCurrentTimeAsEnd}
-                            className="px-2 py-1 rounded-lg bg-[#24291d] hover:bg-[#313827] text-[#d8fb51] border border-[#3c4530] text-[11px] font-bold cursor-pointer"
+                            className="px-2 py-1 rounded-lg bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] text-[11px] font-bold cursor-pointer"
                             title="Videonun şu anki saniyesini bu repliğin bitişi yap"
                           >
                             Bitiş = Oynatma İmleci
@@ -1657,7 +1646,7 @@ export default function EditorPage() {
                           <button
                             type="button"
                             onClick={() => playCueOnly(activeCue)}
-                            className="px-2.5 py-1 rounded-lg bg-[#d8fb51] text-[#11120d] text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-[#F5E636] text-[#090909] text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
                           >
                             <Play size={11} fill="currentColor" /> Dinle
                           </button>
@@ -1674,12 +1663,12 @@ export default function EditorPage() {
         {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME (6 SÜTUN) */}
         <div className="lg:col-span-6 flex flex-col gap-4">
           {/* ADIM 1: SAHNE ADI */}
-          <div className="bg-[#161812] border border-[#282b20] rounded-2xl p-4 flex flex-col gap-2.5 shadow-lg">
+          <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-2.5 shadow-lg">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-[#d8fb51] text-[#11120d] text-xs font-black flex items-center justify-center">
+              <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                 1
               </span>
-              <h2 className="text-sm font-extrabold text-[#f4f4e9]">
+              <h2 className="text-sm font-extrabold text-[#F4F4E9]">
                 Sahne Adı
               </h2>
             </div>
@@ -1688,25 +1677,25 @@ export default function EditorPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Örn: Gökhan Abi ve Cio Tartışıyor"
-              className="w-full bg-[#10110d] border border-[#2d3024] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[#f4f4e9] focus:outline-none focus:border-[#d8fb51]"
+              className="w-full bg-[#090909] border border-[#383832] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[#F4F4E9] focus:outline-none focus:border-[#F5E636]"
             />
           </div>
 
           {/* ADIM 2: KARAKTERLER */}
-          <div className="bg-[#161812] border border-[#282b20] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+          <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-[#d8fb51] text-[#11120d] text-xs font-black flex items-center justify-center">
+                <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                   2
                 </span>
-                <h2 className="text-sm font-extrabold text-[#f4f4e9]">
+                <h2 className="text-sm font-extrabold text-[#F4F4E9]">
                   Karakterler ({roles.length})
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={addRole}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#23261c] hover:bg-[#2f3326] text-[#d8fb51] border border-[#393e2d] flex items-center gap-1.5 transition cursor-pointer"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Plus size={14} /> Karakter Ekle
               </button>
@@ -1716,7 +1705,7 @@ export default function EditorPage() {
               {roles.map((role) => (
                 <div
                   key={role.id}
-                  className="bg-[#10110d] border border-[#2a2d22] rounded-xl px-3 py-2 flex items-center gap-2"
+                  className="bg-[#090909] border border-[#383832] rounded-xl px-3 py-2 flex items-center gap-2"
                 >
                   <input
                     type="color"
@@ -1733,7 +1722,7 @@ export default function EditorPage() {
                     onChange={(e) =>
                       updateRole(role.id, { name: e.target.value })
                     }
-                    className="w-full bg-transparent text-xs font-bold text-[#f4f4e9] focus:outline-none"
+                    className="w-full bg-transparent text-xs font-bold text-[#F4F4E9] focus:outline-none"
                     placeholder="Karakter Adı"
                   />
                   {roles.length > 1 && (
@@ -1742,7 +1731,7 @@ export default function EditorPage() {
                       onClick={() =>
                         setRoles((prev) => prev.filter((r) => r.id !== role.id))
                       }
-                      className="text-[#6d7062] hover:text-[#ff7878] p-0.5 transition cursor-pointer"
+                      className="text-[#B8B8AE] hover:text-[#FA5636] p-0.5 transition cursor-pointer"
                       title="Sil"
                     >
                       <X size={14} />
@@ -1754,13 +1743,13 @@ export default function EditorPage() {
           </div>
 
           {/* ADIM 3: REPLİKLER (KONUŞMALAR) */}
-          <div className="bg-[#161812] border border-[#282b20] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+          <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-[#d8fb51] text-[#11120d] text-xs font-black flex items-center justify-center">
+                <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                   3
                 </span>
-                <h2 className="text-sm font-extrabold text-[#f4f4e9]">
+                <h2 className="text-sm font-extrabold text-[#F4F4E9]">
                   Replikler ({cues.length})
                 </h2>
               </div>
@@ -1771,7 +1760,7 @@ export default function EditorPage() {
                     type="button"
                     onClick={handleAutoSubtitle}
                     disabled={whisper.isProcessing}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#23261c] hover:bg-[#2f3326] text-[#d8fb51] border border-[#393e2d] flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                   >
                     {whisper.isProcessing ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -1785,7 +1774,7 @@ export default function EditorPage() {
                 <button
                   type="button"
                   onClick={addCue}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-[#d8fb51] hover:bg-[#e3ff6e] text-[#11120d] flex items-center gap-1.5 transition cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Plus size={14} /> Yeni Replik Ekle
                 </button>
@@ -1793,8 +1782,8 @@ export default function EditorPage() {
             </div>
 
             {cues.length === 0 ? (
-              <div className="bg-[#10110d] border border-dashed border-[#2d3024] rounded-xl p-6 text-center flex flex-col items-center gap-2">
-                <p className="text-xs text-[#9ca28e]">
+              <div className="bg-[#090909] border border-dashed border-[#383832] rounded-xl p-6 text-center flex flex-col items-center gap-2">
+                <p className="text-xs text-[#B8B8AE]">
                   Henüz replik yok. <strong>“Otomatik Altyazı Çıkar”</strong>{' '}
                   veya <strong>“Yeni Replik Ekle”</strong> butonuna basarak
                   başlayabilirsin.
@@ -1814,14 +1803,14 @@ export default function EditorPage() {
                       }}
                       className={`p-3 rounded-xl border transition flex flex-col gap-2 cursor-pointer ${
                         isSelected
-                          ? 'bg-[#1e2117] border-[#d8fb51]'
-                          : 'bg-[#10110d] border-[#26291f] hover:border-[#383c2c]'
+                          ? 'bg-[#22221E] border-[#F5E636]'
+                          : 'bg-[#090909] border-[#383832] hover:border-[#383832]'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         {/* Sol: Sıra No & Hangi Karakter Konuşuyor */}
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-extrabold text-[#8e9283]">
+                          <span className="text-xs font-extrabold text-[#B8B8AE]">
                             #{index + 1}
                           </span>
                           <select
@@ -1849,14 +1838,14 @@ export default function EditorPage() {
                           className="flex items-center gap-1.5 text-xs"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="rounded-lg border border-[#2c3022] bg-[#181a13] px-2 py-1 font-mono text-[11px] font-bold text-[#d8fb51]">
-                            {cue.start.toFixed(1)} — {cue.end.toFixed(1)} sn
+                          <span className="rounded-lg border border-[#383832] bg-[#1A1A17] px-2 py-1 font-mono text-[11px] font-bold text-[#F5E636]">
+                            {formatTimecode(cue.start)} — {formatTimecode(cue.end)}
                           </span>
 
                           <button
                             type="button"
                             onClick={() => playCueOnly(cue)}
-                            className="p-1.5 rounded-lg bg-[#23261c] hover:bg-[#313627] text-[#d8fb51] transition cursor-pointer"
+                            className="p-1.5 rounded-lg bg-[#22221E] hover:bg-[#22221E] text-[#F5E636] transition cursor-pointer"
                             title="Bu Repliği İzle"
                           >
                             <Play size={13} fill="currentColor" />
@@ -1865,7 +1854,7 @@ export default function EditorPage() {
                           <button
                             type="button"
                             onClick={() => removeCue(cue.id)}
-                            className="p-1.5 rounded-lg bg-[#23261c] hover:bg-[#3b2020] text-[#8a8e7e] hover:text-[#ff7878] transition cursor-pointer"
+                            className="p-1.5 rounded-lg bg-[#22221E] hover:bg-[#FA563622] text-[#B8B8AE] hover:text-[#FA5636] transition cursor-pointer"
                             title="Repliği Sil"
                           >
                             <Trash2 size={13} />
@@ -1882,7 +1871,7 @@ export default function EditorPage() {
                           updateCue(cue.id, { text: e.target.value })
                         }
                         placeholder="Karakterin söyleyeceği cümleyi buraya yaz..."
-                        className="w-full bg-[#161812] border border-[#2b2e22] rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-[#f4f4e9] focus:outline-none focus:border-[#d8fb51]"
+                        className="w-full bg-[#1A1A17] border border-[#383832] rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-[#F4F4E9] focus:outline-none focus:border-[#F5E636]"
                       />
                     </div>
                   );
@@ -1900,20 +1889,20 @@ export default function EditorPage() {
           onClick={() => setIsSceneModalOpen(false)}
         >
           <div
-            className="bg-[#171912] border border-[#313327] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            className="bg-[#1A1A17] border border-[#383832] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#292b21]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#383832]">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#d8fb51]/15 text-[#d8fb51] flex items-center justify-center border border-[#d8fb51]/30">
+                <div className="w-9 h-9 rounded-xl bg-[#F5E636]/15 text-[#F5E636] flex items-center justify-center border border-[#F5E636]/30">
                   <FolderOpen size={20} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#f4f4e9]">
+                  <h3 className="text-base font-bold text-[#F4F4E9]">
                     Sahneleri Aç &amp; Düzenle
                   </h3>
-                  <p className="text-xs text-[#8c8e82]">
+                  <p className="text-xs text-[#B8B8AE]">
                     İstediğiniz sahneyi seçerek altyazılarını, replik
                     zamanlamalarını veya vokal temizliğini editörde düzenleyin.
                   </p>
@@ -1921,28 +1910,28 @@ export default function EditorPage() {
               </div>
               <button
                 onClick={() => setIsSceneModalOpen(false)}
-                className="w-8 h-8 rounded-lg bg-[#22241b] hover:bg-[#2e3025] text-[#9ca08e] hover:text-[#f4f4e9] flex items-center justify-center transition cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-[#22221E] hover:bg-[#383832] text-[#B8B8AE] hover:text-[#F4F4E9] flex items-center justify-center transition cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Modal Search & Filter */}
-            <div className="px-6 py-3 border-b border-[#24261c] bg-[#141610] flex items-center justify-between gap-4">
+            <div className="px-6 py-3 border-b border-[#22221E] bg-[#1A1A17] flex items-center justify-between gap-4">
               <div className="relative flex-1">
                 <Search
                   size={15}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7c7f71]"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[#B8B8AE]"
                 />
                 <input
                   type="text"
                   value={sceneSearch}
                   onChange={(e) => setSceneSearch(e.target.value)}
                   placeholder="Sahne adı, kategori veya karakter ara..."
-                  className="w-full bg-[#1b1c15] border border-[#2d3023] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#f4f4e9] focus:outline-none focus:border-[#d8fb51]"
+                  className="w-full bg-[#1A1A17] border border-[#383832] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#F4F4E9] focus:outline-none focus:border-[#F5E636]"
                 />
               </div>
-              <span className="text-xs text-[#8c8e82] whitespace-nowrap">
+              <span className="text-xs text-[#B8B8AE] whitespace-nowrap">
                 Toplam {filteredScenes.length} sahne
               </span>
             </div>
@@ -1954,31 +1943,31 @@ export default function EditorPage() {
                 return (
                   <div
                     key={sc.id}
-                    className={`bg-[#12130e] border rounded-xl overflow-hidden flex flex-col transition group ${
+                    className={`bg-[#1A1A17] border rounded-xl overflow-hidden flex flex-col transition group ${
                       isCurrent
-                        ? 'border-[#d8fb51] shadow-lg shadow-[#d8fb51]/10'
-                        : 'border-[#282a20] hover:border-[#424634]'
+                        ? 'border-[#F5E636] shadow-lg shadow-[#F5E636]/10'
+                        : 'border-[#383832] hover:border-[#383832]'
                     }`}
                   >
                     {/* Thumbnail / Poster */}
                     <div
-                      className="h-32 bg-[#202419] relative bg-cover bg-center flex items-end p-2.5"
+                      className="h-32 bg-[#1A1A17] relative bg-cover bg-center flex items-end p-2.5"
                       style={
                         sc.poster
                           ? { backgroundImage: `url('${sc.poster}')` }
                           : undefined
                       }
                     >
-                      <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-[10px] text-[#c7cbba] font-mono px-1.5 py-0.5 rounded">
+                      <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-[10px] text-[#F4F4E9] font-mono px-1.5 py-0.5 rounded">
                         00:{sc.duration}
                       </span>
                       {sc.isCustom && (
-                        <span className="absolute top-2 right-2 bg-[#d8fb51] text-[#12130e] text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                        <span className="absolute top-2 right-2 bg-[#F5E636] text-[#1A1A17] text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                           Meme / Özel
                         </span>
                       )}
                       {sc.instrumental && (
-                        <span className="absolute bottom-2 left-2 bg-[#a855f7]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <span className="absolute bottom-2 left-2 bg-[#9E8CA9]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                           <Music size={10} /> M&amp;E Vokalsiz
                         </span>
                       )}
@@ -1988,30 +1977,30 @@ export default function EditorPage() {
                     <div className="p-3 flex-1 flex flex-col justify-between gap-3">
                       <div>
                         <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-xs font-bold text-[#f4f4e9] group-hover:text-[#d8fb51] transition line-clamp-1">
+                          <h4 className="text-xs font-bold text-[#F4F4E9] group-hover:text-[#F5E636] transition line-clamp-1">
                             {sc.title}
                           </h4>
                           {isCurrent && (
-                            <span className="text-[10px] text-[#d8fb51] font-bold shrink-0">
+                            <span className="text-[10px] text-[#F5E636] font-bold shrink-0">
                               ● Açık
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-[#8c8e82] mt-0.5">
+                        <p className="text-[11px] text-[#B8B8AE] mt-0.5">
                           {sc.category} · {sc.roles?.length || 0} Karakter
                         </p>
                         {sc.mood && (
-                          <p className="text-[10px] text-[#6d7062] mt-1 line-clamp-1 italic">
+                          <p className="text-[10px] text-[#B8B8AE] mt-1 line-clamp-1 italic">
                             {sc.mood}
                           </p>
                         )}
                       </div>
 
                       {/* Buttons */}
-                      <div className="flex items-center gap-1.5 pt-2 border-t border-[#22241b]">
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-[#22221E]">
                         <button
                           onClick={() => loadScene(sc)}
-                          className="flex-1 py-1.5 px-2 bg-[#d8fb51] hover:bg-[#e4ff6b] text-[#12130e] text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                          className="flex-1 py-1.5 px-2 bg-[#F5E636] hover:bg-[#F5E636] text-[#1A1A17] text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
                         >
                           <Edit3 size={13} />
                           {isCurrent ? 'Yeniden Yükle' : 'Düzenle'}
@@ -2021,7 +2010,7 @@ export default function EditorPage() {
                             onClick={() =>
                               handleDeleteSupabaseScene(sc.id, sc.title)
                             }
-                            className="p-1.5 bg-[#20211b] hover:bg-[#3d1e1e] text-[#828577] hover:text-[#ff7878] rounded-lg transition cursor-pointer"
+                            className="p-1.5 bg-[#1A1A17] hover:bg-[#FA563622] text-[#B8B8AE] hover:text-[#FA5636] rounded-lg transition cursor-pointer"
                             title="Sahneyi Sil"
                           >
                             <Trash2 size={13} />
@@ -2035,14 +2024,14 @@ export default function EditorPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-3 border-t border-[#24261c] bg-[#141610] flex items-center justify-between">
-              <span className="text-xs text-[#8c8e82]">
-                💡 Düzenlemek istediğiniz sahneye tıklayın, tüm replikleri ve
+            <div className="px-6 py-3 border-t border-[#22221E] bg-[#1A1A17] flex items-center justify-between">
+              <span className="text-xs text-[#B8B8AE]">
+                Düzenlemek istediğiniz sahneye tıklayın, tüm replikleri ve
                 zamanlamaları anında önünüze gelecektir.
               </span>
               <button
                 onClick={handleStartNewScene}
-                className="px-3 py-1.5 bg-[#25281e] hover:bg-[#323628] text-[#d8fb51] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                className="px-3 py-1.5 bg-[#22221E] hover:bg-[#383832] text-[#F5E636] text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Plus size={14} /> Sıfırdan Yeni Sahne Yap
               </button>

@@ -200,13 +200,13 @@ export async function generateDubbedMp4Blob({
 
       if (activeCue) {
         const barH = Math.max(40, Math.round(height * 0.11));
-        paint.fillStyle = 'rgba(12, 16, 10, 0.78)';
+        paint.fillStyle = 'rgba(9, 9, 9, 0.9)';
         paint.fillRect(0, height - barH - 12, width, barH);
-        paint.fillStyle = '#d8fb51';
+        paint.fillStyle = '#F5E636';
         paint.font = `bold ${Math.max(13, Math.round(height * 0.032))}px system-ui, -apple-system, sans-serif`;
         paint.textAlign = 'center';
         paint.fillText(
-          `${activeCue.speaker}: "${activeCue.text}"`,
+          `${activeCue.roleName}: "${activeCue.text}"`,
           width / 2,
           height - barH / 2 - 6,
           width - 32,
@@ -214,7 +214,7 @@ export async function generateDubbedMp4Blob({
       }
 
       // Sağ üst küçük filigran
-      paint.fillStyle = 'rgba(216, 251, 81, 0.85)';
+      paint.fillStyle = '#F5E636';
       paint.font = `bold ${Math.max(11, Math.round(height * 0.024))}px system-ui, sans-serif`;
       paint.textAlign = 'right';
       paint.fillText('Replik Dublaj', width - 14, 24);

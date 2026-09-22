@@ -4,19 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Mic,
   ArrowRight,
-  Users,
-  User,
   Headphones,
   Play,
   Sparkles,
   Check,
   Plus,
   Edit3,
-  Film,
   KeyRound,
   Flame,
   Volume2,
-  Download,
   Sliders,
 } from 'lucide-react';
 import {
@@ -82,6 +78,7 @@ export default function Home() {
   }, []);
 
   const activeScene = allScenes[selected] || allScenes[0] || fallbackScene;
+  const hasScenes = allScenes.length > 0;
   const previewScene =
     preview !== null ? allScenes[preview] || allScenes[0] || fallbackScene : null;
 
@@ -98,6 +95,10 @@ export default function Home() {
   }, []);
 
   function openCreate(id = selected) {
+    if (!hasScenes) {
+      setError('Önce editörden bir sahne ekle.');
+      return;
+    }
     setSelected(id);
     setError('');
     setModal('create');
@@ -174,7 +175,7 @@ export default function Home() {
               <span className="bbank-brand-title">Replik</span>
             </Link>
             <span className="bbank-date-label">
-              Canlı Doğaçlama Dublaj Odaları · 2026 Edition
+              Arkadaşlarınla sahneye gir, sesleri paylaş.
             </span>
           </div>
 
@@ -190,7 +191,7 @@ export default function Home() {
                     ?.scrollIntoView({ behavior: 'smooth' });
               }}
             >
-              🎪 Oyun Alanı
+              Sahneler
             </button>
             <button
               type="button"
@@ -245,14 +246,13 @@ export default function Home() {
               <div className="bbank-bento-col bbank-col-left">
                 {/* Tile 1: Lilac Manifesto Card */}
                 <div className="bbank-tile bbank-tile-lilac">
-                  <span className="bbank-inner-pill">(Replik Manifesto)</span>
+                  <span className="bbank-inner-pill">REPLİK / 01</span>
                   <p className="bbank-manifesto-text">
-                    İzlediğin sahneyi baştan seslendir. Arkadaşlarınla rolleri kap,
-                    replikleri patlat. <strong>1 Karakter = 1 Oyuncu</strong> kuralıyla
-                    herkes tek bir sesi sahiplenir, finali canlı birlikte izlersiniz.
+                    Bir sahne seç. Rolleri paylaş. Replikleri seslendir.
+                    <strong> Finali birlikte izle.</strong>
                   </p>
                   <div className="bbank-manifesto-footer">
-                    <span>✦ Doğaçlama Dublaj</span>
+                    <span>1 Karakter = 1 Oyuncu</span>
                     <span>1–4 Kişilik</span>
                   </div>
                 </div>
@@ -260,12 +260,12 @@ export default function Home() {
                 {/* Tile 5: Olive Gold Growth / Soundwave Card */}
                 <div className="bbank-tile bbank-tile-olive">
                   <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">(Ses Mikseri)</span>
+                    <span className="bbank-inner-pill">KAYIT AKIŞI / 02</span>
                     <Sliders size={16} />
                   </div>
-                  <strong className="bbank-olive-metric">1.840+</strong>
+                  <strong className="bbank-olive-metric">3 · 2 · 1</strong>
                   <span className="bbank-olive-sub">
-                    Tamamlanan Canlı Dublaj &middot; 0 Gecikme
+                    Bölümü izle, geri sayımı bekle, seslendir.
                   </span>
 
                   {/* Soundwave Bar Chart Graphic */}
@@ -286,14 +286,15 @@ export default function Home() {
               {/* Column 2: Centerpiece Yellow Engagement Card */}
               <div className="bbank-bento-col bbank-col-center">
                 {/* Tile 2: Sunny Yellow Scene Spotlight */}
-                <div className="bbank-tile bbank-tile-yellow">
+                <div className={`bbank-tile bbank-tile-yellow ${hasScenes ? '' : 'is-empty'}`}>
                   <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">(Günün Sahnesi)</span>
+                    <span className="bbank-inner-pill">SEÇİLİ SAHNE / 03</span>
                     <button
                       type="button"
                       className="bbank-sound-preview-btn"
                       onClick={() => setPreview(selected)}
                       title="Orijinal sahne sesini dinle"
+                      disabled={!hasScenes}
                     >
                       <Volume2 size={16} /> Dinle
                     </button>
@@ -301,24 +302,18 @@ export default function Home() {
 
                   <div className="bbank-yellow-metric-row">
                     <strong className="bbank-yellow-metric">
-                      +{activeCuesCount} Replik
+                      {hasScenes ? `+${activeCuesCount} Replik` : 'İlk sahneyi ekle'}
                     </strong>
                     <span className="bbank-yellow-sub">
-                      5 Karakter · 00:{activeScene.duration} sn
+                      {hasScenes ? `${activeScene.roles.length} karakter · ${activeScene.duration} sn` : 'Video ve replikleri editörde hazırla'}
                     </span>
                   </div>
 
-                  <h2 className="bbank-yellow-title">{activeScene.title}</h2>
-
-                  {/* Graphic Block Bar (Black & Yellow block from reference) */}
-                  <div className="bbank-graphic-block">
-                    <div className="bbank-graphic-black" />
-                    <div className="bbank-graphic-accent" />
-                  </div>
+                  <h2 className="bbank-yellow-title">{hasScenes ? activeScene.title : 'Henüz sahne yok'}</h2>
 
                   {/* Character pill tags inside yellow tile */}
                   <div className="bbank-char-pills-row">
-                    {activeScene.roles.map((r) => (
+                    {hasScenes && activeScene.roles.map((r) => (
                       <span key={r} className="bbank-char-tag-pill">
                         {r}
                       </span>
@@ -326,14 +321,15 @@ export default function Home() {
                   </div>
 
                   {/* Action bottom pill button (Just like February 2024 pill button in reference) */}
-                  <button
-                    type="button"
-                    className="bbank-tile-cta-pill"
-                    onClick={() => openCreate(selected)}
-                  >
-                    <span>▶ Sahneye Çık & Odayı Kur</span>
-                    <ArrowRight size={16} />
-                  </button>
+                  {hasScenes ? (
+                    <button type="button" className="bbank-tile-cta-pill" onClick={() => openCreate(selected)}>
+                      <span>Bu sahneyle oda kur</span><ArrowRight size={16} />
+                    </button>
+                  ) : (
+                    <Link href="/editor" className="bbank-tile-cta-pill">
+                      <span>Sahne editörünü aç</span><ArrowRight size={16} />
+                    </Link>
+                  )}
                 </div>
 
                 {/* Wide Pill Action Buttons (Matching [TRADE CRYPTO] and [BANKWITHBBANK]) */}
@@ -342,8 +338,9 @@ export default function Home() {
                     type="button"
                     className="bbank-wide-pill bbank-pill-sage"
                     onClick={() => openCreate(selected)}
+                    disabled={!hasScenes}
                   >
-                    <Mic size={18} /> <strong>DUBLAJA BAŞLA</strong>
+                    <Mic size={18} /> <strong>ODA KUR</strong>
                   </button>
                   <button
                     type="button"
@@ -353,7 +350,7 @@ export default function Home() {
                       setModal('join');
                     }}
                   >
-                    <KeyRound size={18} /> <strong># ODAYA GİR</strong>
+                    <KeyRound size={18} /> <strong>ODAYA GİR</strong>
                   </button>
                 </div>
               </div>
@@ -368,13 +365,13 @@ export default function Home() {
                       <span className="bbank-sage-subtitle">1 Karakter = 1 Oyuncu</span>
                     </div>
                     <span className="bbank-inner-pill">
-                      {activeScene.roles.length} Karakter
+                      {hasScenes ? `${activeScene.roles.length} karakter` : 'Sahne bekleniyor'}
                     </span>
                   </div>
 
                   {/* Spending limits style breakdown list */}
                   <div className="bbank-breakdown-list">
-                    {charStats.map((cs) => (
+                    {hasScenes && charStats.map((cs) => (
                       <div key={cs.name} className="bbank-breakdown-item">
                         <div className="bbank-breakdown-text">
                           <span className="bbank-char-name">{cs.name}</span>
@@ -397,7 +394,7 @@ export default function Home() {
                 {/* Tile 4: Coral Orange Account / Quick Joiner */}
                 <div className="bbank-tile bbank-tile-coral">
                   <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">(Odaya Katıl)</span>
+                    <span className="bbank-inner-pill">ODAYA KATIL / 04</span>
                     <KeyRound size={16} />
                   </div>
 
@@ -439,21 +436,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Tile 6: Ivory Mint Typography Specimen Card */}
-                <div className="bbank-tile bbank-tile-ivory">
-                  <div className="bbank-ivory-head">
-                    <span>REPLİK.IO</span>
-                    <span>© 2026</span>
-                  </div>
-                  <div className="bbank-ivory-specimen">
-                    <strong>DOĞAÇLAMA DUBLAJ</strong>
-                    <span>1 KARAKTER = 1 OYUNCU</span>
-                    <span>MP4 4K VIDEO EXPORT</span>
-                  </div>
-                  <div className="bbank-ivory-code-pill">
-                    ✦ 01 &middot; 02 &middot; 03 &middot; 04 &middot; 05
-                  </div>
-                </div>
               </div>
             </section>
 
@@ -582,21 +564,17 @@ export default function Home() {
                 })}
 
                 {/* Add Custom Meme Tile */}
-                <a
+                <Link
                   href="/editor"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    window.location.href = '/editor';
-                  }}
                   className="bbank-scene-tile bbank-add-tile"
                 >
                   <div className="bbank-add-icon">
                     <Plus size={28} />
                   </div>
                   <h3>Kendi Sahnini Ekle</h3>
-                  <p>Video yükle & altyazı repliklerini mouse ile zamanla 🎬</p>
-                  <span className="bbank-add-btn-tag">Editöre Git ➔</span>
-                </a>
+                  <p>Video yükle, repliklerin zamanını belirle.</p>
+                  <span className="bbank-add-btn-tag">Editöre git</span>
+                </Link>
               </div>
             </section>
 
@@ -617,10 +595,9 @@ export default function Home() {
                 <div className="bbank-empty-card">
                   <Sparkles size={24} />
                   <div>
-                    <strong>Henüz yayınlanmış bir dublaj yok!</strong>
+                    <strong>Henüz yayınlanan dublaj yok.</strong>
                     <p>
-                      Dublajını tamamla, finaldeki{' '}
-                      <b>&ldquo;Dublajı Ana Sayfada Yayınla&rdquo;</b> butonuna basarak ilk yayını sen yap!
+                      Finalde &ldquo;Dublajı ana sayfada yayınla&rdquo; seçeneğiyle ilk kaydı paylaşabilirsin.
                     </p>
                   </div>
                 </div>
