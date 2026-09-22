@@ -40,6 +40,7 @@ import {
   executeGameRoomAction,
   getAudioRecordingUrl,
 } from '@/lib/game-service';
+import { exportDubbedMp4 } from '@/lib/mp4-exporter';
 
 export type Session = { code: string; token: string; id: string };
 
@@ -619,80 +620,51 @@ export default function Studio({
     };
   }, [room.playAt, room.status, scene.duration]);
 
+  const [exportProgress, setExportProgress] = useState(0);
+
   async function exportVideo() {
     setError('');
-    if (!window.MediaRecorder) {
-      setError('Bu tarayıcı video indirmeyi desteklemiyor. Chrome ile dene.');
-      return;
+    setNotice('');
+    setExportProgress(0);
+
+    if (playing) {
+      stopPlayback();
     }
-    if (buffers.current.size === 0) {
-      const ok = await loadAudio();
-      if (!ok) {
-        setError('Ses dosyaları yüklenemedi. Sayfayı yenileyip tekrar dene.');
-        return;
-      }
-    }
+
     setExporting(true);
-    let captured: MediaStream | undefined;
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 854;
-      canvas.height = 480;
-      const paint = canvas.getContext('2d')!;
-      captured = canvas.captureStream(25);
-      const mix = ctx.current!.createMediaStreamDestination();
-      mix.stream.getAudioTracks().forEach((t) => captured!.addTrack(t));
-      const type = [
-        'video/webm;codecs=vp8,opus',
-        'video/webm',
-        'video/mp4',
-      ].find((t) => MediaRecorder.isTypeSupported(t));
-      if (!type)
-        throw new Error(
-          'Bu tarayıcı video çıktısını desteklemiyor. Chrome ile dene.',
-        );
-      const output = new MediaRecorder(captured, { mimeType: type });
-      exportRecorder.current = output;
-      const chunks: BlobPart[] = [];
-      output.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
-      };
-      output.onstop = () => {
-        cancelAnimationFrame(frame.current);
-        captured?.getTracks().forEach((t) => t.stop());
-        if (!mounted.current) return;
-        const url = URL.createObjectURL(new Blob(chunks, { type }));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `replik-${room.code}.${type.includes('mp4') ? 'mp4' : 'webm'}`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-        setExporting(false);
-      };
-      const draw = () => {
-        paint.drawImage(video.current!, 0, 0, 854, 480);
-        paint.fillStyle = '#0009';
-        paint.fillRect(0, 445, 854, 35);
-        paint.fillStyle = '#fff';
-        paint.font = '12px Arial';
-        paint.fillText(
-          'Replik · Dublaj.io Deneyimi · Sesler oyunculara aittir.',
-          14,
-          467,
-        );
-        frame.current = requestAnimationFrame(draw);
-      };
-      await playFinal(0, mix);
-      draw();
-      output.start();
-      exportStop.current = setTimeout(() => {
-        if (output.state === 'recording') output.stop();
-      }, scene.duration * 1000);
+      const ok = await loadAudio();
+      if (!ok && buffers.current.size === 0) {
+        throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
+      }
+
+      await exportDubbedMp4({
+        room,
+        scene,
+        cues,
+        buffers: buffers.current,
+        onProgress: (pct) => {
+          if (mounted.current) {
+            setExportProgress(pct);
+          }
+        },
+      });
+
+      if (mounted.current) {
+        setNotice(`replik-${room.code}.mp4 başarıyla indirildi!`);
+        setTimeout(() => {
+          if (mounted.current) setNotice('');
+        }, 4000);
+      }
     } catch (e) {
-      captured?.getTracks().forEach((t) => t.stop());
-      cancelAnimationFrame(frame.current);
-      setError((e as Error).message);
-      setExporting(false);
+      if (mounted.current) {
+        setError((e as Error).message || 'MP4 indirme sırasında bir hata oluştu.');
+      }
+    } finally {
+      if (mounted.current) {
+        setExporting(false);
+        setExportProgress(0);
+      }
     }
   }
 
@@ -794,6 +766,7 @@ export default function Studio({
                   ref={video}
                   src={scene.video}
                   poster={scene.poster}
+                  crossOrigin="anonymous"
                   muted
                   playsInline
                   preload="auto"
@@ -1302,16 +1275,23 @@ export default function Studio({
                 <Headphones size={17} />
               </button>
 
-              {/* Video İndirme */}
+              {/* Video İndirme (MP4) */}
               <button
                 className="secondary"
                 disabled={exporting || playing || countdown > 0}
                 onClick={exportVideo}
               >
-                <Download size={17} />
-                {exporting
-                  ? 'Video hazırlanıyor…'
-                  : 'Dublajı video olarak indir'}
+                {exporting ? (
+                  <>
+                    <Loader2 size={17} className="spin-icon" />
+                    MP4 Hazırlanıyor… %{exportProgress}
+                  </>
+                ) : (
+                  <>
+                    <Download size={17} />
+                    Dublajı MP4 olarak indir
+                  </>
+                )}
               </button>
 
               {/* Yeniden Oyna / Yeni Sahne Butonu (Aynı Ekiple) */}
