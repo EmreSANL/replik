@@ -157,6 +157,57 @@ export default function EditorPage() {
     spanDuration?: number;
   } | null>(null);
 
+  const timelineZoomRef = useRef(timelineZoom);
+  timelineZoomRef.current = timelineZoom;
+
+  // Zaman Çizelgesi Mouse Scroll / Tekerlek / Pinch ile Yakınlaştırma (Zoom In / Zoom Out)
+  useEffect(() => {
+    const scrollEl = timelineScrollRef.current;
+    if (!scrollEl) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Shift tuşu basılıysa yatay kaydırmaya izin ver
+      if (e.shiftKey) return;
+
+      // Sayfanın aşağı-yukarı kaymasını engelleyip çizelgeyi zoomla
+      e.preventDefault();
+
+      const rect = scrollEl.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const currentScroll = scrollEl.scrollLeft;
+      const scrollWidth = scrollEl.scrollWidth || 1;
+      const focalRatio = (currentScroll + mouseX) / scrollWidth;
+
+      // Hassas zoom faktörü hesabı
+      const zoomSensitivity = e.ctrlKey ? 0.012 : 0.0025;
+      const factor = Math.exp(-e.deltaY * zoomSensitivity);
+
+      setTimelineZoom((prevZoom) => {
+        const rawNext = prevZoom * factor;
+        const nextZoom = Math.max(
+          0.75,
+          Math.min(10, Number(rawNext.toFixed(2))),
+        );
+        if (Math.abs(nextZoom - prevZoom) < 0.01) return prevZoom;
+
+        // Mouse imlecinin altındaki saniyenin yerini koru
+        requestAnimationFrame(() => {
+          if (scrollEl) {
+            const newScrollWidth = scrollEl.scrollWidth;
+            scrollEl.scrollLeft = focalRatio * newScrollWidth - mouseX;
+          }
+        });
+
+        return nextZoom;
+      });
+    };
+
+    scrollEl.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      scrollEl.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -1545,32 +1596,54 @@ export default function EditorPage() {
                       <span className="text-[11px] text-[#B8B8AE]">{cues.length} replik · {formatTimecode(duration)}</span>
                     </div>
 
-                    {/* Yakınlaştırma (Zoom) Butonları */}
-                    <div className="flex items-center gap-1">
-                    <div className="flex items-center gap-1 bg-[#1A1A17] border border-[#383832] rounded-lg p-0.5">
-                      {[1, 2, 4].map((z) => (
+                    {/* Yakınlaştırma (Zoom) Butonları & Göstergesi */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1 bg-[#141412] border border-[#383832] rounded-lg p-0.5" title="Fare tekerleği (Scroll) ile yakınlaştır / uzaklaştır">
                         <button
-                          key={z}
                           type="button"
-                          onClick={() => setTimelineZoom(z)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition cursor-pointer ${
-                            timelineZoom === z
-                              ? 'bg-[#F5E636] text-[#090909]'
-                              : 'text-[#B8B8AE] hover:text-white'
-                          }`}
+                          onClick={() => setTimelineZoom((z) => Math.max(0.75, Number((z - 0.5).toFixed(1))))}
+                          className="px-1.5 py-0.5 text-xs text-[#B8B8AE] hover:text-[#F5E636] font-extrabold cursor-pointer"
+                          title="Uzaklaştır (-)"
                         >
-                          {z}x
+                          -
                         </button>
-                      ))}
-                    </div>
-                    <button type="button" onClick={() => setTimelineExpanded((value) => !value)} className="editor-timeline-expand" aria-label={timelineExpanded ? 'Zaman çizelgesini küçült' : 'Zaman çizelgesini büyüt'} title={timelineExpanded ? 'Küçült (Esc)' : 'Geniş düzenleme alanı'}>
-                      {timelineExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                      <span>{timelineExpanded ? 'Küçült' : 'Genişlet'}</span>
-                    </button>
+                        {[1, 2, 4, 8].map((z) => (
+                          <button
+                            key={z}
+                            type="button"
+                            onClick={() => setTimelineZoom(z)}
+                            className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition cursor-pointer ${
+                              Math.abs(timelineZoom - z) < 0.2
+                                ? 'bg-[#F5E636] text-[#090909]'
+                                : 'text-[#B8B8AE] hover:text-white'
+                            }`}
+                          >
+                            {z}x
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setTimelineZoom((z) => Math.min(10, Number((z + 0.5).toFixed(1))))}
+                          className="px-1.5 py-0.5 text-xs text-[#B8B8AE] hover:text-[#F5E636] font-extrabold cursor-pointer"
+                          title="Yakınlaştır (+)"
+                        >
+                          +
+                        </button>
+                        {![1, 2, 4, 8].some((z) => Math.abs(timelineZoom - z) < 0.2) && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F5E636]/20 text-[#F5E636]">
+                            {timelineZoom.toFixed(1)}x
+                          </span>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => setTimelineExpanded((value) => !value)} className="editor-timeline-expand" aria-label={timelineExpanded ? 'Zaman çizelgesini küçült' : 'Zaman çizelgesini büyüt'} title={timelineExpanded ? 'Küçült (Esc)' : 'Geniş düzenleme alanı'}>
+                        {timelineExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                        <span>{timelineExpanded ? 'Küçült' : 'Genişlet'}</span>
+                      </button>
                     </div>
                   </div>
 
                   <div className="editor-shortcut-strip" aria-label="Zaman çizelgesi kısayolları">
+                    <span><kbd>Scroll</kbd> Yakınlaştır / Uzaklaştır</span>
                     <span><kbd>Boşluk</kbd> oynat</span>
                     <span><kbd>[</kbd> başlangıç</span>
                     <span><kbd>]</kbd> bitiş</span>
@@ -1613,16 +1686,24 @@ export default function EditorPage() {
                             2,
                             Math.floor(
                               duration /
-                                (timelineZoom >= 4
-                                  ? 2
-                                  : timelineZoom >= 2
-                                    ? 5
-                                    : 10),
+                                (timelineZoom >= 6
+                                  ? 1
+                                  : timelineZoom >= 3.5
+                                    ? 2
+                                    : timelineZoom >= 1.8
+                                      ? 5
+                                      : 10),
                             ) + 1,
                           ),
                         }).map((_, idx) => {
                           const stepSec =
-                            timelineZoom >= 4 ? 2 : timelineZoom >= 2 ? 5 : 10;
+                            timelineZoom >= 6
+                              ? 1
+                              : timelineZoom >= 3.5
+                                ? 2
+                                : timelineZoom >= 1.8
+                                  ? 5
+                                  : 10;
                           const sec = idx * stepSec;
                           if (sec > duration) return null;
                           const leftPct = (sec / Math.max(1, duration)) * 100;
