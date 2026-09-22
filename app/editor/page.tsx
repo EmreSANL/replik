@@ -2189,7 +2189,7 @@ export default function EditorPage() {
           </div>
         </div>
 
-        {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME (6 SÜTUN) */}
+        {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME (5 SÜTUN) */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           {/* ADIM 1: SAHNE ADI */}
           <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-2.5 shadow-lg">
@@ -2197,7 +2197,7 @@ export default function EditorPage() {
               <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                 1
               </span>
-              <h2 className="text-sm font-extrabold text-[#F4F4E9]">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#F4F4E9]">
                 Sahne Adı
               </h2>
             </div>
@@ -2206,7 +2206,8 @@ export default function EditorPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Örn: Gökhan Abi ve Cio Tartışıyor"
-              className="w-full bg-[#090909] border border-[#383832] rounded-xl px-3.5 py-2.5 text-sm font-semibold text-[#F4F4E9] focus:outline-none focus:border-[#F5E636]"
+              style={{ fontSize: '15px', color: '#FFFFFF' }}
+              className="w-full bg-[#0E0E0C] border border-[#383832] rounded-xl px-4 py-3 text-base font-bold text-white placeholder:text-[#8E8E84] focus:outline-none focus:border-[#F5E636]"
             />
           </div>
 
@@ -2217,7 +2218,7 @@ export default function EditorPage() {
                 <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                   2
                 </span>
-                <h2 className="text-sm font-extrabold text-[#F4F4E9]">
+                <h2 className="text-sm sm:text-base font-extrabold text-[#F4F4E9]">
                   Karakterler ({roles.length})
                 </h2>
               </div>
@@ -2238,11 +2239,11 @@ export default function EditorPage() {
                     );
                     showToast('Karakter renkleri canlı ve benzersiz olarak yenilendi.');
                   }}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[#22221E] hover:bg-[#32322C] text-[#B8B8AE] hover:text-[#F4F4E9] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-[#22221E] hover:bg-[#32322C] text-[#D4D4C8] hover:text-[#F4F4E9] border border-[#383832] flex items-center gap-1.5 transition cursor-pointer"
                   title="Tüm karakterlere benzersiz canlı renkler ata"
                 >
                   <Palette size={13} />
-                  <span className="hidden sm:inline">Renkleri Yenile</span>
+                  <span>Renkleri Yenile</span>
                 </button>
                 <button
                   type="button"
@@ -2254,18 +2255,18 @@ export default function EditorPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5">
               {roles.map((role, idx) => (
                 <div
                   key={role.id ?? idx}
-                  className="bg-[#090909] border border-[#383832] hover:border-[#4c4c44] rounded-xl p-2.5 flex items-center gap-2.5 transition-all shadow-sm group"
+                  className="bg-[#0C0C0A] border border-[#383832] hover:border-[#58584E] focus-within:border-[#F5E636] rounded-xl px-3.5 py-2.5 flex items-center gap-3 transition-all shadow-sm group"
                 >
                   {/* Renk Seçici Butonu / Swatch */}
                   <label
-                    className="relative w-6 h-6 rounded-lg shrink-0 cursor-pointer border border-white/30 shadow-md flex items-center justify-center transition-transform hover:scale-110 active:scale-95 overflow-hidden ring-1 ring-black/50"
+                    className="relative w-8 h-8 rounded-lg shrink-0 cursor-pointer border-2 border-white/40 shadow-md flex items-center justify-center transition-transform hover:scale-105 active:scale-95 overflow-hidden"
                     style={{
                       backgroundColor: role.color,
-                      boxShadow: `0 0 10px ${role.color}45`,
+                      boxShadow: `0 0 12px ${role.color}66`,
                     }}
                     title="Karakter Rengini Değiştir (Tıkla)"
                   >
@@ -2279,13 +2280,13 @@ export default function EditorPage() {
                     />
                   </label>
 
-                  {/* Karakter Adı */}
-                  <div className="flex-1 flex items-center min-w-0">
+                  {/* Karakter Sıra No & Geniş Okunaklı Karakter Adı Kutusu */}
+                  <div className="flex-1 flex items-center gap-2.5 min-w-0">
                     <span
-                      className="text-[11px] font-black mr-1.5 shrink-0 select-none"
-                      style={{ color: role.color }}
+                      className="px-2 py-1 rounded-md text-xs font-black shrink-0 select-none text-black"
+                      style={{ backgroundColor: role.color }}
                     >
-                      {idx + 1}.
+                      {idx + 1}. ROL
                     </span>
                     <input
                       type="text"
@@ -2293,8 +2294,9 @@ export default function EditorPage() {
                       onChange={(e) =>
                         updateRole(role.id, { name: e.target.value })
                       }
-                      className="w-full bg-transparent text-xs font-bold text-[#F4F4E9] focus:outline-none focus:text-white placeholder:text-[#666]"
-                      placeholder="Karakter Adı"
+                      style={{ fontSize: '15px', color: '#FFFFFF' }}
+                      className="w-full flex-1 bg-[#161613] border border-[#383832] focus:border-[#F5E636] rounded-lg px-3 py-2 text-base font-bold text-white focus:outline-none placeholder:text-[#8E8E84]"
+                      placeholder={`${idx + 1}. Karakter adını yazın...`}
                     />
                   </div>
 
@@ -2305,10 +2307,10 @@ export default function EditorPage() {
                       onClick={() =>
                         setRoles((prev) => prev.filter((r) => r.id !== role.id))
                       }
-                      className="text-[#666] hover:text-[#FA5636] p-1 rounded hover:bg-[#FA5636]/15 transition cursor-pointer shrink-0"
+                      className="text-[#A0A096] hover:text-[#FA5636] p-2 rounded-lg hover:bg-[#FA5636]/15 transition cursor-pointer shrink-0"
                       title="Karakteri Sil"
                     >
-                      <X size={14} />
+                      <X size={16} />
                     </button>
                   )}
                 </div>
@@ -2323,7 +2325,7 @@ export default function EditorPage() {
                 <span className="w-6 h-6 rounded-full bg-[#F5E636] text-[#090909] text-xs font-black flex items-center justify-center">
                   3
                 </span>
-                <h2 className="text-sm font-extrabold text-[#F4F4E9]">
+                <h2 className="text-sm sm:text-base font-extrabold text-[#F4F4E9]">
                   Replikler ({cues.length})
                 </h2>
               </div>
@@ -2347,7 +2349,7 @@ export default function EditorPage() {
 
                 <button
                   type="button"
-                  onClick={addCue}
+                  onClick={() => addCue()}
                   className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Plus size={14} /> Yeni Replik Ekle
@@ -2356,8 +2358,8 @@ export default function EditorPage() {
             </div>
 
             {cues.length === 0 ? (
-              <div className="bg-[#090909] border border-dashed border-[#383832] rounded-xl p-6 text-center flex flex-col items-center gap-2">
-                <p className="text-xs text-[#B8B8AE]">
+              <div className="bg-[#0C0C0A] border border-dashed border-[#383832] rounded-xl p-6 text-center flex flex-col items-center gap-2">
+                <p className="text-sm text-[#D8D8CE] leading-relaxed">
                   Henüz replik yok. <strong>“Otomatik Altyazı Çıkar”</strong>{' '}
                   veya <strong>“Yeni Replik Ekle”</strong> butonuna basarak
                   başlayabilirsin.
@@ -2375,16 +2377,16 @@ export default function EditorPage() {
                         setSelectedCueId(cue.id);
                         seekTo(cue.start);
                       }}
-                      className={`p-3 rounded-xl border transition flex flex-col gap-2 cursor-pointer ${
+                      className={`p-3.5 rounded-xl border transition flex flex-col gap-2.5 cursor-pointer ${
                         isSelected
                           ? 'bg-[#22221E] border-[#F5E636]'
-                          : 'bg-[#090909] border-[#383832] hover:border-[#383832]'
+                          : 'bg-[#0C0C0A] border-[#383832] hover:border-[#525248]'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         {/* Sol: Sıra No & Hangi Karakter Konuşuyor */}
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-extrabold text-[#B8B8AE]">
+                          <span className="text-xs sm:text-sm font-extrabold text-[#D8D8CE]">
                             #{index + 1}
                           </span>
                           <select
@@ -2396,7 +2398,7 @@ export default function EditorPage() {
                               });
                             }}
                             onClick={(e) => e.stopPropagation()}
-                            className="text-xs font-extrabold px-2.5 py-1 rounded-lg border-0 text-black cursor-pointer"
+                            className="text-xs sm:text-sm font-extrabold px-3 py-1.5 rounded-lg border-0 text-black cursor-pointer"
                             style={{ backgroundColor: cue.roleColor }}
                           >
                             {roles.map((r) => (
@@ -2412,17 +2414,17 @@ export default function EditorPage() {
                           className="flex items-center gap-1.5 text-xs"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="rounded-lg border border-[#383832] bg-[#1A1A17] px-2 py-1 font-mono text-[11px] font-bold text-[#F5E636]">
+                          <span className="rounded-lg border border-[#383832] bg-[#1A1A17] px-2.5 py-1 font-mono text-xs font-bold text-[#F5E636]">
                             {formatTimecode(cue.start)} — {formatTimecode(cue.end)}
                           </span>
 
                           <button
                             type="button"
                             onClick={() => playCueOnly(cue)}
-                            className="p-1.5 rounded-lg bg-[#22221E] hover:bg-[#22221E] text-[#F5E636] transition cursor-pointer"
+                            className="p-1.5 rounded-lg bg-[#22221E] hover:bg-[#32322C] text-[#F5E636] transition cursor-pointer"
                             title="Bu Repliği İzle"
                           >
-                            <Play size={13} fill="currentColor" />
+                            <Play size={14} fill="currentColor" />
                           </button>
 
                           <button
@@ -2431,7 +2433,7 @@ export default function EditorPage() {
                             className="p-1.5 rounded-lg bg-[#22221E] hover:bg-[#FA563622] text-[#B8B8AE] hover:text-[#FA5636] transition cursor-pointer"
                             title="Repliği Sil"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
@@ -2444,8 +2446,9 @@ export default function EditorPage() {
                         onChange={(e) =>
                           updateCue(cue.id, { text: e.target.value })
                         }
+                        style={{ fontSize: '15px', color: '#FFFFFF' }}
                         placeholder="Karakterin söyleyeceği cümleyi buraya yaz..."
-                        className="w-full bg-[#1A1A17] border border-[#383832] rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-[#F4F4E9] focus:outline-none focus:border-[#F5E636]"
+                        className="w-full bg-[#161613] border border-[#383832] rounded-lg px-3.5 py-2.5 text-sm sm:text-base font-semibold text-white focus:outline-none focus:border-[#F5E636] placeholder:text-[#8E8E84]"
                       />
                     </div>
                   );
