@@ -4,16 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Mic,
   ArrowRight,
-  Headphones,
   Play,
   Sparkles,
   Check,
   Plus,
   Edit3,
-  KeyRound,
   Flame,
   Volume2,
-  Sliders,
 } from 'lucide-react';
 import {
   Dialog,
@@ -151,18 +148,6 @@ export default function Home() {
   const activeCues = sceneCues(activeScene.id, allScenes);
   const activeCuesCount = activeCues.length;
 
-  // Character breakdown for active scene
-  const charStatsMap = new Map<string, number>();
-  activeCues.forEach((c) => {
-    const role = c.roleName || 'Karakter';
-    charStatsMap.set(role, (charStatsMap.get(role) || 0) + 1);
-  });
-  const charStats = Array.from(charStatsMap.entries()).map(([roleName, count]) => ({
-    name: roleName,
-    count,
-    pct: Math.round((count / Math.max(1, activeCuesCount)) * 100),
-  }));
-
   // Distinct color themes for scene catalog cards
   const colorThemes = ['theme-lilac', 'theme-yellow', 'theme-sage', 'theme-coral', 'theme-olive'];
 
@@ -238,204 +223,109 @@ export default function Home() {
           <Studio session={game.session} initial={game.room} onExit={leave} />
         ) : (
           <>
-            {/* ============================================================
-                THE BENTO TILES CANVAS (MATCHING REFERENCE IMAGE EXACTLY)
-                ============================================================ */}
-            <section className="bbank-bento-canvas">
-              {/* Column 1 */}
-              <div className="bbank-bento-col bbank-col-left">
-                {/* Tile 1: Lilac Manifesto Card */}
-                <div className="bbank-tile bbank-tile-lilac">
-                  <span className="bbank-inner-pill">REPLİK / 01</span>
-                  <p className="bbank-manifesto-text">
-                    Bir sahne seç. Rolleri paylaş. Replikleri seslendir.
-                    <strong> Finali birlikte izle.</strong>
-                  </p>
-                  <div className="bbank-manifesto-footer">
-                    <span>1 Karakter = 1 Oyuncu</span>
-                    <span>1–4 Kişilik</span>
-                  </div>
+            <section className="replik-hero" aria-labelledby="replik-hero-title">
+              <div className="replik-hero-copy">
+                <div className="replik-hero-eyebrow">
+                  <span className="replik-hero-status-dot" />
+                  ARKADAŞLARINLA DUBLAJ YAP
+                  <span className="replik-hero-issue">REPLİK / 01</span>
                 </div>
-
-                {/* Tile 5: Olive Gold Growth / Soundwave Card */}
-                <div className="bbank-tile bbank-tile-olive">
-                  <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">KAYIT AKIŞI / 02</span>
-                    <Sliders size={16} />
-                  </div>
-                  <strong className="bbank-olive-metric">3 · 2 · 1</strong>
-                  <span className="bbank-olive-sub">
-                    Bölümü izle, geri sayımı bekle, seslendir.
-                  </span>
-
-                  {/* Soundwave Bar Chart Graphic */}
-                  <div className="bbank-waveform-bars">
-                    {[45, 75, 30, 90, 60, 40, 85, 95, 55, 70, 40, 80, 100, 65, 50, 85, 35, 75, 90, 60].map(
-                      (h, idx) => (
-                        <div
-                          key={idx}
-                          className="bbank-wave-bar"
-                          style={{ height: `${h}%` }}
-                        />
-                      ),
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 2: Centerpiece Yellow Engagement Card */}
-              <div className="bbank-bento-col bbank-col-center">
-                {/* Tile 2: Sunny Yellow Scene Spotlight */}
-                <div className={`bbank-tile bbank-tile-yellow ${hasScenes ? '' : 'is-empty'}`}>
-                  <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">SEÇİLİ SAHNE / 03</span>
+                <h1 id="replik-hero-title">
+                  Sahne senin.<br />
+                  <span>Sesini duyur.</span>
+                </h1>
+                <p>
+                  Bir sahne seç, arkadaşlarını çağır. Rolleri paylaşın ve finali
+                  kendi seslerinizle birlikte izleyin.
+                </p>
+                <div className="replik-hero-actions">
+                  {hasScenes ? (
                     <button
                       type="button"
-                      className="bbank-sound-preview-btn"
-                      onClick={() => setPreview(selected)}
-                      title="Orijinal sahne sesini dinle"
-                      disabled={!hasScenes}
+                      className="replik-hero-primary"
+                      onClick={() => openCreate(selected)}
                     >
-                      <Volume2 size={16} /> Dinle
-                    </button>
-                  </div>
-
-                  <div className="bbank-yellow-metric-row">
-                    <strong className="bbank-yellow-metric">
-                      {hasScenes ? `+${activeCuesCount} Replik` : 'İlk sahneyi ekle'}
-                    </strong>
-                    <span className="bbank-yellow-sub">
-                      {hasScenes ? `${activeScene.roles.length} karakter · ${activeScene.duration} sn` : 'Video ve replikleri editörde hazırla'}
-                    </span>
-                  </div>
-
-                  <h2 className="bbank-yellow-title">{hasScenes ? activeScene.title : 'Henüz sahne yok'}</h2>
-
-                  {/* Character pill tags inside yellow tile */}
-                  <div className="bbank-char-pills-row">
-                    {hasScenes && activeScene.roles.map((r) => (
-                      <span key={r} className="bbank-char-tag-pill">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Action bottom pill button (Just like February 2024 pill button in reference) */}
-                  {hasScenes ? (
-                    <button type="button" className="bbank-tile-cta-pill" onClick={() => openCreate(selected)}>
-                      <span>Bu sahneyle oda kur</span><ArrowRight size={16} />
+                      Bu sahneyle oda kur <ArrowRight size={18} />
                     </button>
                   ) : (
-                    <Link href="/editor" className="bbank-tile-cta-pill">
-                      <span>Sahne editörünü aç</span><ArrowRight size={16} />
+                    <Link href="/editor" className="replik-hero-primary">
+                      İlk sahneni oluştur <ArrowRight size={18} />
                     </Link>
                   )}
-                </div>
-
-                {/* Wide Pill Action Buttons (Matching [TRADE CRYPTO] and [BANKWITHBBANK]) */}
-                <div className="bbank-action-pills-row">
                   <button
                     type="button"
-                    className="bbank-wide-pill bbank-pill-sage"
-                    onClick={() => openCreate(selected)}
-                    disabled={!hasScenes}
-                  >
-                    <Mic size={18} /> <strong>ODA KUR</strong>
-                  </button>
-                  <button
-                    type="button"
-                    className="bbank-wide-pill bbank-pill-coral"
+                    className="replik-hero-secondary"
                     onClick={() => {
                       setError('');
                       setModal('join');
                     }}
                   >
-                    <KeyRound size={18} /> <strong>ODAYA GİR</strong>
+                    Oda kodum var
                   </button>
+                </div>
+                <div className="replik-hero-steps" aria-label="Oyun akışı">
+                  <span>01&nbsp; Sahne seç</span>
+                  <span aria-hidden="true">/</span>
+                  <span>02&nbsp; Rolleri paylaş</span>
+                  <span aria-hidden="true">/</span>
+                  <span>03&nbsp; Seslendir</span>
                 </div>
               </div>
 
-              {/* Column 3: Right Side (Direct Debits Mint & Account Coral) */}
-              <div className="bbank-bento-col bbank-col-right">
-                {/* Tile 3: Sage Mint Character Breakdown ("Direct Debits" style) */}
-                <div className="bbank-tile bbank-tile-sage">
-                  <div className="bbank-tile-head">
-                    <div>
-                      <strong className="bbank-sage-title">Karakter Dağılımı</strong>
-                      <span className="bbank-sage-subtitle">1 Karakter = 1 Oyuncu</span>
-                    </div>
-                    <span className="bbank-inner-pill">
-                      {hasScenes ? `${activeScene.roles.length} karakter` : 'Sahne bekleniyor'}
-                    </span>
-                  </div>
-
-                  {/* Spending limits style breakdown list */}
-                  <div className="bbank-breakdown-list">
-                    {hasScenes && charStats.map((cs) => (
-                      <div key={cs.name} className="bbank-breakdown-item">
-                        <div className="bbank-breakdown-text">
-                          <span className="bbank-char-name">{cs.name}</span>
-                          <strong className="bbank-char-cues">
-                            {cs.count} Replik
-                          </strong>
-                        </div>
-                        {/* Horizontal black indicator bar */}
-                        <div className="bbank-breakdown-bar-track">
-                          <div
-                            className="bbank-breakdown-bar-fill"
-                            style={{ width: `${Math.max(12, cs.pct)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              <div className="replik-hero-feature">
+                <div
+                  className="replik-hero-feature-art"
+                  style={
+                    activeScene.poster
+                      ? { backgroundImage: `url('${activeScene.poster}')` }
+                      : undefined
+                  }
+                  aria-hidden="true"
+                >
+                  {!activeScene.poster && <span>R.</span>}
                 </div>
-
-                {/* Tile 4: Coral Orange Account / Quick Joiner */}
-                <div className="bbank-tile bbank-tile-coral">
-                  <div className="bbank-tile-head">
-                    <span className="bbank-inner-pill">ODAYA KATIL / 04</span>
-                    <KeyRound size={16} />
-                  </div>
-
-                  <form
-                    className="bbank-coral-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setError('');
-                      setModal('join');
-                    }}
-                  >
-                    <label htmlFor="bbank-code" className="bbank-coral-label">
-                      6 HANELİ ODA KODU
-                    </label>
-                    <input
-                      id="bbank-code"
-                      placeholder="ABC123"
-                      value={code}
-                      onChange={(e) =>
-                        setCode(
-                          e.target.value
-                            .toUpperCase()
-                            .replace(/[^A-Z0-9]/g, ''),
-                        )
-                      }
-                      maxLength={6}
-                      autoComplete="off"
-                      className="bbank-coral-input"
-                    />
-
-                    <button type="submit" className="bbank-coral-submit-btn">
-                      Odaya Gir ➔
+                <div className="replik-hero-feature-head">
+                  <span>ŞU AN SEÇİLİ</span>
+                  {hasScenes && (
+                    <button
+                      type="button"
+                      onClick={() => setPreview(selected)}
+                      aria-label={`${activeScene.title} sahnesini dinle`}
+                    >
+                      <Volume2 size={16} /> Dinle
                     </button>
-                  </form>
-
-                  <div className="bbank-coral-footer">
-                    <Headphones size={13} />
-                    <span>Kulaklığını tak, sahnede konuş!</span>
+                  )}
+                </div>
+                <div className="replik-hero-feature-bottom">
+                  <span className="replik-hero-feature-category">
+                    {hasScenes ? activeScene.category || 'SAHNE' : 'SAHNE BEKLENİYOR'}
+                  </span>
+                  <h2>{hasScenes ? activeScene.title : 'İlk sahneni oluştur.'}</h2>
+                  <div className="replik-hero-feature-meta">
+                    <span>{hasScenes ? `${activeCuesCount} replik` : 'Video yükle'}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {hasScenes ? `${activeScene.roles.length} karakter` : 'Rolleri belirle'}
+                    </span>
+                    {hasScenes && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>{activeScene.duration} sn</span>
+                      </>
+                    )}
                   </div>
                 </div>
-
+                <button
+                  type="button"
+                  className="replik-hero-change-scene"
+                  onClick={() =>
+                    document
+                      .getElementById('sahneler')
+                      ?.scrollIntoView({ behavior: 'smooth' })
+                  }
+                >
+                  Başka sahne seç <ArrowRight size={16} />
+                </button>
               </div>
             </section>
 
@@ -475,7 +365,10 @@ export default function Home() {
                 {filteredScenes.map((s, i) => {
                   const cues = sceneCues(s.id, allScenes);
                   const theme = colorThemes[i % colorThemes.length];
-                  const isSelected = selected === i;
+                  const sceneIndex = allScenes.findIndex(
+                    (scene) => scene.id === s.id,
+                  );
+                  const isSelected = selected === sceneIndex;
 
                   return (
                     <div
@@ -484,13 +377,13 @@ export default function Home() {
                       tabIndex={0}
                       className={`bbank-scene-tile ${theme} ${isSelected ? 'is-selected' : ''}`}
                       onClick={() => {
-                        setSelected(i);
-                        setPreview(i);
+                        setSelected(sceneIndex);
+                        setPreview(sceneIndex);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
-                          setSelected(i);
-                          setPreview(i);
+                          setSelected(sceneIndex);
+                          setPreview(sceneIndex);
                         }
                       }}
                     >
@@ -542,7 +435,7 @@ export default function Home() {
                             className="bbank-scene-start-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              openCreate(i);
+                              openCreate(sceneIndex);
                             }}
                           >
                             <Mic size={14} /> Oda Kur
@@ -552,7 +445,7 @@ export default function Home() {
                             className="bbank-scene-listen-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreview(i);
+                              setPreview(sceneIndex);
                             }}
                           >
                             <Play size={13} />

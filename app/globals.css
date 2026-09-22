@@ -3740,7 +3740,7 @@ audio {
 }
 
 /* ==========================================================================
-   MAIN LAYOUT & BENTO GRID
+   MAIN LAYOUT & HERO
    ========================================================================== */
 .bbank-main {
   max-width: 1360px;
@@ -3748,434 +3748,286 @@ audio {
   padding: 24px 4% 60px;
 }
 
-.bbank-bento-canvas {
+.replik-hero {
   display: grid;
-  grid-template-columns: 1fr 1.35fr 1.15fr;
-  gap: 16px;
-  margin-bottom: 44px;
-}
-
-@media (max-width: 1080px) {
-  .bbank-bento-canvas {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 680px) {
-  .bbank-bento-canvas {
-    grid-template-columns: 1fr;
-  }
-}
-
-.bbank-bento-col {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* ==========================================================================
-   SOLID COLOR BENTO TILES (EACH CARD HAS OPAQUE BACKGROUND + BLACK TEXT)
-   ========================================================================== */
-.bbank-tile {
-  border-radius: var(--bbank-radius);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-sizing: border-box;
-  position: relative;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr);
+  min-height: 520px;
+  margin-bottom: 56px;
   overflow: hidden;
-  transition: transform 0.2s ease;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
 }
 
-.bbank-tile:hover {
-  transform: translateY(-2px);
+.replik-hero-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: clamp(28px, 4vw, 58px);
 }
 
-.bbank-tile-head {
+.replik-hero-eyebrow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  margin-bottom: 14px;
+  color: var(--complete);
+  font: 700 11px/1.3 var(--font-technical);
+  letter-spacing: .12em;
 }
 
-/* --- TILE 1: LILAC MANIFESTO TILE --- */
-.bbank-tile-lilac {
-  background: var(--bbank-lilac);
-  color: var(--bbank-lilac-ink);
-  min-height: 240px;
+.replik-hero-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 4px #FA563622;
+  animation: replik-live 2.4s ease-in-out infinite;
 }
 
-.bbank-manifesto-text {
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.45;
-  margin: 16px 0;
-  color: var(--bbank-lilac-ink);
+.replik-hero-issue {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  white-space: nowrap;
 }
 
-.bbank-manifesto-text strong {
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.bbank-manifesto-footer {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  font-weight: 800;
-  opacity: 0.8;
-  padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.14);
-}
-
-/* --- TILE 2: SUNNY YELLOW ENGAGEMENT / FEATURED SCENE TILE --- */
-.bbank-tile-yellow {
-  background: var(--bbank-yellow);
-  color: var(--bbank-yellow-ink);
-  min-height: 410px;
-}
-
-.bbank-sound-preview-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  color: var(--bbank-yellow-ink);
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.bbank-sound-preview-btn:hover {
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.bbank-yellow-metric-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
-}
-
-.bbank-yellow-metric {
-  font-size: 46px;
+.replik-hero h1 {
+  margin: auto 0 20px;
+  color: var(--foreground);
+  font-size: clamp(52px, 5.4vw, 80px);
   font-weight: 900;
-  line-height: 1;
-  letter-spacing: -2px;
-  color: var(--bbank-yellow-ink);
+  letter-spacing: -.07em;
+  line-height: .98;
 }
 
-.bbank-yellow-sub {
-  font-size: 13px;
-  font-weight: 700;
-  opacity: 0.85;
+.replik-hero h1 span { color: var(--primary); }
+
+.replik-hero-copy > p {
+  max-width: 440px;
+  margin: 0;
+  color: #c6c6bd;
+  font-size: 16px;
+  line-height: 1.55;
 }
 
-.bbank-yellow-title {
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.25;
-  margin: 12px 0 8px;
-  color: var(--bbank-yellow-ink);
-}
-
-/* Graphic Block Bar (Black & Mustard chart block from reference) */
-.bbank-graphic-block {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  height: 52px;
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 14px 0;
-}
-
-.bbank-graphic-black {
-  background: #121200;
-}
-
-.bbank-graphic-accent {
-  background: #D9CB25;
-}
-
-.bbank-char-pills-row {
+.replik-hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 16px;
-}
-
-.bbank-char-tag-pill {
-  background: rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  color: var(--bbank-yellow-ink);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-/* Yellow bottom CTA pill (Like February 2024 pill in reference) */
-.bbank-tile-cta-pill {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: transparent;
-  border: 1.5px solid rgba(0, 0, 0, 0.35);
-  border-radius: 999px;
-  padding: 10px 18px;
-  font-size: 13.5px;
-  font-weight: 800;
-  color: var(--bbank-yellow-ink);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.bbank-tile-cta-pill:hover {
-  background: #121200;
-  color: #ffffff;
-  border-color: #121200;
-}
-
-/* Action pills row under yellow tile */
-.bbank-action-pills-row {
-  display: flex;
-  flex-direction: column;
   gap: 10px;
+  margin-top: 30px;
 }
 
-.bbank-wide-pill {
-  display: flex;
+.replik-hero-actions a,
+.replik-hero-actions button {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  width: 100%;
-  padding: 15px 20px;
-  border-radius: 999px;
-  border: 0;
-  font-size: 15px;
-  cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: transform var(--motion-fast) ease, background var(--motion-fast) ease, border-color var(--motion-fast) ease;
+}
+
+.replik-hero-actions a:hover,
+.replik-hero-actions button:hover { transform: translateY(-2px); }
+.replik-hero-actions a:active,
+.replik-hero-actions button:active { transform: translateY(0); }
+
+.replik-hero-primary {
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--ink);
+}
+
+.replik-hero-primary:hover { background: #fff267; }
+
+.replik-hero-secondary {
+  border: 1px solid #55554d;
+  background: transparent;
+  color: var(--foreground);
+}
+
+.replik-hero-secondary:hover { border-color: var(--foreground); background: #ffffff10; }
+
+.replik-hero-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 38px;
+  color: var(--muted-foreground);
+  font: 600 11px/1.4 var(--font-technical);
+  letter-spacing: .02em;
+}
+
+.replik-hero-steps [aria-hidden] { color: #5b5b52; }
+
+.replik-hero-feature {
+  position: relative;
+  min-width: 0;
+  min-height: 520px;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: #10100f;
+}
+
+.replik-hero-feature-art {
+  position: absolute;
+  inset: 0 0 62px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 55% 38%, #34342b 0%, #181815 48%, #0b0b0a 100%);
+  background-position: center;
+  background-size: cover;
+  transition: transform 500ms ease;
+}
+
+.replik-hero-feature:hover .replik-hero-feature-art { transform: scale(1.035); }
+
+.replik-hero-feature-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #09090988 0%, transparent 28%, #0909094d 52%, #090909f2 100%);
+}
+
+.replik-hero-feature-art span {
+  color: #F5E6361c;
+  font-size: clamp(200px, 27vw, 390px);
+  font-weight: 900;
+  letter-spacing: -.15em;
+  line-height: 1;
+  transform: rotate(-12deg) translateX(-8%);
   user-select: none;
 }
 
-.bbank-wide-pill:hover {
-  transform: translateY(-2px);
-  opacity: 0.95;
-}
+.replik-hero-feature-head,
+.replik-hero-feature-bottom { position: absolute; z-index: 1; left: 28px; right: 28px; }
 
-/* --- TILE 3: SAGE MINT CHARACTER BREAKDOWN TILE (DIRECT DEBITS STYLE) --- */
-.bbank-tile-sage {
-  background: var(--bbank-sage);
-  color: var(--bbank-sage-ink);
-  min-height: 270px;
-}
-
-.bbank-sage-title {
-  display: block;
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: -0.3px;
-}
-
-.bbank-sage-subtitle {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.8;
-}
-
-.bbank-breakdown-list {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin-top: 10px;
-}
-
-.bbank-breakdown-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.bbank-breakdown-text {
+.replik-hero-feature-head {
+  top: 26px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12.5px;
+  gap: 12px;
 }
 
-.bbank-char-name {
-  font-weight: 700;
-  text-transform: capitalize;
+.replik-hero-feature-head > span {
+  padding: 8px 11px;
+  border: 1px solid #ffffff3d;
+  border-radius: 7px;
+  background: #09090982;
+  color: var(--foreground);
+  font: 800 10px/1.2 var(--font-technical);
+  letter-spacing: .13em;
 }
 
-.bbank-char-cues {
-  font-weight: 800;
-  font-family: monospace;
-}
-
-.bbank-breakdown-bar-track {
-  width: 100%;
-  height: 6px;
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.bbank-breakdown-bar-fill {
-  height: 100%;
-  background: #101c10;
-  border-radius: 999px;
-}
-
-/* --- TILE 4: CORAL ORANGE ACCOUNT / QUICK JOIN TILE --- */
-.bbank-tile-coral {
-  background: var(--bbank-coral);
-  color: var(--bbank-coral-ink);
-  min-height: 220px;
-}
-
-.bbank-coral-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 10px 0;
-}
-
-.bbank-coral-label {
-  font-size: 10.5px;
-  font-weight: 900;
-  letter-spacing: 0.8px;
-  color: var(--bbank-coral-ink);
-}
-
-.bbank-coral-input {
-  width: 100%;
-  background: #ffffff;
-  border: 2px solid #1a0703;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: 2px;
-  color: #1a0703;
-  text-transform: uppercase;
-  font-family: monospace;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.bbank-coral-input:focus {
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25);
-}
-
-.bbank-coral-submit-btn {
-  background: #1a0703;
-  color: #ffffff;
-  border: 0;
-  border-radius: 12px;
-  padding: 11px;
-  font-size: 13.5px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-}
-
-.bbank-coral-submit-btn:hover {
-  opacity: 0.9;
-}
-
-.bbank-coral-footer {
-  display: flex;
+.replik-hero-feature-head button {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  opacity: 0.9;
-}
-
-/* --- TILE 5: OLIVE GOLD SOUNDWAVE / GROWTH TILE --- */
-.bbank-tile-olive {
-  background: var(--bbank-olive);
-  color: var(--bbank-olive-ink);
-  min-height: 220px;
-}
-
-.bbank-olive-metric {
-  font-size: 38px;
-  font-weight: 900;
-  letter-spacing: -1.5px;
-  line-height: 1;
-  color: var(--bbank-olive-ink);
-  margin-top: 4px;
-}
-
-.bbank-olive-sub {
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #ffffff5c;
+  border-radius: 7px;
+  background: #090909a8;
+  color: var(--foreground);
   font-size: 12px;
-  font-weight: 700;
-  opacity: 0.85;
+  font-weight: 800;
+}
+
+.replik-hero-feature-head button:hover { background: var(--foreground); color: var(--ink); }
+
+.replik-hero-feature-bottom { bottom: 96px; }
+
+.replik-hero-feature-category {
+  display: block;
   margin-bottom: 12px;
+  color: var(--primary);
+  font: 800 11px/1.3 var(--font-technical);
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
-.bbank-waveform-bars {
+.replik-hero-feature-bottom h2 {
+  max-width: 580px;
+  margin: 0 0 12px;
+  color: #fff;
+  font-size: clamp(27px, 3vw, 42px);
+  font-weight: 850;
+  letter-spacing: -.045em;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.replik-hero-feature-meta {
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 60px;
-  padding-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #e3e3d8;
+  font: 650 12px/1.4 var(--font-technical);
 }
 
-.bbank-wave-bar {
-  flex: 1;
-  background: #151402;
-  border-radius: 2px;
-}
+.replik-hero-feature-meta [aria-hidden] { color: var(--primary); }
 
-/* --- TILE 6: IVORY MINT TYPOGRAPHY SPECIMEN TILE --- */
-.bbank-tile-ivory {
-  background: var(--bbank-ivory);
-  color: var(--bbank-ivory-ink);
-  padding: 18px 20px;
-}
-
-.bbank-ivory-head {
+.replik-hero-change-scene {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.8px;
-  opacity: 0.75;
-  margin-bottom: 6px;
-}
-
-.bbank-ivory-specimen {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-.bbank-ivory-specimen strong {
+  min-height: 62px;
+  padding: 0 28px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--primary);
   font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.2px;
+  font-weight: 800;
+  transition: background var(--motion-fast) ease;
 }
 
-.bbank-ivory-code-pill {
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.75;
-  margin-top: 6px;
-  letter-spacing: 1px;
+.replik-hero-change-scene:hover { background: #303027; }
+.replik-hero button:focus-visible,
+.replik-hero a:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+@media (max-width: 950px) {
+  .replik-hero { grid-template-columns: 1fr 1fr; }
+  .replik-hero h1 { font-size: clamp(48px, 6vw, 68px); }
+  .replik-hero-steps { gap: 8px; }
+}
+
+@media (max-width: 700px) {
+  .replik-hero { grid-template-columns: 1fr; margin-bottom: 38px; }
+  .replik-hero-copy { min-height: 440px; }
+  .replik-hero-feature { min-height: 380px; border-left: 0; border-top: 1px solid var(--border); }
+  .replik-hero-feature-bottom { bottom: 88px; }
+}
+
+@media (max-width: 460px) {
+  .replik-hero-copy { min-height: 430px; padding: 24px; }
+  .replik-hero h1 { font-size: clamp(46px, 12vw, 58px); }
+  .replik-hero-issue { display: none; }
+  .replik-hero-actions > * { flex: 1 1 100%; }
+  .replik-hero-steps { padding-top: 28px; gap: 7px; font-size: 10px; }
+  .replik-hero-feature-head,
+  .replik-hero-feature-bottom { left: 22px; right: 22px; }
+  .replik-hero-change-scene { padding: 0 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replik-hero-status-dot { animation: none; }
+  .replik-hero-feature-art,
+  .replik-hero-actions a,
+  .replik-hero-actions button { transition: none; }
 }
 
 /* ==========================================================================
@@ -4800,17 +4652,10 @@ audio {
   font-family: var(--font-geist-sans), Arial, sans-serif;
 }
 .bbank-date-label { color: #c6c6bd; }
-.bbank-tile,
 .bbank-pub-card,
 .bbank-dialog { border-radius: var(--radius-card) !important; }
 .bbank-pill-btn,
-.bbank-wide-pill,
-.bbank-tile-cta-pill,
-.bbank-coral-submit-btn,
 .bbank-modal-submit-btn { border-radius: var(--radius-control); }
-.bbank-wide-pill:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-.bbank-tile-yellow.is-empty { min-height: 320px; }
-.bbank-ivory-specimen span:last-child { display: none; }
 
 .game-mode-main {
   width: min(1480px, 100%);
@@ -5023,9 +4868,6 @@ audio {
   .bbank-topbar-right > :not(.bbank-pill-coral):not(.bbank-pill-yellow) { display: none; }
   .bbank-topbar-right .bbank-pill-btn { padding: 10px; font-size: 11px; min-height: 44px; text-align: center; }
   .bbank-main { padding: 14px; }
-  .bbank-bento-canvas { gap: 14px; }
-  .bbank-col-center { order: -1; }
-  .bbank-tile { padding: 20px; }
   .replik-editor header { position: relative; padding: 12px; flex-wrap: wrap; gap: 10px; }
   .replik-editor header > div:first-child { width: 100%; justify-content: space-between; min-width: 0; }
   .replik-editor header > div:last-child { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
