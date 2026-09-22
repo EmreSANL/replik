@@ -14,6 +14,45 @@ import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
+
+async function seekBackingAudio(audio: HTMLAudioElement, time: number, end: number) {
+  if (audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => finish(new Error('Vokalsiz ses yüklenemedi. Sahneyi düzenleyicide yeniden hazırlayın.')), 10000);
+      const finish = (error?: Error) => {
+        clearTimeout(timeout);
+        audio.removeEventListener('loadedmetadata', loaded);
+        audio.removeEventListener('error', failed);
+        if (error) reject(error); else resolve();
+      };
+      const loaded = () => finish();
+      const failed = () => finish(new Error('Vokalsiz ses dosyası okunamadı. Sahneyi düzenleyicide yeniden hazırlayın.'));
+      audio.addEventListener('loadedmetadata', loaded, { once: true });
+      audio.addEventListener('error', failed, { once: true });
+      audio.load();
+    });
+  }
+  if (Number.isFinite(audio.duration) && audio.duration + 0.1 < end) {
+    throw new Error('Vokalsiz ses bu repliğin süresini kapsamıyor. Sahneyi yeniden ayırın.');
+  }
+  audio.pause();
+  if (Math.abs(audio.currentTime - time) < 0.02) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => finish(new Error('Vokalsiz ses doğru zamana alınamadı. Tekrar deneyin.')), 5000);
+    const finish = (error?: Error) => {
+      clearTimeout(timeout);
+      audio.removeEventListener('seeked', seeked);
+      audio.removeEventListener('error', failed);
+      if (error) reject(error); else resolve();
+    };
+    const seeked = () => finish();
+    const failed = () => finish(new Error('Vokalsiz ses oynatılamadı.'));
+    audio.addEventListener('seeked', seeked, { once: true });
+    audio.addEventListener('error', failed, { once: true });
+    audio.currentTime = time;
+  });
+}
+
 function peaksOf(buffer: AudioBuffer, bars = 80) {
   const data = buffer.getChannelData(0);
   const step = Math.max(1, Math.floor(data.length / bars));
@@ -383,6 +422,10 @@ export default function SegmentRecorder({
     savedAudio.current?.pause();
     stop();
     try {
+      const backing = instrumentalAudio.current;
+      if (!scene.instrumental || !backing) {
+        throw new Error('Bu sahnenin vokalsiz müzik ve efekt kanalı hazır değil. Sahneyi düzenleyicide AI ile ayırıp kaydedin.');
+      }
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
         throw new Error('Kayıt için güncel Chrome veya Safari kullan.');
       const media = await navigator.mediaDevices.getUserMedia({
@@ -431,6 +474,7 @@ export default function SegmentRecorder({
       // 2. ADIM: Videoyu başa sar, sesi kapat ve oyuncunun repliğini dublaj olarak kaydet!
       v.muted = true;
       await seek(scene.start + current.start);
+      await seekBackingAudio(backing, scene.start + current.start, scene.start + current.end);
       setPosition(current.start);
 
       audioContext.current ??= new AudioContext();
@@ -456,6 +500,7 @@ export default function SegmentRecorder({
       r.onstop = () => {
         media.getTracks().forEach((t) => t.stop());
         if (!mounted.current) return;
+        if (!parts.length) return;
         const blob = new Blob(parts, { type: r.mimeType }),
           url = URL.createObjectURL(blob);
         urls.current.push(url);
@@ -477,24 +522,29 @@ export default function SegmentRecorder({
         setError('');
       };
       recorder.current = r;
-      // Kayıt sırasında orijinal ses kapalı, sadece görüntü oynatılır (oyuncu dublajını yapar)
+      // Orijinal konuşma kapalıdır; yalnızca ayrıştırılmış müzik ve efektler duyulur.
       v.muted = true;
-      await v.play();
-      if (!mounted.current) return;
+      backing.volume = 1;
       r.start();
+      await Promise.all([v.play(), backing.play()]);
+      if (!mounted.current) return;
       setRecording(true);
       setPosition(current.start);
       previewEnd.current = scene.start + end;
       timer.current = setInterval(() => {
         setPosition(v.currentTime - scene.start);
+        if (!backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
+          backing.currentTime = v.currentTime;
+        }
         if (v.currentTime - scene.start >= end) {
           stop();
           v.currentTime = scene.start + end;
         }
       }, 25);
     } catch (e) {
-      stream.current?.getTracks().forEach((t) => t.stop());
+      stop();
       setListeningOriginal(false);
+      if (mounted.current) setError((e as Error).message || 'Kayıt başlatılamadı. Tekrar deneyin.');
       setCountdown(0);
       setError(
         (e as Error).name === 'NotAllowedError'
@@ -599,12 +649,14 @@ export default function SegmentRecorder({
       />
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
       {scene.instrumental && (
+        // oxlint-disable-next-line jsx-a11y/media-has-caption
         <audio
           ref={instrumentalAudio}
           src={scene.instrumental}
           preload="auto"
           playsInline
           aria-hidden="true"
+          onError={() => setError('Vokalsiz ses yüklenemedi. Sahneyi düzenleyicide yeniden hazırlayın.')}
           style={{ display: 'none' }}
         />
       )}
@@ -663,7 +715,7 @@ export default function SegmentRecorder({
         {recording && (
           <div className="active-recording-pill">
             <span className="recording-dot" />
-            <span>Kaydediliyor · {current.roleName} · {formatTimecode(position)}</span>
+            <span>Kaydediliyor · Vokalsiz müzik + efektler · {formatTimecode(position)}</span>
           </div>
         )}
       </div>
@@ -816,7 +868,7 @@ export default function SegmentRecorder({
                         delete copy[selected];
                         return copy;
                       });
-                      record();
+                      void record();
                     }}
                   >
                     <RotateCcw size={16} /> Bu Bölümü Yeniden Kaydet

@@ -24,7 +24,8 @@ async function findBinary(candidates: string[]): Promise<string> {
 /**
  * vocalremover.org / splitter-ai tarzı Gerçek AI Vokal & Efekt Ayrıştırıcı
  * Meta Hybrid Transformer Demucs v4 (htdemucs --two-stems=vocals) + FFmpeg
- * Orijinal konuşma sesini %100 ayırır, geriye sadece Müzik + Ses Efektleri + Ortam Sesleri (no_vocals.wav) bırakır.
+ * Konuşma kanalını ayırıp müzik, efekt ve ortam seslerinin bulunduğu no_vocals.wav çıktısını verir.
+ * Ayrım kusursuz olmayabilir; sonuç dinlenerek kontrol edilmelidir.
  */
 export async function POST(req: Request) {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'replik-splitter-'));

@@ -5,6 +5,7 @@ export type VocalRemovalProgress = (stage: string, percent: number) => void;
 export type VocalRemovalResult = { blob: Blob; url: string; duration: number; engine: 'ai' | 'stereo' };
 
 const HF_BASE = 'https://abidlabs-music-separation.hf.space';
+const DEMUCS_ENDPOINT = process.env.NEXT_PUBLIC_DEMUCS_ENDPOINT?.trim();
 
 export function audioBufferToWav(buffer: AudioBuffer, targetSampleRate = 44100): Blob {
   const channels = Math.min(2, buffer.numberOfChannels);
@@ -79,7 +80,25 @@ function parseCompletion(stream: string): GradioFile {
   throw new Error('Ses ayırma servisinden geçerli bir çıktı gelmedi.');
 }
 
-async function separate(audio: Blob, onProgress?: VocalRemovalProgress): Promise<Blob> {
+async function separateWithOwnDemucs(audio: Blob, onProgress?: VocalRemovalProgress): Promise<Blob> {
+  onProgress?.('Demucs modeli konuşmayı müzik ve efektlerden ayırıyor...', 48);
+  const response = await fetch(DEMUCS_ENDPOINT!, {
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/wav' },
+    body: audio,
+    signal: AbortSignal.timeout(900000),
+  });
+  if (response.status === 503) throw new Error('Ses ayırıcı şu anda başka bir sahneyi işliyor. Biraz sonra yeniden deneyin.');
+  if (!response.ok) throw new Error(`Demucs ses ayırma işlemi başarısız (${response.status}).`);
+  onProgress?.('Müzik ve efekt kanalı alınıyor...', 82);
+  const result = await response.blob();
+  if (result.size < 44 || await result.slice(0, 4).text() !== 'RIFF') {
+    throw new Error('Demucs geçerli bir WAV dosyası döndürmedi.');
+  }
+  return result;
+}
+
+async function separateWithPublicService(audio: Blob, onProgress?: VocalRemovalProgress): Promise<Blob> {
   const form = new FormData();
   form.append('files', audio, 'scene-audio.wav');
   onProgress?.('Ses ayrıştırma servisine gönderiliyor...', 30);
@@ -110,6 +129,12 @@ async function separate(audio: Blob, onProgress?: VocalRemovalProgress): Promise
     throw new Error('Ses ayrıştırma servisi geçersiz bir WAV dosyası döndürdü.');
   }
   return blob;
+}
+
+async function separate(audio: Blob, onProgress?: VocalRemovalProgress): Promise<Blob> {
+  return DEMUCS_ENDPOINT
+    ? separateWithOwnDemucs(audio, onProgress)
+    : separateWithPublicService(audio, onProgress);
 }
 
 export async function removeVocalsFromVideo(
