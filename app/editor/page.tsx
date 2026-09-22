@@ -41,6 +41,7 @@ import { useWhisper } from '@/lib/use-whisper';
 import { removeVocalsFromVideo } from '@/lib/vocal-remover';
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
+import { VideoTrimDialog } from '@/components/video-trim-dialog';
 import {
   uploadVideoToSupabase,
   saveSceneToSupabase,
@@ -58,6 +59,7 @@ export default function EditorPage() {
   const instrumentalAudioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const [pendingVideo, setPendingVideo] = useState<File | null>(null);
 
   // Sahne bilgileri (Demo video yok, kullanıcı kendi videosunu yükler)
   const [sceneId, setSceneId] = useState<number>(() => Date.now());
@@ -557,10 +559,11 @@ export default function EditorPage() {
 
   // Video işleme fonksiyonu (Önizleme + Supabase Yükleme + AI Transkripsiyon)
   const processVideoFile = useCallback(
-    (file: File) => {
+    (file: File, selectedDuration: number) => {
       // 1. Yerel hızlı önizleme
       const localUrl = URL.createObjectURL(file);
       setVideoUrl(localUrl);
+      setDuration(selectedDuration);
       const videoTitle = file.name.replace(/\.[^/.]+$/, '').slice(0, 35);
       setTitle(videoTitle);
 
@@ -568,7 +571,6 @@ export default function EditorPage() {
       tempVideo.src = localUrl;
       tempVideo.crossOrigin = 'anonymous';
       tempVideo.muted = true;
-      tempVideo.currentTime = 1.0;
       tempVideo.onloadedmetadata = () => {
         if (
           tempVideo.duration &&
@@ -577,6 +579,7 @@ export default function EditorPage() {
         ) {
           setDuration(tempVideo.duration);
         }
+        tempVideo.currentTime = Math.min(1, tempVideo.duration / 2);
       };
       tempVideo.onloadeddata = () => {
         try {
@@ -609,7 +612,7 @@ export default function EditorPage() {
         });
 
       // 3. Yapay zeka ile otomatik konuşma tanıma ve zamanlama
-      const videoDur = duration > 0 ? duration : 30;
+      const videoDur = selectedDuration;
       whisper
         .transcribe(file, roles, videoDur, 'turkish')
         .then((result) => {
@@ -654,12 +657,21 @@ export default function EditorPage() {
           console.warn('Vokal temizleme uyarısı:', err);
         });
     },
-    [duration, roles, whisper, showToast, sceneId],
+    [roles, whisper, showToast, sceneId],
   );
+
+  const stageVideoFile = (file: File) => {
+    if (!file.type.startsWith('video/')) {
+      showToast('Lütfen bir video dosyası seçin.');
+      return;
+    }
+    setPendingVideo(file);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processVideoFile(file);
+    if (file) stageVideoFile(file);
+    e.target.value = '';
   };
 
   const handleManualVocalRemoval = useCallback(async () => {
@@ -873,6 +885,12 @@ export default function EditorPage() {
       showToast('Lütfen önce bir video seçin veya yükleyin.');
       return;
     }
+    if (isUploadingToSupabase || videoUrl.startsWith('blob:')) {
+      showToast(
+        'Video henüz buluta yüklenmedi. Yükleme tamamlandığında sahneyi kaydedin.',
+      );
+      return;
+    }
     const sortedCues = [...cues].sort((a, b) => a.start - b.start);
     const calculatedDuration = Math.max(
       duration,
@@ -960,6 +978,16 @@ export default function EditorPage() {
 
   return (
     <div className="replik-editor min-h-screen bg-[#090909] text-[#F4F4E9] flex flex-col font-sans">
+      {pendingVideo && (
+        <VideoTrimDialog
+          file={pendingVideo}
+          onCancel={() => setPendingVideo(null)}
+          onConfirm={(file, clipDuration) => {
+            setPendingVideo(null);
+            processVideoFile(file, clipDuration);
+          }}
+        />
+      )}
       {/* Gizli Dosya Seçiciler */}
       <input
         ref={fileInputRef}
@@ -1104,7 +1132,7 @@ export default function EditorPage() {
                     e.preventDefault();
                     e.stopPropagation();
                     const f = e.dataTransfer.files?.[0];
-                    if (f) processVideoFile(f);
+                    if (f) stageVideoFile(f);
                   }}
                   className="w-full h-full flex flex-col items-center justify-center gap-4 p-8 text-center border-2 border-dashed border-[#383832] hover:border-[#F5E636] bg-[#1A1A17] transition cursor-pointer group"
                 >
