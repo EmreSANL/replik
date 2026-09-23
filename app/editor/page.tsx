@@ -161,13 +161,15 @@ export default function EditorPage() {
     spanDuration?: number;
   } | null>(null);
 
+  const timelineBoxRef = useRef<HTMLDivElement>(null);
   const timelineZoomRef = useRef(timelineZoom);
   timelineZoomRef.current = timelineZoom;
 
   // Zaman Çizelgesi Mouse Scroll / Tekerlek / Pinch ile Yakınlaştırma (Zoom In / Zoom Out)
   useEffect(() => {
     const scrollEl = timelineScrollRef.current;
-    if (!scrollEl) return;
+    const boxEl = timelineBoxRef.current || scrollEl;
+    if (!scrollEl || !boxEl) return;
 
     const handleWheel = (e: WheelEvent) => {
       // Shift tuşu basılıysa yatay kaydırmaya izin ver
@@ -175,22 +177,30 @@ export default function EditorPage() {
 
       // Sayfanın aşağı-yukarı kaymasını engelleyip çizelgeyi zoomla
       e.preventDefault();
+      e.stopPropagation();
 
       const rect = scrollEl.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
+      const rawMouseX = e.clientX - rect.left;
+      const mouseX = Math.max(0, Math.min(rect.width, rawMouseX));
       const currentScroll = scrollEl.scrollLeft;
       const scrollWidth = scrollEl.scrollWidth || 1;
       const focalRatio = (currentScroll + mouseX) / scrollWidth;
 
-      // Hassas zoom faktörü hesabı
-      const zoomSensitivity = e.ctrlKey ? 0.012 : 0.0025;
-      const factor = Math.exp(-e.deltaY * zoomSensitivity);
+      // Hem mouse tekerleği (deltaMode=1 veya büyük deltaY) hem trackpad için akıcı hassasiyet
+      const rawDelta = Math.abs(e.deltaY) > 0 ? e.deltaY : e.deltaX;
+      if (rawDelta === 0) return;
+      const normalizedDelta =
+        e.deltaMode === 1
+          ? rawDelta * 32
+          : Math.max(-120, Math.min(120, rawDelta));
+      const zoomSensitivity = e.ctrlKey ? 0.012 : 0.0038;
+      const factor = Math.exp(-normalizedDelta * zoomSensitivity);
 
       setTimelineZoom((prevZoom) => {
         const rawNext = prevZoom * factor;
         const nextZoom = Math.max(
           0.75,
-          Math.min(10, Number(rawNext.toFixed(2))),
+          Math.min(12, Number(rawNext.toFixed(2))),
         );
         if (Math.abs(nextZoom - prevZoom) < 0.01) return prevZoom;
 
@@ -198,7 +208,10 @@ export default function EditorPage() {
         requestAnimationFrame(() => {
           if (scrollEl) {
             const newScrollWidth = scrollEl.scrollWidth;
-            scrollEl.scrollLeft = focalRatio * newScrollWidth - mouseX;
+            scrollEl.scrollLeft = Math.max(
+              0,
+              focalRatio * newScrollWidth - mouseX,
+            );
           }
         });
 
@@ -206,11 +219,11 @@ export default function EditorPage() {
       });
     };
 
-    scrollEl.addEventListener('wheel', handleWheel, { passive: false });
+    boxEl.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
-      scrollEl.removeEventListener('wheel', handleWheel);
+      boxEl.removeEventListener('wheel', handleWheel);
     };
-  }, []);
+  }, [videoUrl, timelineExpanded, roles.length]);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -1788,7 +1801,10 @@ export default function EditorPage() {
                 {vocalNotice && <div role="status" className="rounded-xl border border-[#AEA932]/50 bg-[#AEA932]/10 px-3 py-2 text-xs text-[#E4DE8B]">{vocalNotice}</div>}
 
                 {/* GÖRSEL ÇOK KATMANLI (MULTI-TRACK) ZAMAN ÇİZELGESİ KUTUSU */}
-                <div className={`editor-timeline-panel bg-[#1A1A17] border border-[#383832] rounded-2xl p-3 flex flex-col gap-3 ${timelineExpanded ? 'editor-timeline-expanded' : ''}`}>
+                <div
+                  ref={timelineBoxRef}
+                  className={`editor-timeline-panel bg-[#1A1A17] border border-[#383832] rounded-2xl p-3 flex flex-col gap-3 ${timelineExpanded ? 'editor-timeline-expanded' : ''}`}
+                >
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <Layers size={15} className="text-[#F5E636]" />
@@ -1839,7 +1855,7 @@ export default function EditorPage() {
                         ))}
                         <button
                           type="button"
-                          onClick={() => setTimelineZoom((z) => Math.min(10, Number((z + 0.5).toFixed(1))))}
+                          onClick={() => setTimelineZoom((z) => Math.min(12, Number((z + 0.5).toFixed(1))))}
                           className="px-1.5 py-0.5 text-xs text-[#B8B8AE] hover:text-[#F5E636] font-extrabold cursor-pointer"
                           title="Yakınlaştır (+)"
                         >
