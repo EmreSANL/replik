@@ -1073,6 +1073,30 @@ export default function EditorPage() {
         if (sc.instrumental.includes('/stereo_')) {
           setVocalNotice('Stereo yedek yöntem kullanıldı. Merkezdeki ses azaltılır; bazı efektler de etkilenebilir. Önizlemeden kontrol edin.');
         }
+      } else if (sc.video) {
+        setInstrumentalUrl('');
+        setAudioMode('instrumental');
+        setIsRemovingVocals(true);
+        setVocalStage('Müzik ve ses efektleri vokallerden ayrıştırılıyor...');
+        void removeVocalsFromVideo(sc.video, sc.title, (st, pct) => {
+          setVocalStage(st);
+          setVocalProgress(pct);
+        })
+          .then(async (res) => {
+            setInstrumentalUrl(res.url);
+            setIsRemovingVocals(false);
+            setVocalError('');
+            try {
+              const { supabase } = await import('@/lib/supabase');
+              await supabase
+                .from('custom_scenes')
+                .update({ instrumental_url: res.url })
+                .eq('id', sc.id);
+            } catch {}
+          })
+          .catch(() => {
+            setIsRemovingVocals(false);
+          });
       } else {
         setInstrumentalUrl('');
         setAudioMode('original');
@@ -1279,6 +1303,27 @@ export default function EditorPage() {
       } catch {}
     }
 
+    let finalInstrumentalUrl = instrumentalUrl || '';
+    if (!finalInstrumentalUrl && videoUrl) {
+      try {
+        showToast('Vokalsiz müzik & efekt (M&E) kanalı hazırlanıyor...');
+        const res = await removeVocalsFromVideo(
+          sourceFileRef.current || videoUrl,
+          targetTitle,
+          (st, pct) => {
+            setVocalStage(st);
+            setVocalProgress(pct);
+          },
+        );
+        if (res.url) {
+          finalInstrumentalUrl = res.url;
+          setInstrumentalUrl(res.url);
+        }
+      } catch (err) {
+        console.warn('Kaydetme sırasında otomatik M&E uyarısı:', err);
+      }
+    }
+
     const newScene: Scene = {
       id: targetId,
       title: targetTitle,
@@ -1292,7 +1337,7 @@ export default function EditorPage() {
       roleDetails: roles,
       prompts: sortedCues.map((c) => c.text),
       cues: sortedCues,
-      instrumental: instrumentalUrl || undefined,
+      instrumental: finalInstrumentalUrl || undefined,
       isCustom: true,
     };
 

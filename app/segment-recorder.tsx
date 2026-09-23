@@ -12,6 +12,13 @@ import {
 } from '@/lib/scenes';
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
+import {
+  createMneAudioBuffer,
+  decodeMediaAudioBuffer,
+  audioBufferToWav,
+  removeVocalsFromVideo,
+} from '@/lib/vocal-remover';
+import { supabase } from '@/lib/supabase';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 
@@ -146,7 +153,77 @@ export default function SegmentRecorder({
     savedAudio = useRef<HTMLAudioElement>(null),
     segmentAudio = useRef<HTMLAudioElement | null>(null),
     instrumentalAudio = useRef<HTMLAudioElement | null>(null);
+  const [resolvedInstrumentalUrl, setResolvedInstrumentalUrl] = useState<string>(scene.instrumental || '');
+  const generatingMneRef = useRef<Promise<string> | null>(null);
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
+
+  async function ensureInstrumentalReady(): Promise<string> {
+    if (resolvedInstrumentalUrl) {
+      if (instrumentalAudio.current && instrumentalAudio.current.src !== resolvedInstrumentalUrl) {
+        instrumentalAudio.current.src = resolvedInstrumentalUrl;
+      }
+      return resolvedInstrumentalUrl;
+    }
+    if (scene.instrumental) {
+      setResolvedInstrumentalUrl(scene.instrumental);
+      if (instrumentalAudio.current) instrumentalAudio.current.src = scene.instrumental;
+      return scene.instrumental;
+    }
+    if (!scene.video) return '';
+    if (generatingMneRef.current) return generatingMneRef.current;
+
+    const task = (async () => {
+      try {
+        // 1. Anında (yaklaşık 250ms) yerel Multi-Band M&E (Vokalsiz Müzik & Efekt) WAV hazırla
+        const decoded = await decodeMediaAudioBuffer(scene.video);
+        const mneBuf = await createMneAudioBuffer(decoded);
+        const wavBlob = audioBufferToWav(mneBuf);
+        const localUrl = URL.createObjectURL(wavBlob);
+        urls.current.push(localUrl);
+        if (mounted.current) {
+          setResolvedInstrumentalUrl(localUrl);
+          if (instrumentalAudio.current) {
+            instrumentalAudio.current.src = localUrl;
+            instrumentalAudio.current.load();
+          }
+        }
+        // 2. Arka planda kalıcı olarak buluta yükle ve sahneyi veritabanında otomatik onar (Self-Healing)
+        void (async () => {
+          try {
+            const cloudRes = await removeVocalsFromVideo(scene.video, scene.title);
+            if (cloudRes.url && !cloudRes.url.startsWith('blob:')) {
+              await supabase
+                .from('custom_scenes')
+                .update({ instrumental_url: cloudRes.url })
+                .eq('id', scene.id);
+            }
+          } catch (bgErr) {
+            console.warn('Arka plan sahne onarımı uyarısı:', bgErr);
+          }
+        })();
+        return localUrl;
+      } catch (err) {
+        console.warn('Anlık M&E hazırlama uyarısı:', err);
+        return '';
+      } finally {
+        generatingMneRef.current = null;
+      }
+    })();
+
+    generatingMneRef.current = task;
+    return task;
+  }
+
+  useEffect(() => {
+    if (scene.instrumental) {
+      setResolvedInstrumentalUrl(scene.instrumental);
+      if (instrumentalAudio.current && instrumentalAudio.current.src !== scene.instrumental) {
+        instrumentalAudio.current.src = scene.instrumental;
+      }
+    } else if (scene.video) {
+      void ensureInstrumentalReady();
+    }
+  }, [scene.id, scene.instrumental, scene.video]);
 
   function stop() {
     previewEnd.current = null;
@@ -423,8 +500,10 @@ export default function SegmentRecorder({
     stop();
     try {
       const backing = instrumentalAudio.current;
-      if (!scene.instrumental || !backing) {
-        throw new Error('Bu sahnenin vokalsiz müzik ve efekt kanalı hazır değil. Sahneyi düzenleyicide AI ile ayırıp kaydedin.');
+      const readyInstrumentalUrl = await ensureInstrumentalReady();
+      if (backing && readyInstrumentalUrl && backing.src !== readyInstrumentalUrl) {
+        backing.src = readyInstrumentalUrl;
+        backing.load();
       }
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
         throw new Error('Kayıt için güncel Chrome veya Safari kullan.');
@@ -474,7 +553,18 @@ export default function SegmentRecorder({
       // 2. ADIM: Videoyu başa sar, sesi kapat ve oyuncunun repliğini dublaj olarak kaydet!
       v.muted = true;
       await seek(scene.start + current.start);
-      await seekBackingAudio(backing, scene.start + current.start, scene.start + current.end);
+      if (backing && (backing.src || readyInstrumentalUrl)) {
+        try {
+          await seekBackingAudio(backing, scene.start + current.start, scene.start + current.end);
+        } catch (seekErr) {
+          console.warn('Vokalsiz ses konumlandırma uyarısı:', seekErr);
+          try {
+            backing.currentTime = scene.start + current.start;
+          } catch {
+            // ignore
+          }
+        }
+      }
       setPosition(current.start);
 
       audioContext.current ??= new AudioContext();
@@ -524,16 +614,19 @@ export default function SegmentRecorder({
       recorder.current = r;
       // Orijinal konuşma kapalıdır; yalnızca ayrıştırılmış müzik ve efektler duyulur.
       v.muted = true;
-      backing.volume = 1;
+      if (backing) backing.volume = 1;
       r.start();
-      await Promise.all([v.play(), backing.play()]);
+      await Promise.all([
+        v.play(),
+        backing && (backing.src || readyInstrumentalUrl) ? backing.play().catch(() => {}) : Promise.resolve(),
+      ]);
       if (!mounted.current) return;
       setRecording(true);
       setPosition(current.start);
       previewEnd.current = scene.start + end;
       timer.current = setInterval(() => {
         setPosition(v.currentTime - scene.start);
-        if (!backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
+        if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
           backing.currentTime = v.currentTime;
         }
         if (v.currentTime - scene.start >= end) {
@@ -627,18 +720,37 @@ export default function SegmentRecorder({
         style={{ display: 'none' }}
       />
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-      {scene.instrumental && (
-        // oxlint-disable-next-line jsx-a11y/media-has-caption
-        <audio
-          ref={instrumentalAudio}
-          src={scene.instrumental}
-          preload="auto"
-          playsInline
-          aria-hidden="true"
-          onError={() => setError('Vokalsiz ses yüklenemedi. Sahneyi düzenleyicide yeniden hazırlayın.')}
-          style={{ display: 'none' }}
-        />
-      )}
+      <audio
+        ref={instrumentalAudio}
+        src={resolvedInstrumentalUrl || undefined}
+        preload="auto"
+        playsInline
+        aria-hidden="true"
+        onError={() => {
+          if (scene.video) {
+            setResolvedInstrumentalUrl('');
+            void (async () => {
+              try {
+                const decoded = await decodeMediaAudioBuffer(scene.video);
+                const mneBuf = await createMneAudioBuffer(decoded);
+                const wavBlob = audioBufferToWav(mneBuf);
+                const localUrl = URL.createObjectURL(wavBlob);
+                urls.current.push(localUrl);
+                if (mounted.current) {
+                  setResolvedInstrumentalUrl(localUrl);
+                  if (instrumentalAudio.current) {
+                    instrumentalAudio.current.src = localUrl;
+                    instrumentalAudio.current.load();
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            })();
+          }
+        }}
+        style={{ display: 'none' }}
+      />
 
       {/* Başlık ve Canlı Hazır Durumu */}
       {(() => {

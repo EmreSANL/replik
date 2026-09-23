@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
+import { createMneAudioBuffer, decodeMediaAudioBuffer } from '@/lib/vocal-remover';
 import MicTestDialog from '@/components/mic-test-dialog';
 import RoleRevealDialog from '@/components/role-reveal-dialog';
 import ScenePickerDialog from '@/components/scene-picker-dialog';
@@ -235,6 +236,16 @@ export default function Studio({
             }
           } catch (instErr) {
             console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
+          }
+        }
+        // Eğer sahnede önceden ayrılmış instrumental_url yoksa veya yüklenemediyse anında videodan Vokalsiz M&E oluştur
+        if (!buffers.current.has(instKey) && scene.video) {
+          try {
+            const rawVideoBuf = await decodeMediaAudioBuffer(scene.video);
+            const mneBuf = await createMneAudioBuffer(rawVideoBuf);
+            buffers.current.set(instKey, mneBuf);
+          } catch (fallbackErr) {
+            console.warn('Anlık M&E ses ayrıştırma uyarısı:', fallbackErr);
           }
         }
       }
