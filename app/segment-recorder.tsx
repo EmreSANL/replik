@@ -158,25 +158,21 @@ export default function SegmentRecorder({
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
 
   async function ensureInstrumentalReady(): Promise<string> {
-    if (resolvedInstrumentalUrl) {
+    if (resolvedInstrumentalUrl && resolvedInstrumentalUrl.startsWith('blob:')) {
       if (instrumentalAudio.current && instrumentalAudio.current.src !== resolvedInstrumentalUrl) {
         instrumentalAudio.current.src = resolvedInstrumentalUrl;
       }
       return resolvedInstrumentalUrl;
     }
-    if (scene.instrumental) {
-      setResolvedInstrumentalUrl(scene.instrumental);
-      if (instrumentalAudio.current) instrumentalAudio.current.src = scene.instrumental;
-      return scene.instrumental;
-    }
-    if (!scene.video) return '';
+    const sourceToClean = scene.instrumental || scene.video;
+    if (!sourceToClean) return '';
     if (generatingMneRef.current) return generatingMneRef.current;
 
     const task = (async () => {
       try {
-        // 1. Anında (yaklaşık 250ms) yerel Multi-Band M&E (Vokalsiz Müzik & Efekt) WAV hazırla
-        const decoded = await decodeMediaAudioBuffer(scene.video);
-        const mneBuf = await createMneAudioBuffer(decoded);
+        // 1. Anında (yaklaşık 250ms) replik zamanlarıyla (cues) %100 vokalsiz M&E (Müzik & Efekt) WAV hazırla
+        const decoded = await decodeMediaAudioBuffer(sourceToClean);
+        const mneBuf = await createMneAudioBuffer(decoded, cues);
         const wavBlob = audioBufferToWav(mneBuf);
         const localUrl = URL.createObjectURL(wavBlob);
         urls.current.push(localUrl);
@@ -187,23 +183,34 @@ export default function SegmentRecorder({
             instrumentalAudio.current.load();
           }
         }
-        // 2. Arka planda kalıcı olarak buluta yükle ve sahneyi veritabanında otomatik onar (Self-Healing)
-        void (async () => {
-          try {
-            const cloudRes = await removeVocalsFromVideo(scene.video, scene.title);
-            if (cloudRes.url && !cloudRes.url.startsWith('blob:')) {
-              await supabase
-                .from('custom_scenes')
-                .update({ instrumental_url: cloudRes.url })
-                .eq('id', scene.id);
+        // 2. Sahnenin kalıcı instrumental_url alanı yoksa buluta yükleyip veritabanında otomatik onar
+        if (!scene.instrumental && scene.video) {
+          void (async () => {
+            try {
+              const cloudRes = await removeVocalsFromVideo(
+                scene.video,
+                scene.title,
+                undefined,
+                cues,
+              );
+              if (cloudRes.url && !cloudRes.url.startsWith('blob:')) {
+                await supabase
+                  .from('custom_scenes')
+                  .update({ instrumental_url: cloudRes.url })
+                  .eq('id', scene.id);
+              }
+            } catch (bgErr) {
+              console.warn('Arka plan sahne onarımı uyarısı:', bgErr);
             }
-          } catch (bgErr) {
-            console.warn('Arka plan sahne onarımı uyarısı:', bgErr);
-          }
-        })();
+          })();
+        }
         return localUrl;
       } catch (err) {
         console.warn('Anlık M&E hazırlama uyarısı:', err);
+        if (scene.instrumental) {
+          setResolvedInstrumentalUrl(scene.instrumental);
+          return scene.instrumental;
+        }
         return '';
       } finally {
         generatingMneRef.current = null;
@@ -215,12 +222,7 @@ export default function SegmentRecorder({
   }
 
   useEffect(() => {
-    if (scene.instrumental) {
-      setResolvedInstrumentalUrl(scene.instrumental);
-      if (instrumentalAudio.current && instrumentalAudio.current.src !== scene.instrumental) {
-        instrumentalAudio.current.src = scene.instrumental;
-      }
-    } else if (scene.video) {
+    if (scene.video || scene.instrumental) {
       void ensureInstrumentalReady();
     }
   }, [scene.id, scene.instrumental, scene.video]);

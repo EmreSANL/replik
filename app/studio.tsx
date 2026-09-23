@@ -222,30 +222,16 @@ export default function Studio({
       }
 
       const instKey = `__scene_instrumental__:${scene.id}`;
-      // Sahnenin insan sesleri temizlenmiş enstrümantal / M&E parçasını preload et
+      // Sahnenin insan sesleri %100 temizlenmiş M&E (Müzik ve Efekt) parçasını hazırla
       if (!buffers.current.has(instKey)) {
-        if (scene.instrumental) {
+        const sourceUrl = scene.instrumental || scene.video;
+        if (sourceUrl) {
           try {
-            const r = await fetch(scene.instrumental);
-            if (r.ok) {
-              const buf = await r.arrayBuffer();
-              if (buf.byteLength > 0 && ctx.current) {
-                const decoded = await ctx.current.decodeAudioData(buf);
-                buffers.current.set(instKey, decoded);
-              }
-            }
-          } catch (instErr) {
-            console.warn('Sahne arka plan müziği yükleme uyarısı:', instErr);
-          }
-        }
-        // Eğer sahnede önceden ayrılmış instrumental_url yoksa veya yüklenemediyse anında videodan Vokalsiz M&E oluştur
-        if (!buffers.current.has(instKey) && scene.video) {
-          try {
-            const rawVideoBuf = await decodeMediaAudioBuffer(scene.video);
-            const mneBuf = await createMneAudioBuffer(rawVideoBuf);
+            const rawBuf = await decodeMediaAudioBuffer(sourceUrl);
+            const mneBuf = await createMneAudioBuffer(rawBuf, cues);
             buffers.current.set(instKey, mneBuf);
-          } catch (fallbackErr) {
-            console.warn('Anlık M&E ses ayrıştırma uyarısı:', fallbackErr);
+          } catch (instErr) {
+            console.warn('Sahne M&E ses ayrıştırma uyarısı:', instErr);
           }
         }
       }

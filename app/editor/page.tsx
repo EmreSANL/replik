@@ -343,23 +343,52 @@ export default function EditorPage() {
           instrumentalAudioRef.current.currentTime = 0;
         }
       }
-      if (
-        audioMode === 'instrumental' &&
-        instrumentalUrl &&
-        instrumentalAudioRef.current
-      ) {
+      if (audioMode === 'instrumental') {
         vid.muted = true;
-        instrumentalAudioRef.current.currentTime = vid.currentTime;
-        instrumentalAudioRef.current.muted = isMuted;
-        instrumentalAudioRef.current.play().catch(() => {});
+        vid.volume = 0;
+        if (instrumentalUrl && instrumentalAudioRef.current) {
+          instrumentalAudioRef.current.currentTime = vid.currentTime;
+          instrumentalAudioRef.current.muted = isMuted;
+          instrumentalAudioRef.current.volume = 1;
+          instrumentalAudioRef.current.play().catch(() => {});
+        }
       } else {
         vid.muted = isMuted;
+        vid.volume = 1;
         instrumentalAudioRef.current?.pause();
       }
       vid.play().catch(() => {});
       setIsPlaying(true);
     }
   }, [isPlaying, audioMode, instrumentalUrl, isMuted, duration]);
+
+  // audioMode veya instrumentalUrl değiştiğinde video sesini kesin olarak sustur ve M&E kanalını senkronla
+  useEffect(() => {
+    const vid = videoRef.current;
+    const inst = instrumentalAudioRef.current;
+    if (!vid) return;
+
+    if (audioMode === 'instrumental') {
+      vid.muted = true;
+      vid.volume = 0;
+      if (inst && instrumentalUrl) {
+        inst.muted = isMuted;
+        inst.volume = 1;
+        if (Math.abs(inst.currentTime - vid.currentTime) > 0.15) {
+          try {
+            inst.currentTime = vid.currentTime;
+          } catch {}
+        }
+        if (isPlaying && inst.paused) {
+          inst.play().catch(() => {});
+        }
+      }
+    } else {
+      if (inst) inst.pause();
+      vid.muted = isMuted;
+      vid.volume = 1;
+    }
+  }, [audioMode, instrumentalUrl, isMuted, isPlaying]);
 
   const seekTo = useCallback(
     (time: number) => {
@@ -854,9 +883,35 @@ export default function EditorPage() {
           if (videoJobRef.current !== job) return;
           if (result.audioData) setWaveformPeaks(waveformFromAudio(result.audioData));
           if (result.cues && result.cues.length > 0) {
-            setCues(result.cues);
-            setSelectedCueId(result.cues[0].id);
-            showToast(`${result.cues.length} replik otomatik oluşturuldu!`);
+            const newCues = result.cues;
+            setCues(newCues);
+            if (newCues.length > 0) setSelectedCueId(newCues[0].id);
+            showToast(
+              `AI Altyazı tamamlandı: ${newCues.length} replik yakalandı ve diyalog sesleri M&E kanalından siliniyor.`,
+            );
+            // Altyazı zaman aralıkları (newCues) belli olduğunda bu replik anlarındaki insan sesini %100 sıfırla
+            void removeVocalsFromVideo(
+              file,
+              file.name,
+              (st, pct) => {
+                if (videoJobRef.current !== job) return;
+                setVocalStage(st);
+                setVocalProgress(pct);
+              },
+              newCues,
+            ).then(async (res) => {
+              if (videoJobRef.current !== job) return;
+              setInstrumentalUrl(res.url);
+              setIsRemovingVocals(false);
+              setAudioMode('instrumental');
+              try {
+                const { supabase } = await import('@/lib/supabase');
+                await supabase
+                  .from('custom_scenes')
+                  .update({ instrumental_url: res.url })
+                  .eq('id', sceneId);
+              } catch {}
+            });
           } else {
             showToast('ℹ️ Videoda belirgin konuşma tespit edilemedi.');
           }
@@ -866,15 +921,20 @@ export default function EditorPage() {
           showToast(`Altyazı analizi: ${(err as Error).message}`);
         });
 
-      // 4. Videodaki konuşma kanalını ayır; özel uç nokta tanımlıysa Demucs kullanılır.
+      // 4. Videodaki konuşma kanalını anında ayır (VAD + AI M&E)
       setIsRemovingVocals(true);
       setVocalProgress(15);
-      setVocalStage('Konuşma müzik ve efektlerden ayrıştırılıyor...');
-      removeVocalsFromVideo(file, file.name, (stage, pct) => {
-        if (videoJobRef.current !== job) return;
-        setVocalStage(stage);
-        setVocalProgress(pct);
-      })
+      setVocalStage('Konuşma sesleri silinip müzik ve efektler ayrıştırılıyor...');
+      removeVocalsFromVideo(
+        file,
+        file.name,
+        (stage, pct) => {
+          if (videoJobRef.current !== job) return;
+          setVocalStage(stage);
+          setVocalProgress(pct);
+        },
+        cues,
+      )
         .then(async (res) => {
           if (videoJobRef.current !== job) return;
           setInstrumentalUrl(res.url);
@@ -890,7 +950,7 @@ export default function EditorPage() {
               .update({ instrumental_url: res.url })
               .eq('id', sceneId);
           } catch {}
-          showToast('AI vokal ayrıştırması tamamlandı. Sonucu dinleyerek kontrol edin.');
+          showToast('Vokaller silindi, sadece müzik ve ses efektleri (M&E) bırakıldı.');
         })
         .catch((err) => {
           if (videoJobRef.current !== job) return;
@@ -900,7 +960,7 @@ export default function EditorPage() {
           console.warn('Vokal temizleme uyarısı:', err);
         });
     },
-    [roles, whisper, showToast, sceneId],
+    [roles, whisper, showToast, sceneId, cues],
   );
 
   const stageVideoFile = (file: File) => {
@@ -972,6 +1032,7 @@ export default function EditorPage() {
           setVocalStage(stage);
           setVocalProgress(pct);
         },
+        cues,
       );
       if (videoJobRef.current !== job) return;
       setInstrumentalUrl(res.url);
@@ -984,7 +1045,7 @@ export default function EditorPage() {
           .eq('id', sceneId);
       } catch {}
       showToast(
-        'AI vokal ayrıştırması tamamlandı. Sonucu dinleyerek kontrol edin.',
+        'Vokaller tamamen temizlendi (Müzik & Efekt kanalı hazır).',
       );
     } catch (err) {
       if (videoJobRef.current !== job) return;
@@ -993,7 +1054,7 @@ export default function EditorPage() {
     } finally {
       if (videoJobRef.current === job) setIsRemovingVocals(false);
     }
-  }, [videoUrl, title, showToast, sceneId]);
+  }, [videoUrl, title, showToast, sceneId, cues]);
 
   const handleStereoVocalReduction = useCallback(async () => {
     if (!videoUrl) return;
@@ -1001,11 +1062,16 @@ export default function EditorPage() {
     setIsRemovingVocals(true);
     setVocalError('');
     try {
-      const result = await reduceCenteredVocals(sourceFileRef.current || videoUrl, title || 'scene', (stage, percent) => {
-        if (videoJobRef.current !== job) return;
-        setVocalStage(stage);
-        setVocalProgress(percent);
-      });
+      const result = await reduceCenteredVocals(
+        sourceFileRef.current || videoUrl,
+        title || 'scene',
+        (stage, percent) => {
+          if (videoJobRef.current !== job) return;
+          setVocalStage(stage);
+          setVocalProgress(percent);
+        },
+        cues,
+      );
       if (videoJobRef.current !== job) return;
       setInstrumentalUrl(result.url);
       setAudioMode('instrumental');
@@ -1079,26 +1145,34 @@ export default function EditorPage() {
         setSelectedCueId(loadedCues[0].id);
       }
 
-      // Vokalsiz M&E müzik parçası
-      if (sc.instrumental) {
+      // Vokalsiz M&E müzik parçası: Replik zamanlarıyla (loadedCues) %100 vokalsiz M&E hazırla
+      const needsCueCleanse =
+        !sc.instrumental ||
+        sc.instrumental.includes('/stereo_') ||
+        sc.instrumental.includes('/pure_htdemucs_');
+      if (sc.instrumental && !needsCueCleanse) {
         setInstrumentalUrl(sc.instrumental);
         setAudioMode('instrumental');
-        if (sc.instrumental.includes('/stereo_')) {
-          setVocalNotice('Stereo yedek yöntem kullanıldı. Merkezdeki ses azaltılır; bazı efektler de etkilenebilir. Önizlemeden kontrol edin.');
-        }
       } else if (sc.video) {
-        setInstrumentalUrl('');
+        if (sc.instrumental) setInstrumentalUrl(sc.instrumental);
+        else setInstrumentalUrl('');
         setAudioMode('instrumental');
         setIsRemovingVocals(true);
-        setVocalStage('Müzik ve ses efektleri vokallerden ayrıştırılıyor...');
-        void removeVocalsFromVideo(sc.video, sc.title, (st, pct) => {
-          setVocalStage(st);
-          setVocalProgress(pct);
-        })
+        setVocalStage('Replik anlarındaki insan sesleri %100 siliniyor...');
+        void removeVocalsFromVideo(
+          sc.instrumental || sc.video,
+          sc.title,
+          (st, pct) => {
+            setVocalStage(st);
+            setVocalProgress(pct);
+          },
+          loadedCues,
+        )
           .then(async (res) => {
             setInstrumentalUrl(res.url);
             setIsRemovingVocals(false);
             setVocalError('');
+            setVocalNotice('');
             try {
               const { supabase } = await import('@/lib/supabase');
               await supabase
@@ -1317,9 +1391,9 @@ export default function EditorPage() {
     }
 
     let finalInstrumentalUrl = instrumentalUrl || '';
-    if (!finalInstrumentalUrl && videoUrl) {
+    if ((!finalInstrumentalUrl || sortedCues.length > 0) && videoUrl) {
       try {
-        showToast('Vokalsiz müzik & efekt (M&E) kanalı hazırlanıyor...');
+        showToast('Replik anlarındaki vokaller %100 silinip müzik & efekt (M&E) kanalı kaydediliyor...');
         const res = await removeVocalsFromVideo(
           sourceFileRef.current || videoUrl,
           targetTitle,
@@ -1327,6 +1401,7 @@ export default function EditorPage() {
             setVocalStage(st);
             setVocalProgress(pct);
           },
+          sortedCues,
         );
         if (res.url) {
           finalInstrumentalUrl = res.url;
@@ -1616,11 +1691,7 @@ export default function EditorPage() {
                     src={videoUrl}
                     poster={poster}
                     playsInline
-                    muted={
-                      audioMode === 'instrumental' && Boolean(instrumentalUrl)
-                        ? true
-                        : isMuted
-                    }
+                    muted={audioMode === 'instrumental' ? true : isMuted}
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={handleLoadedMetadata}
                     onPlay={() => {
