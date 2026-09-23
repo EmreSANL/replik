@@ -3919,10 +3919,11 @@ audio {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, #09090988 0%, transparent 28%, #0909094d 52%, #090909f2 100%);
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(9, 9, 9, 0.25) 0%, transparent 45%, rgba(9, 9, 9, 0.85) 100%);
 }
 
-.replik-hero-feature-art span {
+.replik-hero-feature-art > span {
   color: #F5E6361c;
   font-size: clamp(200px, 27vw, 390px);
   font-weight: 900;

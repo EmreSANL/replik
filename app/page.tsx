@@ -65,15 +65,43 @@ export default function Home() {
 
   useEffect(() => {
     void getScenesFromSupabase().then((dbScenes) => {
-      if (dbScenes && dbScenes.length > 0) {
-        setAllScenes(dbScenes);
-      } else {
-        setAllScenes(getCustomScenes());
+      const list = dbScenes && dbScenes.length > 0 ? dbScenes : getCustomScenes();
+      setAllScenes(list);
+      if (list.length > 0) {
+        const withVideoIndices = list
+          .map((s, idx) => (s.video ? idx : -1))
+          .filter((idx) => idx >= 0);
+        const pool = withVideoIndices.length > 0 ? withVideoIndices : list.map((_, idx) => idx);
+        const randomIdx = pool[Math.floor(Math.random() * pool.length)] ?? 0;
+        setSelected(randomIdx);
       }
     });
     void refreshPublishedFeed();
     void cleanupStaleUnpublishedRooms();
   }, []);
+
+  const [heroPaused, setHeroPaused] = useState(false);
+
+  // Ana sayfa Hero alanında sitedeki videoların GIF önizlemelerini rastgele sırayla oynat
+  useEffect(() => {
+    if (allScenes.length <= 1 || modal !== null || preview !== null || game !== null || heroPaused) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setSelected((prev) => {
+        const withVideoIndices = allScenes
+          .map((s, idx) => (s.video ? idx : -1))
+          .filter((idx) => idx >= 0);
+        const pool =
+          withVideoIndices.length > 1
+            ? withVideoIndices.filter((idx) => idx !== prev)
+            : allScenes.map((_, idx) => idx).filter((idx) => idx !== prev);
+        if (pool.length === 0) return prev;
+        return pool[Math.floor(Math.random() * pool.length)] ?? prev;
+      });
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [allScenes, modal, preview, game, heroPaused]);
 
   const activeScene = allScenes[selected] || allScenes[0] || fallbackScene;
   const hasScenes = allScenes.length > 0;
@@ -273,7 +301,11 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="replik-hero-feature">
+              <div
+                className="replik-hero-feature"
+                onMouseEnter={() => setHeroPaused(true)}
+                onMouseLeave={() => setHeroPaused(false)}
+              >
                 <div
                   className="replik-hero-feature-art"
                   style={{ overflow: 'hidden', position: 'relative' }}
@@ -281,6 +313,7 @@ export default function Home() {
                 >
                   {activeScene.video ? (
                     <SceneVideoGifCover
+                      key={`hero-gif-${activeScene.id}-${selected}`}
                       scene={activeScene}
                       cues={sceneCues(activeScene.id, allScenes)}
                       showBadge={false}
@@ -290,16 +323,36 @@ export default function Home() {
                   )}
                 </div>
                 <div className="replik-hero-feature-head">
-                  <span>ŞU AN SEÇİLİ</span>
-                  {hasScenes && (
-                    <button
-                      type="button"
-                      onClick={() => setPreview(selected)}
-                      aria-label={`${activeScene.title} sahnesini dinle`}
-                    >
-                      <Volume2 size={16} /> Dinle
-                    </button>
-                  )}
+                  <span>RASTGELE SAHNE GIF</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {allScenes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pool = allScenes
+                            .map((s, idx) => (s.video ? idx : -1))
+                            .filter((idx) => idx >= 0 && idx !== selected);
+                          if (pool.length > 0) {
+                            setSelected(pool[Math.floor(Math.random() * pool.length)]!);
+                          } else {
+                            setSelected((selected + 1) % allScenes.length);
+                          }
+                        }}
+                        aria-label="Rastgele başka bir sahne göster"
+                      >
+                        ↻ Rastgele
+                      </button>
+                    )}
+                    {hasScenes && (
+                      <button
+                        type="button"
+                        onClick={() => setPreview(selected)}
+                        aria-label={`${activeScene.title} sahnesini dinle`}
+                      >
+                        <Volume2 size={16} /> Dinle
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="replik-hero-feature-bottom">
                   <span className="replik-hero-feature-category">

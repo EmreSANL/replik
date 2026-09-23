@@ -56,7 +56,7 @@ export function SceneVideoGifCover({
       }
     }
 
-    const configureLoopFromDuration = (actualVideoDur: number) => {
+    const pickLoopForCueIndex = (actualVideoDur: number, cueIdx: number) => {
       const effectiveDur =
         Number.isFinite(actualVideoDur) && actualVideoDur > 0.5
           ? actualVideoDur
@@ -66,21 +66,34 @@ export function SceneVideoGifCover({
         declaredDur,
         Math.max(0.5, effectiveDur - baseStart),
       );
+
+      let cueMid = clipSpan * 0.5;
+      if (cues && cues.length > 0) {
+        const chosenCue = cues[cueIdx % cues.length] || cues[Math.floor(cues.length / 2)];
+        if (
+          chosenCue &&
+          Number.isFinite(chosenCue.start) &&
+          Number.isFinite(chosenCue.end)
+        ) {
+          cueMid = (chosenCue.start + chosenCue.end) / 2;
+        }
+      }
+
       const relMid = Math.min(
-        clipSpan * 0.85,
-        Math.max(clipSpan * 0.2, targetRelMid <= clipSpan ? targetRelMid : clipSpan * 0.5),
+        clipSpan * 0.88,
+        Math.max(clipSpan * 0.15, cueMid <= clipSpan ? cueMid : clipSpan * 0.5),
       );
       const absMid = baseStart + relMid;
 
-      // GIF loop window: ~3.2 seconds centered on the midpoint
-      const gifSpan = Math.min(3.4, Math.max(1.4, clipSpan * 0.45));
+      // GIF loop window: ~3.2 seconds centered on the cue midpoint
+      const gifSpan = Math.min(3.5, Math.max(1.6, clipSpan * 0.45));
       const loopStart = Math.max(
         baseStart,
         Math.min(effectiveDur - 0.6, absMid - gifSpan / 2),
       );
       const loopEnd = Math.min(
         effectiveDur,
-        Math.max(loopStart + 0.8, loopStart + gifSpan),
+        Math.max(loopStart + 0.9, loopStart + gifSpan),
       );
 
       loopBoundsRef.current = {
@@ -90,30 +103,46 @@ export function SceneVideoGifCover({
       };
     };
 
-    configureLoopFromDuration(declaredDur);
+    const initialCueIdx =
+      cues && cues.length > 0
+        ? Math.floor(Math.random() * cues.length)
+        : 0;
+    pickLoopForCueIndex(declaredDur, initialCueIdx);
+
+    const safePlay = () => {
+      if (video.paused) {
+        void video.play().catch(() => {});
+      }
+    };
 
     const handleLoadedMetadata = () => {
-      configureLoopFromDuration(video.duration);
+      pickLoopForCueIndex(video.duration, initialCueIdx);
       try {
         video.currentTime = loopBoundsRef.current.start;
       } catch {}
-      void video.play().catch(() => {
-        // Even if autoplay is blocked, setting currentTime to mid ensures the middle frame is shown
-        try {
-          video.currentTime = loopBoundsRef.current.mid;
-        } catch {}
-      });
+      safePlay();
+    };
+
+    const handleCanPlay = () => {
+      safePlay();
+    };
+
+    const handleSeeked = () => {
+      safePlay();
     };
 
     const handleTimeUpdate = () => {
       const { start, end } = loopBoundsRef.current;
       const t = video.currentTime;
-      if (t >= end || t < start - 0.25) {
+      if (t >= end || t < start - 0.35) {
+        // Pick another random replik cue from this video when looping
+        if (cues && cues.length > 1 && t >= end) {
+          const nextRandomIdx = Math.floor(Math.random() * cues.length);
+          pickLoopForCueIndex(video.duration, nextRandomIdx);
+        }
         try {
-          video.currentTime = start;
-          if (video.paused) {
-            void video.play().catch(() => {});
-          }
+          video.currentTime = loopBoundsRef.current.start;
+          safePlay();
         } catch {}
       }
 
@@ -127,6 +156,8 @@ export function SceneVideoGifCover({
     };
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('seeked', handleSeeked);
     video.addEventListener('timeupdate', handleTimeUpdate);
 
     if (video.readyState >= 1) {
@@ -135,6 +166,8 @@ export function SceneVideoGifCover({
 
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('seeked', handleSeeked);
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
   }, [scene.video, scene.start, scene.duration, cues]);
@@ -160,13 +193,14 @@ export function SceneVideoGifCover({
         // oxlint-disable-next-line jsx-a11y/media-has-caption
         <video
           ref={videoRef}
+          key={scene.video}
           src={scene.video}
           poster={scene.poster || undefined}
           muted
           playsInline
           autoPlay
           loop
-          preload="metadata"
+          preload="auto"
           style={{
             width: '100%',
             height: '100%',
