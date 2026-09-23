@@ -27,6 +27,7 @@ import {
   type Room,
 } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
+import { SceneVideoGifCover } from '@/components/scene-video-gif-cover';
 import {
   getPublishedDubsFromSupabase,
   likePublishedDubInSupabase,
@@ -275,14 +276,18 @@ export default function Home() {
               <div className="replik-hero-feature">
                 <div
                   className="replik-hero-feature-art"
-                  style={
-                    activeScene.poster
-                      ? { backgroundImage: `url('${activeScene.poster}')` }
-                      : undefined
-                  }
+                  style={{ overflow: 'hidden', position: 'relative' }}
                   aria-hidden="true"
                 >
-                  {!activeScene.poster && <span>R.</span>}
+                  {activeScene.video ? (
+                    <SceneVideoGifCover
+                      scene={activeScene}
+                      cues={sceneCues(activeScene.id, allScenes)}
+                      showBadge={false}
+                    />
+                  ) : (
+                    !activeScene.poster && <span>R.</span>
+                  )}
                 </div>
                 <div className="replik-hero-feature-head">
                   <span>ŞU AN SEÇİLİ</span>
@@ -392,19 +397,22 @@ export default function Home() {
                         <span className="bbank-scene-dur">00:{s.duration} sn</span>
                       </div>
 
-                      {/* Poster frame */}
+                      {/* Poster & Animated GIF Mid-Video Loop Frame */}
                       <div
                         className="bbank-scene-poster-frame"
-                        style={
-                          s.poster
+                        style={{
+                          position: 'relative',
+                          overflow: 'hidden',
+                          ...(s.poster
                             ? {
                                 backgroundImage: `url('${s.poster}')`,
                                 backgroundSize: 'cover',
                                 backgroundPosition: 'center',
                               }
-                            : undefined
-                        }
+                            : {}),
+                        }}
                       >
+                        <SceneVideoGifCover scene={s} cues={cues} />
                         <a
                           href={`/editor?sceneId=${s.id}`}
                           onClick={(e) => {
@@ -413,6 +421,7 @@ export default function Home() {
                             window.location.href = `/editor?sceneId=${s.id}`;
                           }}
                           className="bbank-scene-edit-btn"
+                          style={{ zIndex: 5 }}
                           title="Editörde Düzenle"
                         >
                           <Edit3 size={12} /> Düzenle

@@ -49,6 +49,7 @@ import { removeVocalsFromVideo, reduceCenteredVocals } from '@/lib/vocal-remover
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
 import { VideoTrimDialog } from '@/components/video-trim-dialog';
+import { SceneVideoGifCover } from '@/components/scene-video-gif-cover';
 import { resolveVideoDuration } from '@/lib/video-trimmer';
 import {
   uploadVideoToSupabase,
@@ -775,27 +776,37 @@ export default function EditorPage() {
       tempVideo.src = localUrl;
       tempVideo.crossOrigin = 'anonymous';
       tempVideo.muted = true;
+      tempVideo.playsInline = true;
+      tempVideo.preload = 'auto';
       tempVideo.onloadedmetadata = () => {
         if (videoJobRef.current !== job) return;
-        if (
+        const measuredDur =
           tempVideo.duration &&
           !isNaN(tempVideo.duration) &&
           isFinite(tempVideo.duration)
-        ) {
-          setDuration(tempVideo.duration);
+            ? tempVideo.duration
+            : selectedDuration;
+        if (measuredDur && measuredDur > 0) {
+          setDuration(measuredDur);
         }
-        tempVideo.currentTime = Math.min(1, tempVideo.duration / 2);
+        // Otomatik olarak videonun tam ortasındaki (50%) sahneyi kapak olarak seç
+        tempVideo.currentTime = Math.max(
+          0.3,
+          ((measuredDur || selectedDuration || 4) * 0.5),
+        );
       };
-      tempVideo.onloadeddata = () => {
+      tempVideo.onseeked = () => {
         if (videoJobRef.current !== job) return;
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = 480;
-          canvas.height = 270;
+          canvas.width = 640;
+          canvas.height = 360;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          setPoster(dataUrl);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          if (dataUrl && dataUrl.length > 1000) {
+            setPoster(dataUrl);
+          }
         } catch {}
       };
 
@@ -1252,13 +1263,29 @@ export default function EditorPage() {
       ? (title.includes('(Kopya)') ? title : `${title} (Kopya)`).trim()
       : title.trim() || 'Meme Sahnesi';
 
+    let finalPoster = poster || '';
+    if (!finalPoster && videoRef.current) {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const captured = canvas.toDataURL('image/jpeg', 0.85);
+        if (captured && captured.length > 1000) {
+          finalPoster = captured;
+          setPoster(captured);
+        }
+      } catch {}
+    }
+
     const newScene: Scene = {
       id: targetId,
       title: targetTitle,
       category: category.trim() || 'Meme & Mizah',
       start: 0,
       duration: Math.round(calculatedDuration),
-      poster: poster || '',
+      poster: finalPoster,
       video: videoUrl,
       mood: mood.trim() || 'Doğaçlama komedi',
       roles: roles.map((r) => r.name),
@@ -2526,25 +2553,32 @@ export default function EditorPage() {
                         : 'border-[#383832] hover:border-[#383832]'
                     }`}
                   >
-                    {/* Thumbnail / Poster */}
+                    {/* Thumbnail / Poster & Mid-Video GIF Loop */}
                     <div
-                      className="h-32 bg-[#1A1A17] relative bg-cover bg-center flex items-end p-2.5"
+                      className="h-32 bg-[#1A1A17] relative bg-cover bg-center overflow-hidden flex items-end p-2.5"
                       style={
                         sc.poster
                           ? { backgroundImage: `url('${sc.poster}')` }
                           : undefined
                       }
                     >
-                      <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-[10px] text-[#F4F4E9] font-mono px-1.5 py-0.5 rounded">
+                      <div className="absolute inset-0 z-0">
+                        <SceneVideoGifCover
+                          scene={sc}
+                          cues={sc.cues || []}
+                          showBadge={false}
+                        />
+                      </div>
+                      <span className="absolute top-2 left-2 z-10 bg-black/70 backdrop-blur-sm text-[10px] text-[#F4F4E9] font-mono px-1.5 py-0.5 rounded">
                         00:{sc.duration}
                       </span>
                       {sc.isCustom && (
-                        <span className="absolute top-2 right-2 bg-[#F5E636] text-[#1A1A17] text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                        <span className="absolute top-2 right-2 z-10 bg-[#F5E636] text-[#1A1A17] text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                           Meme / Özel
                         </span>
                       )}
                       {sc.instrumental && (
-                        <span className="absolute bottom-2 left-2 bg-[#9E8CA9]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <span className="absolute bottom-2 left-2 z-10 bg-[#9E8CA9]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                           <Music size={10} /> M&amp;E Vokalsiz
                         </span>
                       )}
