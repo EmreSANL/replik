@@ -1668,16 +1668,24 @@ export default function EditorPage() {
                     />
                   )}
 
-                  {/* Video Üzerindeki Canlı Altyazı */}
+                  {/* Video Üzerindeki Canlı Altyazı (Arka plan kutusuz, harf kenar konturlu sinematik stil) */}
                   {currentActiveCue && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] bg-black/85 backdrop-blur-md border border-white/15 rounded-xl px-4 py-2.5 text-center pointer-events-none">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] px-3 py-1 text-center pointer-events-none flex flex-col items-center gap-1">
                       <span
-                        className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-extrabold text-black mb-1"
+                        className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-extrabold text-black shadow-[0_2px_8px_rgba(0,0,0,0.75)] ring-1 ring-black/40"
                         style={{ backgroundColor: currentActiveCue.roleColor }}
                       >
                         {currentActiveCue.roleName}
                       </span>
-                      <p className="text-sm sm:text-base font-bold text-white leading-snug">
+                      <p
+                        className="text-base sm:text-lg font-extrabold text-white leading-snug tracking-wide"
+                        style={{
+                          WebkitTextStroke: '1px rgba(0, 0, 0, 0.88)',
+                          paintOrder: 'stroke fill',
+                          textShadow:
+                            '-1.5px -1.5px 0 rgba(0,0,0,0.92), 1.5px -1.5px 0 rgba(0,0,0,0.92), -1.5px 1.5px 0 rgba(0,0,0,0.92), 1.5px 1.5px 0 rgba(0,0,0,0.92), 0 2px 8px rgba(0,0,0,0.85), 0 0 14px rgba(0,0,0,0.65)',
+                        }}
+                      >
                         “{currentActiveCue.text}”
                       </p>
                     </div>

@@ -215,22 +215,24 @@ export function SceneVideoGifCover({
         <div
           style={{
             position: 'absolute',
-            bottom: '6px',
+            bottom: '8px',
             left: '8px',
             right: '8px',
             zIndex: 3,
-            background: 'rgba(9, 9, 9, 0.78)',
-            color: '#F4F4E9',
-            fontSize: '10.5px',
-            fontWeight: 700,
-            padding: '3px 8px',
-            borderRadius: '6px',
+            background: 'transparent',
+            color: '#FFFFFF',
+            fontSize: '11px',
+            fontWeight: 800,
+            padding: '2px 4px',
             textAlign: 'center',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             pointerEvents: 'none',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            WebkitTextStroke: '0.8px rgba(0, 0, 0, 0.9)',
+            paintOrder: 'stroke fill',
+            textShadow:
+              '-1px -1px 0 rgba(0,0,0,0.92), 1px -1px 0 rgba(0,0,0,0.92), -1px 1px 0 rgba(0,0,0,0.92), 1px 1px 0 rgba(0,0,0,0.92), 0 2px 6px rgba(0,0,0,0.85)',
           }}
         >
           “{activeSubtitle}”
