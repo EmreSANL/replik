@@ -1187,18 +1187,6 @@ export default function Studio({
                   const p = room.players[slotIdx];
                   const waitingColors = ['#F5E636', '#D4C2FC', '#FFD166', '#A8DADC'];
                   const readyColors = ['#7BF1A8', '#FF6B4A', '#7BF1A8', '#FF6B4A'];
-                  const waitingQuips = [
-                    '🎤 Boğaz temizliyor...',
-                    '☕ Çayını yudumluyor...',
-                    '👀 Replik ezberliyor...',
-                    '🎧 Kulaklık takıyor...',
-                  ];
-                  const readyQuips = [
-                    '🔥 MİKROFON ALEV ALDI!',
-                    '⚡ DUBLAJ CANAVARI!',
-                    '🏆 OSCAR’A HAZIR!',
-                    '🎬 TAM GAZ HAZIR!',
-                  ];
 
                   if (!p) {
                     return (
@@ -1256,9 +1244,6 @@ export default function Studio({
                   const bg = isReady
                     ? readyColors[slotIdx % readyColors.length]
                     : waitingColors[slotIdx % waitingColors.length];
-                  const quip = isReady
-                    ? readyQuips[slotIdx % readyQuips.length]
-                    : waitingQuips[slotIdx % waitingQuips.length];
 
                   return (
                     <div
@@ -1315,7 +1300,7 @@ export default function Studio({
                           pointerEvents: 'none',
                         }}
                       >
-                        { isReady ? '★' : `0${slotIdx + 1}` }
+                        0{slotIdx + 1}
                       </span>
 
                       {/* Üst Satır: Harf Avatarı + Hazır/Bekliyor Rozeti */}
@@ -1367,37 +1352,12 @@ export default function Studio({
                         >
                           {isReady ? (
                             <>
-                              <Check size={12} strokeWidth={3.5} /> HAZIR!
+                              <Check size={12} strokeWidth={3.5} /> HAZIR
                             </>
                           ) : (
                             'BEKLİYOR'
                           )}
                         </span>
-                      </div>
-
-                      {/* Orta Matrak Durum Etiketi (Sticker) */}
-                      <div
-                        style={{
-                          position: 'relative',
-                          zIndex: 1,
-                          alignSelf: 'flex-start',
-                          background: isReady ? '#090909' : 'rgba(9, 9, 9, 0.11)',
-                          color: isReady ? '#FFFFFF' : '#090909',
-                          border: isReady ? '1.5px solid #090909' : '1.5px dashed rgba(9,9,9,0.45)',
-                          borderRadius: '8px',
-                          padding: '4px 8px',
-                          fontSize: '10.5px',
-                          fontWeight: 900,
-                          letterSpacing: '-0.01em',
-                          transform: isReady ? 'rotate(-2deg)' : 'rotate(1deg)',
-                          transition: 'all 0.25s ease',
-                          maxWidth: '100%',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {quip}
                       </div>
 
                       {/* Alt Satır: Oyuncu Rolü ve İsmi */}
@@ -1412,7 +1372,7 @@ export default function Studio({
                             marginBottom: '2px',
                           }}
                         >
-                          {p.host === 1 ? '👑 KURUCU' : '🎭 OYUNCU'}
+                          {p.host === 1 ? 'KURUCU' : 'OYUNCU'}
                           {isMe ? ' · SEN' : ''}
                         </div>
                         <div
@@ -1447,7 +1407,7 @@ export default function Studio({
                     transition: 'all 0.22s ease',
                   }}
                 >
-                  {me.ready ? '🔥 Hazırım! (İptal için bas)' : '⚡ Hazırım!'} <Check size={17} />
+                  {me.ready ? 'Hazırım (İptal)' : 'Hazırım'} <Check size={17} />
                 </button>
 
                 {me.host === 1 ? (
