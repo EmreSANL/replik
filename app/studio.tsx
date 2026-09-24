@@ -1452,44 +1452,19 @@ export default function Studio({
                   <div className="eyebrow">
                     {myRoleNames.length > 1 ? 'SENİN KARAKTERLERİN' : 'SENİN KARAKTERİN'}
                   </div>
-                  <h2 className="role-name">
+                  <h2 className="role-name" style={{ marginBottom: '12px' }}>
                     {displayRoleName}
                   </h2>
-                  <p>{scene.mood}</p>
                   <button
                     type="button"
                     className="secondary"
-                    style={{ width: '100%', marginBottom: 10 }}
+                    style={{ width: '100%', marginBottom: 14 }}
                     onClick={() => setRoleRevealOpen(true)}
                   >
                     <Users size={15} /> Rol dağılımını gör
                   </button>
-                  <p>
-                    Bölümü izle. Geri sayımdan sonra seslendir. Kaydını dinleyip kullan.
-                  </p>
-                  <ul className="assigned-cues">
-                    {myAssignedCues.map((c, cIdx) => (
-                      <li key={c.id}>
-                        <span>
-                          Replik {cIdx + 1}{' '}
-                          {c.roleName ? `(${c.roleName})` : ''}
-                        </span>
-                        <strong>
-                          {formatTimecode(c.start)} — {formatTimecode(c.end)}
-                        </strong>
-                        {me.segments?.includes(c.id) ? (
-                          <Check size={16} />
-                        ) : (
-                          <span className="waiting-dot" />
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  <span className="microcopy">
-                    <Headphones size={14} /> Kayıtta kulaklık kullan.
-                  </span>
 
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #2d3423' }}>
+                  <div style={{ paddingTop: 14, borderTop: '1px solid #2d3423' }}>
                     <div className="eyebrow" style={{ marginBottom: 8 }}>ODADAKİ OYUNCULAR</div>
                     <div
                       style={{
