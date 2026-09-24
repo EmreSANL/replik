@@ -25,14 +25,29 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const defaultAuthContextValue: AuthContextValue = {
+  user: null,
+  loading: false,
+  displayName: '',
+  email: '',
+  openAuthModal: () => {},
+  requireAuth: (onSuccess) => onSuccess(),
+  signOut: async () => {},
+};
+
+const globalForAuth = globalThis as unknown as {
+  __replikAuthContext?: React.Context<AuthContextValue | null>;
+};
+
+const AuthContext =
+  globalForAuth.__replikAuthContext ??
+  (globalForAuth.__replikAuthContext = createContext<AuthContextValue | null>(
+    defaultAuthContextValue,
+  ));
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return ctx;
+  return ctx ?? defaultAuthContextValue;
 }
 
 /**
