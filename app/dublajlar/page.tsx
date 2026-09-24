@@ -16,6 +16,7 @@ import {
   Send,
   Share2,
   Sparkles,
+  Trash2,
   Volume2,
   VolumeX,
   X,
@@ -25,6 +26,7 @@ import {
   toggleLikePublishedDubInSupabase,
   addCommentToPublishedDubInSupabase,
   deleteCommentFromPublishedDubInSupabase,
+  deletePublishedDubFromSupabase,
   type PublishedDub,
 } from '@/lib/game-service';
 import { useAuth } from '@/components/auth-provider';
@@ -295,6 +297,20 @@ export default function DublajlarPage() {
         .catch(() => void refresh());
     });
   }
+  function deleteDub(dub: PublishedDub) {
+    requireAuth(() => {
+      const ok = window.confirm(
+        `"${dub.sceneTitle}" dublaj videosunu akıştan kalıcı olarak silmek istediğine emin misin?`,
+      );
+      if (!ok) return;
+      const vid = videoRefs.current.get(dub.id);
+      if (vid) vid.pause();
+      setDubs((current) => current.filter((item) => item.id !== dub.id));
+      void deletePublishedDubFromSupabase(dub.id, dub.videoUrl, dub.roomCode)
+        .then(setDubs)
+        .catch(() => void refresh());
+    });
+  }
   async function share(dubId: string) {
     const url = `${window.location.origin}/dublajlar?post=${encodeURIComponent(dubId)}`;
     try {
@@ -351,6 +367,18 @@ export default function DublajlarPage() {
                 {visibleDubs.map((dub, index) => {
                   const isLiked = Boolean(
                     user && (dub.likedBy || []).includes(user.id),
+                  );
+                  const isOwner = Boolean(
+                    user &&
+                      (dub.createdBy === user.id ||
+                        (!dub.createdBy &&
+                          (dub.likedBy?.[0] === user.id ||
+                            (displayName &&
+                              dub.players?.some(
+                                (p) =>
+                                  p.name.trim().toLocaleLowerCase('tr') ===
+                                  displayName.trim().toLocaleLowerCase('tr'),
+                              ))))),
                   );
                   const isActive = currentActiveId === dub.id;
                   const accent = accents[index % accents.length];
@@ -489,6 +517,20 @@ export default function DublajlarPage() {
                             {copiedId === dub.id ? 'Kopyalandı' : 'Paylaş'}
                           </span>
                         </button>
+                        {isOwner && (
+                          <button
+                            type="button"
+                            onClick={() => deleteDub(dub)}
+                            aria-label="Dublaj videosunu sil"
+                            style={{
+                              color: '#FF6B4A',
+                              borderColor: '#FF6B4A',
+                            }}
+                          >
+                            <Trash2 size={23} />
+                            <span>Sil</span>
+                          </button>
+                        )}
                       </div>
                     </article>
                   );

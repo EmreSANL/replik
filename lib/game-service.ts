@@ -999,3 +999,49 @@ export async function deleteCommentFromPublishedDubInSupabase(
   return await getPublishedDubsFromSupabase();
 }
 
+/**
+ * Kullanıcının akışta yayınladığı kendi dublaj videosunu (veritabanı + storage) silmesini sağlar.
+ */
+export async function deletePublishedDubFromSupabase(
+  dubId: string,
+  videoUrl?: string,
+  roomCode?: string,
+): Promise<PublishedDub[]> {
+  await requireAuthenticatedUser();
+
+  // 1. published_dubs tablosundan sil
+  await supabase.from('published_dubs').delete().eq('id', dubId);
+
+  // 2. İlgili game_rooms kaydı varsa onu da sil (fallback akışta tekrar görünmesin)
+  const cleanRoomCode = (roomCode || dubId.split('_')[0] || '')
+    .trim()
+    .toUpperCase();
+  if (cleanRoomCode) {
+    try {
+      await supabase
+        .from('game_rooms')
+        .delete()
+        .eq('code', cleanRoomCode)
+        .eq('status', 'published');
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. Supabase Storage 'videos' kovasındaki MP4 dosyasını temizle
+  if (videoUrl && videoUrl.includes('/storage/v1/object/public/videos/')) {
+    try {
+      const storagePath = decodeURIComponent(
+        videoUrl.split('/storage/v1/object/public/videos/')[1].split('?')[0],
+      );
+      if (storagePath) {
+        await supabase.storage.from('videos').remove([storagePath]);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return await getPublishedDubsFromSupabase();
+}
+
