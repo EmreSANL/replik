@@ -520,17 +520,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           {/* 3. KATMAN: Sitenin Maximalist Solid Bento Tasarım Diline Uygun Giriş Kartı */}
           <div
-            style={{
-              position: 'relative',
-              zIndex: 10,
-              width: '100%',
-              maxWidth: '440px',
-              background: '#121212',
-              border: '2px solid #2a2a2a',
-              borderRadius: '26px',
-              overflow: 'hidden',
-              color: '#ffffff',
-            }}
+            style={
+              {
+                position: 'relative',
+                zIndex: 10,
+                width: '100%',
+                maxWidth: '440px',
+                background: '#121212',
+                border: '2px solid #2a2a2a',
+                borderRadius: '26px',
+                overflow: 'hidden',
+                color: '#ffffff',
+                '--input-focus-color': accentColor,
+              } as React.CSSProperties
+            }
           >
             {/* Üst Maximalist Solid Renk Bloğu (Sarı / Mercan Bento Başlığı) */}
             <div

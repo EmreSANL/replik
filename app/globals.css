@@ -4535,7 +4535,7 @@ audio {
 }
 
 .bbank-input:focus {
-  border-color: var(--bbank-yellow);
+  border-color: var(--input-focus-color, var(--bbank-yellow));
   background: #242424;
 }
 
