@@ -35,6 +35,7 @@ import {
   getSceneById,
   getCustomScenes,
   getCharacterColor,
+  getPlayerCharacterMap,
   type Room,
   type Scene,
 } from '@/lib/scenes';
@@ -144,7 +145,7 @@ export default function Studio({
       playerName: string;
       roleColor: string;
       text: string;
-    } | null>(null);
+    }[]>([]);
 
   const video = useRef<HTMLVideoElement>(null),
     lobbyAudio = useRef<HTMLAudioElement | null>(null),
@@ -413,7 +414,7 @@ export default function Studio({
     }
     if (playStop.current) clearTimeout(playStop.current);
     if (subtitleInterval.current) clearInterval(subtitleInterval.current);
-    setActiveSubtitle(null);
+    setActiveSubtitle([]);
     setPlaying(false);
   }
 
@@ -537,24 +538,29 @@ export default function Studio({
         }
       }
 
-      // Senkronize Altyazı ve İlerleme Takibi
+      // Senkronize Altyazı ve İlerleme Takibi (Birden fazla karakter aynı anda konuşabilir)
+      const preferredRoles = room.players.map((p) => p.role);
+      const charToPlayer = getPlayerCharacterMap(room.scene, room.players.length, customScenes, preferredRoles);
       if (subtitleInterval.current) clearInterval(subtitleInterval.current);
       subtitleInterval.current = setInterval(() => {
         if (!v || !mounted.current) return;
         const t = v.currentTime - scene.start;
         setPlaybackTime(Math.max(0, Math.min(t, scene.duration)));
-        const active = cues.find((c) => t >= c.start && t < c.end);
-        if (active) {
-          const playerIdx = active.id % room.players.length;
-          const player = room.players[playerIdx];
-          setActiveSubtitle({
-            roleName: active.roleName,
-            playerName: player ? player.name : 'Oyuncu',
-            roleColor: active.roleColor,
-            text: active.text,
-          });
+        const activeCues = cues.filter((c) => t >= c.start && t < c.end);
+        if (activeCues.length > 0) {
+          setActiveSubtitle(activeCues.map((c) => {
+            const roleIdx = typeof c.roleIndex === 'number' && c.roleIndex >= 0 ? c.roleIndex : 0;
+            const playerIdx = charToPlayer.get(roleIdx) ?? (c.id % room.players.length);
+            const player = room.players[playerIdx];
+            return {
+              roleName: c.roleName,
+              playerName: player ? player.name : 'Oyuncu',
+              roleColor: c.roleColor,
+              text: c.text,
+            };
+          }));
         } else {
-          setActiveSubtitle(null);
+          setActiveSubtitle([]);
         }
       }, 80);
 
@@ -984,15 +990,19 @@ export default function Studio({
                   </div>
                 )}
 
-                {/* Senkronize Dublaj Altyazısı */}
-                {subtitlesVisible && activeSubtitle && (
+                {/* Senkronize Dublaj Altyazısı (Birden fazla karakter aynı anda konuşabilir) */}
+                {subtitlesVisible && activeSubtitle.length > 0 && (
                   <div className="final-subtitle-overlay">
-                    <span className="final-char-badge">
-                      {activeSubtitle.roleName} ({activeSubtitle.playerName})
-                    </span>
-                    <p className="final-subtitle-line">
-                      “{activeSubtitle.text}”
-                    </p>
+                    {activeSubtitle.map((sub, subIdx) => (
+                      <div key={subIdx} className="final-subtitle-entry" style={activeSubtitle.length > 1 ? { borderLeft: `3px solid ${sub.roleColor}`, paddingLeft: '8px', marginBottom: '4px' } : undefined}>
+                        <span className="final-char-badge" style={activeSubtitle.length > 1 ? { color: sub.roleColor } : undefined}>
+                          {sub.roleName} ({sub.playerName})
+                        </span>
+                        <p className="final-subtitle-line">
+                          “{sub.text}”
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
 
