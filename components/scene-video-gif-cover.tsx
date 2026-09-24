@@ -18,7 +18,7 @@ export function SceneVideoGifCover({
   scene,
   cues = [],
   className = '',
-  showBadge = true,
+  showBadge = false,
 }: SceneVideoGifCoverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const loopBoundsRef = useRef<{ start: number; end: number; mid: number }>({

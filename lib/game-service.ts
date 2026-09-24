@@ -5,7 +5,11 @@
  * Bu sayede Vercel, Cloudflare, yerel ortam ve mobilde 0 hata ile çalışır.
  */
 
-import { supabase, getScenesFromSupabase } from './supabase';
+import {
+  supabase,
+  getScenesFromSupabase,
+  requireAuthenticatedUser,
+} from './supabase';
 import {
   getSceneById,
   sceneCues,
@@ -18,6 +22,7 @@ import {
 
 export type PlayerWithToken = Player & {
   token: string;
+  userId?: string;
 };
 
 export type GameRoomRow = {
@@ -31,6 +36,7 @@ export type GameRoomRow = {
   reactions: Record<string, number>;
   activities: ActivityItem[];
   recordings: { player: string; segment: number; url: string }[];
+  host_user_id?: string | null;
   updated_at?: string;
 };
 
@@ -64,26 +70,33 @@ function rowToRoom(row: GameRoomRow): Room {
 }
 
 /**
- * Yeni oyun odası oluşturur.
+ * Yeni oyun odası oluşturur (Sadece giriş yapmış üyeler).
  */
 export async function createGameRoom(
   name: string,
   scene: number,
   maxPlayers = 4,
 ): Promise<{ room: Room; token: string; id: string }> {
+  const user = await requireAuthenticatedUser();
   const codeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
     code += codeChars[Math.floor(Math.random() * codeChars.length)];
   }
 
-  const playerId = crypto.randomUUID();
+  const playerId = user.id;
   const token = crypto.randomUUID();
+  const displayName =
+    name.trim().slice(0, 24) ||
+    (user.user_metadata?.name as string)?.trim()?.slice(0, 24) ||
+    user.email?.split('@')[0]?.slice(0, 24) ||
+    'Oyuncu';
 
   const hostPlayer: PlayerWithToken = {
     id: playerId,
+    userId: user.id,
     token,
-    name: name.trim(),
+    name: displayName,
     host: 1,
     role: 0,
     ready: 0,
@@ -104,12 +117,13 @@ export async function createGameRoom(
     activities: [
       {
         id: crypto.randomUUID(),
-        text: `${name.trim()} odayı kurdu (${maxPlayers === 1 ? 'Solo Dublaj' : `${maxPlayers} kişilik`}).`,
+        text: `${displayName} odayı kurdu (${maxPlayers === 1 ? 'Solo Dublaj' : `${maxPlayers} kişilik`}).`,
         time: Date.now(),
         type: 'join',
       },
     ],
     recordings: [],
+    host_user_id: user.id,
   };
 
   const { error } = await supabase.from('game_rooms').insert(newRoom);
@@ -126,12 +140,13 @@ export async function createGameRoom(
 }
 
 /**
- * Var olan bir odaya katılır.
+ * Var olan bir odaya katılır (Sadece giriş yapmış üyeler).
  */
 export async function joinGameRoom(
   rawCode: string,
   name: string,
 ): Promise<{ room: Room; token: string; id: string }> {
+  const user = await requireAuthenticatedUser();
   const code = rawCode.toUpperCase().trim();
   const { data: row, error } = await supabase
     .from('game_rooms')
@@ -143,17 +158,33 @@ export async function joinGameRoom(
     throw new Error('Bu kodla bir oda bulunamadı. Kodu kontrol et.');
   }
 
+  const currentPlayers = row.players || [];
+  const existingPlayer = currentPlayers.find(
+    (p) => p.userId === user.id || p.id === user.id,
+  );
+  if (existingPlayer) {
+    return {
+      room: rowToRoom(row),
+      token: existingPlayer.token,
+      id: existingPlayer.id,
+    };
+  }
+
   if (row.status !== 'lobby') {
     throw new Error('Oyun zaten başlamış veya oda kapalı.');
   }
 
-  const currentPlayers = row.players || [];
   if (currentPlayers.length >= (row.max_players || 4)) {
     throw new Error(`Oda dolu (Maksimum ${row.max_players || 4} oyuncu).`);
   }
 
-  const playerId = crypto.randomUUID();
+  const playerId = user.id;
   const token = crypto.randomUUID();
+  const displayName =
+    name.trim().slice(0, 24) ||
+    (user.user_metadata?.name as string)?.trim()?.slice(0, 24) ||
+    user.email?.split('@')[0]?.slice(0, 24) ||
+    'Oyuncu';
 
   // Müsait olan ilk rolü ata
   const takenRoles = new Set(currentPlayers.map((p) => p.role));
@@ -167,8 +198,9 @@ export async function joinGameRoom(
 
   const newPlayer: PlayerWithToken = {
     id: playerId,
+    userId: user.id,
     token,
-    name: name.trim(),
+    name: displayName,
     host: 0,
     role: assignedRole,
     ready: 0,
@@ -181,7 +213,7 @@ export async function joinGameRoom(
   const updatedActivities = [
     {
       id: crypto.randomUUID(),
-      text: `${name.trim()} odaya katıldı.`,
+      text: `${displayName} odaya katıldı.`,
       time: Date.now(),
       type: 'join' as const,
     },
@@ -608,6 +640,14 @@ export async function getAudioRecordingUrl(
   return rec ? rec.url : null;
 }
 
+export type DubComment = {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: number;
+};
+
 export type PublishedDub = {
   id: string;
   roomCode: string;
@@ -619,6 +659,9 @@ export type PublishedDub = {
   duration: number;
   players: { name: string; roleName: string; roleColor: string }[];
   likes: number;
+  likedBy?: string[];
+  comments?: DubComment[];
+  createdBy?: string | null;
   createdAt: number;
 };
 
@@ -726,8 +769,8 @@ export async function cleanupStaleUnpublishedRooms(): Promise<void> {
 }
 
 /**
- * Dublajlanan MP4 videoyu Supabase Storage'a yükler, geçici ses parçalarını siler
- * ve ana sayfada ("Topluluk Dublajları") herkesin izleyebilmesi için yayınlar.
+ * Dublajlanan MP4 videoyu Supabase Storage'a (`videos` bucket) yükler,
+ * geçici ses parçalarını siler ve Supabase PostgreSQL (`public.published_dubs`) tablosuna kaydeder.
  */
 export async function publishRoomDubbingToSupabase(
   room: Room,
@@ -738,15 +781,16 @@ export async function publishRoomDubbingToSupabase(
   playersInfo: { name: string; roleName: string; roleColor: string }[],
   mp4Blob: Blob,
 ): Promise<PublishedDub> {
+  const user = await requireAuthenticatedUser();
   const cleanCode = room.code.toUpperCase().trim();
-  const fileName = `published/replik_${cleanCode}_${Date.now()}.mp4`;
+  const fileName = `published/${user.id}/replik_${cleanCode}_${Date.now()}.mp4`;
 
   // 1. Birleştirilmiş MP4 videoyu Supabase Storage'a yükle
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('videos')
     .upload(fileName, mp4Blob, {
       cacheControl: '31536000',
-      upsert: true,
+      upsert: false,
       contentType: 'video/mp4',
     });
 
@@ -756,9 +800,11 @@ export async function publishRoomDubbingToSupabase(
 
   const { data: pubUrlData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
   const videoUrl = pubUrlData.publicUrl;
+  const now = Date.now();
+  const dubId = `${cleanCode}_${now}`;
 
   const newEntry: PublishedDub = {
-    id: `${cleanCode}_${Date.now()}`,
+    id: dubId,
     roomCode: cleanCode,
     sceneId: room.scene,
     sceneTitle,
@@ -768,13 +814,37 @@ export async function publishRoomDubbingToSupabase(
     duration: duration || 15,
     players: playersInfo,
     likes: 1,
-    createdAt: Date.now(),
+    createdAt: now,
   };
 
-  // 2. Geçici parça ses dosyalarını (recordings/{code}/*) Supabase Storage'dan sil (gereksiz yer kaplamasın)
+  // 2. Supabase PostgreSQL `published_dubs` tablosuna kaydet
+  const { error: dbError } = await supabase.from('published_dubs').upsert(
+    {
+      id: dubId,
+      room_code: cleanCode,
+      scene_id: Number(room.scene) || 0,
+      scene_title: sceneTitle,
+      category: category || 'Sahne',
+      video_url: videoUrl,
+      poster_url: posterUrl || '',
+      duration: Number(duration) || 15,
+      players: playersInfo,
+      likes: 1,
+      liked_by: [user.id],
+      created_by: user.id,
+      created_at: now,
+    },
+    { onConflict: 'id' },
+  );
+
+  if (dbError) {
+    console.warn('published_dubs veritabanı kayıt uyarısı:', dbError);
+  }
+
+  // 3. Geçici parça ses dosyalarını (recordings/{code}/*) Supabase Storage'dan sil
   await removeRoomStorageRecordings(cleanCode, room.recordings || []);
 
-  // 3. Odayı "published" olarak işaretle
+  // 4. Odayı "published" olarak işaretle
   try {
     await supabase
       .from('game_rooms')
@@ -784,54 +854,58 @@ export async function publishRoomDubbingToSupabase(
         updated_at: new Date().toISOString(),
       })
       .eq('code', cleanCode);
-  } catch {
-    // The published video and feed can still succeed if this status update fails.
-  }
-
-  // 4. Ana sayfa yayın akışı (published/feed.json) listesini güncelle
-  try {
-    const existing = await getPublishedDubsFromSupabase();
-    const filtered = existing.filter((item) => item.roomCode !== cleanCode);
-    const updatedFeed = [newEntry, ...filtered].slice(0, 60);
-
-    const feedBlob = new Blob([JSON.stringify(updatedFeed)], {
-      type: 'application/json',
-    });
-    await supabase.storage.from('videos').upload(PUBLISHED_FEED_PATH, feedBlob, {
-      cacheControl: '0',
-      upsert: true,
-      contentType: 'application/json',
-    });
-  } catch (feedErr) {
-    console.warn('Yayın akışı güncelleme uyarısı:', feedErr);
-  }
+  } catch {}
 
   return newEntry;
 }
 
+type DbPublishedDubRow = {
+  id: string;
+  room_code: string;
+  scene_id: number;
+  scene_title: string;
+  category: string;
+  video_url: string;
+  poster_url: string;
+  duration: number;
+  players: { name: string; roleName: string; roleColor: string }[];
+  likes: number;
+  liked_by?: string[];
+  comments?: DubComment[];
+  created_by?: string | null;
+  created_at: number;
+};
+
 /**
- * Ana sayfada yayınlanan tüm topluluk dublajlarını Supabase'den getirir.
+ * Sosyal medya dublaj akışındaki tüm topluluk dublajlarını Supabase PostgreSQL veritabanından getirir.
  */
 export async function getPublishedDubsFromSupabase(): Promise<PublishedDub[]> {
   try {
-    const { data: pubUrlData } = supabase.storage
-      .from('videos')
-      .getPublicUrl(PUBLISHED_FEED_PATH);
+    const { data: rows, error } = await supabase
+      .from('published_dubs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(60);
 
-    if (pubUrlData?.publicUrl) {
-      const res = await fetch(`${pubUrlData.publicUrl}?t=${Date.now()}`, {
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const list = (await res.json()) as PublishedDub[];
-        if (Array.isArray(list)) {
-          return list.sort((a, b) => b.createdAt - a.createdAt);
-        }
-      }
+    if (!error && rows && rows.length > 0) {
+      return (rows as DbPublishedDubRow[]).map((r) => ({
+        id: r.id,
+        roomCode: r.room_code,
+        sceneId: Number(r.scene_id),
+        sceneTitle: r.scene_title,
+        category: r.category || 'Sahne',
+        videoUrl: r.video_url,
+        posterUrl: r.poster_url || '',
+        duration: Number(r.duration) || 15,
+        players: Array.isArray(r.players) ? r.players : [],
+        likes: Number(r.likes) || 1,
+        likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
+        comments: Array.isArray(r.comments) ? r.comments : [],
+        createdBy: r.created_by || null,
+        createdAt: Number(r.created_at) || Date.now(),
+      }));
     }
-  } catch {
-    // feed.json henüz yoksa game_rooms tablosundan kontrol et
-  }
+  } catch {}
 
   try {
     const { data: rows } = await supabase
@@ -860,9 +934,11 @@ export async function getPublishedDubsFromSupabase(): Promise<PublishedDub[]> {
           players: (r.players || []).map((p) => ({
             name: p.name,
             roleName: sc?.roles?.[p.role >= 0 ? p.role : 0] || 'Oyuncu',
-            roleColor: sc?.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#d8fb51',
+            roleColor: sc?.roleDetails?.[p.role >= 0 ? p.role : 0]?.color || '#F5E636',
           })),
           likes: Object.values(r.reactions || {}).reduce((a, b) => a + Number(b || 0), 0) || 1,
+          likedBy: [],
+          comments: [],
           createdAt: Number(r.created_at) || Date.now(),
         };
       })
@@ -873,19 +949,103 @@ export async function getPublishedDubsFromSupabase(): Promise<PublishedDub[]> {
 }
 
 /**
- * Ana sayfadaki yayınlanmış bir dublaja beğeni (alkış/kalp) ekler.
+ * Yayınlanmış bir dublaja üye bazlı beğeni aç/kapat (Toggle Like).
  */
+export async function toggleLikePublishedDubInSupabase(dubId: string): Promise<PublishedDub[]> {
+  const user = await requireAuthenticatedUser();
+  const { data: row } = await supabase
+    .from('published_dubs')
+    .select('id, likes, liked_by')
+    .eq('id', dubId)
+    .single<{ id: string; likes: number; liked_by: string[] }>();
+
+  if (row) {
+    const likedBy = Array.isArray(row.liked_by) ? row.liked_by : [];
+    const alreadyLiked = likedBy.includes(user.id);
+    const nextLikedBy = alreadyLiked
+      ? likedBy.filter((uid) => uid !== user.id)
+      : [...likedBy, user.id];
+    const nextLikes = Math.max(
+      0,
+      alreadyLiked ? (Number(row.likes) || 1) - 1 : (Number(row.likes) || 0) + 1,
+    );
+    await supabase
+      .from('published_dubs')
+      .update({ likes: nextLikes, liked_by: nextLikedBy })
+      .eq('id', dubId);
+  }
+  return await getPublishedDubsFromSupabase();
+}
+
 export async function likePublishedDubInSupabase(dubId: string): Promise<PublishedDub[]> {
-  const list = await getPublishedDubsFromSupabase();
-  const updated = list.map((item) =>
-    item.id === dubId ? { ...item, likes: (item.likes || 0) + 1 } : item,
-  );
-  const feedBlob = new Blob([JSON.stringify(updated)], { type: 'application/json' });
-  await supabase.storage.from('videos').upload(PUBLISHED_FEED_PATH, feedBlob, {
-    cacheControl: '0',
-    upsert: true,
-    contentType: 'application/json',
-  });
-  return updated;
+  return await toggleLikePublishedDubInSupabase(dubId);
+}
+
+/**
+ * Yayınlanmış bir dublaja yorum ekler.
+ */
+export async function addCommentToPublishedDubInSupabase(
+  dubId: string,
+  text: string,
+): Promise<PublishedDub[]> {
+  const user = await requireAuthenticatedUser();
+  const cleanText = text.trim().slice(0, 400);
+  if (!cleanText) return await getPublishedDubsFromSupabase();
+
+  const userName =
+    (user.user_metadata?.name as string)?.trim()?.slice(0, 24) ||
+    user.email?.split('@')[0]?.slice(0, 24) ||
+    'Oyuncu';
+
+  const { data: row } = await supabase
+    .from('published_dubs')
+    .select('id, comments')
+    .eq('id', dubId)
+    .single<{ id: string; comments: DubComment[] }>();
+
+  if (row) {
+    const existing = Array.isArray(row.comments) ? row.comments : [];
+    const newComment: DubComment = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      userName,
+      text: cleanText,
+      createdAt: Date.now(),
+    };
+    const nextComments = [...existing, newComment];
+    await supabase
+      .from('published_dubs')
+      .update({ comments: nextComments })
+      .eq('id', dubId);
+  }
+
+  return await getPublishedDubsFromSupabase();
+}
+
+/**
+ * Kullanıcının kendi yorumunu silmesini sağlar.
+ */
+export async function deleteCommentFromPublishedDubInSupabase(
+  dubId: string,
+  commentId: string,
+): Promise<PublishedDub[]> {
+  const user = await requireAuthenticatedUser();
+  const { data: row } = await supabase
+    .from('published_dubs')
+    .select('id, comments')
+    .eq('id', dubId)
+    .single<{ id: string; comments: DubComment[] }>();
+
+  if (row && Array.isArray(row.comments)) {
+    const nextComments = row.comments.filter(
+      (c) => !(c.id === commentId && c.userId === user.id),
+    );
+    await supabase
+      .from('published_dubs')
+      .update({ comments: nextComments })
+      .eq('id', dubId);
+  }
+
+  return await getPublishedDubsFromSupabase();
 }
 

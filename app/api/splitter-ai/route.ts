@@ -4,12 +4,34 @@ import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { supabase } from '@/lib/supabase';
+import { verifySupabaseAuthHeader } from '@/lib/supabase';
 
 const execFileAsync = promisify(execFile);
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
+
+function isSafeExternalMediaUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('169.254.') ||
+      host.endsWith('.local')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function findBinary(candidates: string[]): Promise<string> {
   for (const c of candidates) {
@@ -24,10 +46,17 @@ async function findBinary(candidates: string[]): Promise<string> {
 /**
  * vocalremover.org / splitter-ai tarzı Gerçek AI Vokal & Efekt Ayrıştırıcı
  * Meta Hybrid Transformer Demucs v4 (htdemucs --two-stems=vocals) + FFmpeg
- * Konuşma kanalını ayırıp müzik, efekt ve ortam seslerinin bulunduğu no_vocals.wav çıktısını verir.
- * Ayrım kusursuz olmayabilir; sonuç dinlenerek kontrol edilmelidir.
+ * Sadece giriş yapmış üyeler kullanabilir.
  */
 export async function POST(req: Request) {
+  const { user, client: authSupabase } = await verifySupabaseAuthHeader(req);
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Bu işlemi yapmak için üye girişi yapmalısınız.' },
+      { status: 401 },
+    );
+  }
+
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'replik-splitter-'));
   try {
     const contentType = req.headers.get('content-type') || '';
@@ -37,8 +66,11 @@ export async function POST(req: Request) {
 
     if (contentType.includes('application/json')) {
       const body = (await req.json()) as { videoUrl?: string; sceneId?: number };
-      if (!body.videoUrl) {
-        return NextResponse.json({ error: 'videoUrl gerekli' }, { status: 400 });
+      if (!body.videoUrl || !isSafeExternalMediaUrl(body.videoUrl)) {
+        return NextResponse.json(
+          { error: 'Geçerli bir HTTPS videoUrl gerekli' },
+          { status: 400 },
+        );
       }
       if (body.sceneId) sceneId = Number(body.sceneId);
       const res = await fetch(body.videoUrl);
@@ -53,8 +85,11 @@ export async function POST(req: Request) {
         sceneId = Number(urlObj.searchParams.get('sceneId'));
       }
       const buf = Buffer.from(await req.arrayBuffer());
-      if (buf.byteLength === 0) {
-        return NextResponse.json({ error: 'Boş medya verisi' }, { status: 400 });
+      if (buf.byteLength === 0 || buf.byteLength > 120 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: 'Geçersiz veya çok büyük medya verisi' },
+          { status: 400 },
+        );
       }
       await fs.writeFile(inputPath, buf);
     }
@@ -168,11 +203,12 @@ export async function POST(req: Request) {
     const finalWavBuffer = await fs.readFile(noVocalsWavPath);
 
     // 5. Supabase Storage'a yükle ve URL'sini dön
-    const storagePath = `instrumentals/splitter_${sceneId}_${Date.now()}.wav`;
-    const { error: uploadError } = await supabase.storage
+    const storagePath = `instrumentals/pure_htdemucs_${sceneId}_${Date.now()}.wav`;
+    const { error: uploadError } = await authSupabase.storage
       .from('videos')
       .upload(storagePath, finalWavBuffer, {
         contentType: 'audio/wav',
+        cacheControl: '3600',
         upsert: true,
       });
 
@@ -180,7 +216,9 @@ export async function POST(req: Request) {
       throw new Error(`Supabase yükleme hatası: ${uploadError.message}`);
     }
 
-    const { data: pubUrl } = supabase.storage.from('videos').getPublicUrl(storagePath);
+    const { data: pubUrl } = authSupabase.storage
+      .from('videos')
+      .getPublicUrl(storagePath);
 
     return NextResponse.json({
       ok: true,

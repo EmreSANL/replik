@@ -23,7 +23,10 @@ import {
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
-import { createMneAudioBuffer, decodeMediaAudioBuffer } from '@/lib/vocal-remover';
+import {
+  decodeMediaAudioBuffer,
+  removeVocalsFromVideo,
+} from '@/lib/vocal-remover';
 import MicTestDialog from '@/components/mic-test-dialog';
 import RoleRevealDialog from '@/components/role-reveal-dialog';
 import ScenePickerDialog from '@/components/scene-picker-dialog';
@@ -222,17 +225,29 @@ export default function Studio({
       }
 
       const instKey = `__scene_instrumental__:${scene.id}`;
-      // Sahnenin insan sesleri %100 temizlenmiş M&E (Müzik ve Efekt) parçasını hazırla
+      // Sahnenin Saf AI (htdemucs --two-stems=vocals) ile ayrıştırılmış sesini yükle
       if (!buffers.current.has(instKey)) {
-        const sourceUrl = scene.instrumental || scene.video;
-        if (sourceUrl) {
-          try {
-            const rawBuf = await decodeMediaAudioBuffer(sourceUrl);
-            const mneBuf = await createMneAudioBuffer(rawBuf, cues);
-            buffers.current.set(instKey, mneBuf);
-          } catch (instErr) {
-            console.warn('Sahne M&E ses ayrıştırma uyarısı:', instErr);
+        const isPureAi =
+          Boolean(scene.instrumental) &&
+          (scene.instrumental!.includes('/pure_htdemucs_') ||
+            scene.instrumental!.includes('/splitter_'));
+        try {
+          if (isPureAi && scene.instrumental) {
+            const rawBuf = await decodeMediaAudioBuffer(scene.instrumental);
+            buffers.current.set(instKey, rawBuf);
+          } else if (scene.video) {
+            const aiRes = await removeVocalsFromVideo(scene.video, scene.title);
+            const rawBuf = await decodeMediaAudioBuffer(aiRes.blob);
+            buffers.current.set(instKey, rawBuf);
+            if (aiRes.url && !aiRes.url.startsWith('blob:')) {
+              await supabase
+                .from('custom_scenes')
+                .update({ instrumental_url: aiRes.url })
+                .eq('id', scene.id);
+            }
           }
+        } catch (instErr) {
+          console.warn('Sahne AI ses ayrıştırma uyarısı:', instErr);
         }
       }
 
@@ -1388,26 +1403,32 @@ export default function Studio({
                 <Headphones size={17} />
               </button>
 
-              {/* Ana Sayfada Yayınla Butonu */}
+              {/* Dublaj Akışında Yayınla Butonu */}
               <button
                 className={isPublished ? 'secondary publish-btn is-published' : 'secondary publish-btn'}
                 disabled={publishing || exporting || playing || countdown > 0}
-                onClick={isPublished ? onExit : publishVideo}
+                onClick={
+                  isPublished
+                    ? () => {
+                        window.location.href = '/dublajlar';
+                      }
+                    : publishVideo
+                }
               >
                 {publishing ? (
                   <>
                     <Loader2 size={17} className="spin-icon" />
-                    Ana Sayfada Yayınlanıyor… %{publishProgress}
+                    Dublaj Akışında Yayınlanıyor… %{publishProgress}
                   </>
                 ) : isPublished ? (
                   <>
                     <Check size={17} />
-                    Ana Sayfada Yayınlandı! (Vitrine Git)
+                    Yayınlandı! (Dublaj Akışına Git)
                   </>
                 ) : (
                   <>
                     <Globe size={17} />
-                    Dublajı Ana Sayfada Yayınla
+                    Dublaj Akışında Yayınla
                   </>
                 )}
               </button>
@@ -1458,8 +1479,8 @@ export default function Studio({
                 }}
               >
                 {isPublished
-                  ? 'Dublaj ana sayfada yayınlandı. Geçici ses parçaları temizlendi.'
-                  : 'Yayınlarsan video ana sayfada görünür. Yayınlamadan çıkarsan geçici kayıtlar silinir.'}
+                  ? 'Dublaj sosyal akışta (/dublajlar) yayınlandı. Geçici ses parçaları temizlendi.'
+                  : 'Yayınlarsan video Dublaj Akışı sayfasında görünür, beğenilip yorum alabilir.'}
               </p>
 
               {/* Yeniden Oyna / Yeni Sahne Butonu (Aynı Ekiple) */}

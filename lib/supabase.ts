@@ -15,7 +15,70 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 );
+
+/**
+ * Sunucu tarafı API rotaları için kullanıcının Supabase Auth JWT token'ını doğrulayan yardımcı
+ */
+export function createServerSupabaseClient(accessToken?: string) {
+  return createClient(
+    supabaseUrl || 'https://placeholder.supabase.co',
+    supabaseAnonKey || 'placeholder',
+    accessToken
+      ? {
+          global: {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        }
+      : {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        },
+  );
+}
+
+export async function verifySupabaseAuthHeader(req: Request) {
+  const rawAuth =
+    req.headers.get('x-supabase-auth') ||
+    req.headers.get('authorization') ||
+    '';
+  const token = rawAuth.replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    return { user: null, token: null, client: createServerSupabaseClient() };
+  }
+  const client = createServerSupabaseClient(token);
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data?.user) {
+    return { user: null, token: null, client };
+  }
+  return { user: data.user, token, client };
+}
+
+export async function requireAuthenticatedUser() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) {
+    throw new Error('Bu işlemi yapmak için üye girişi yapmalısınız.');
+  }
+  return user;
+}
 
 export type DbCustomScene = {
   id: number;
@@ -28,20 +91,39 @@ export type DbCustomScene = {
   roles: RoleInfo[];
   cues: Cue[];
   instrumental_url?: string | null;
+  created_by?: string | null;
   created_at?: string;
 };
 
 /**
- * Videoyu Supabase Storage'a yükler ve herkese açık genel URL döner.
+ * Videoyu Supabase Storage'a (`videos` bucket) yükler ve URL döner.
+ * Sadece giriş yapmış üyeler yükleyebilir.
  */
 export async function uploadVideoToSupabase(
   file: File | Blob,
   fileName?: string,
   onProgress?: (pct: number) => void,
 ): Promise<{ url: string; path: string }> {
-  const ext = fileName?.split('.').pop() || 'mp4';
+  const user = await requireAuthenticatedUser();
+  const allowedTypes = [
+    'video/mp4',
+    'video/webm',
+    'video/quicktime',
+    'audio/wav',
+    'audio/webm',
+    'audio/mp4',
+    'audio/mpeg',
+  ];
+  if (file.type && !allowedTypes.some((t) => file.type.startsWith(t.split('/')[0]))) {
+    throw new Error('Yalnızca geçerli video veya ses dosyaları yüklenebilir.');
+  }
+  if (file.size > 120 * 1024 * 1024) {
+    throw new Error('Dosya boyutu 120 MB sınırını aşamaz.');
+  }
+
+  const ext = (fileName?.split('.').pop() || 'mp4').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6) || 'mp4';
   const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const path = `uploads/${cleanName}`;
+  const path = `uploads/${user.id}/${cleanName}`;
 
   onProgress?.(10);
 
@@ -49,7 +131,7 @@ export async function uploadVideoToSupabase(
     .from('videos')
     .upload(path, file, {
       cacheControl: '3600',
-      upsert: true,
+      upsert: false,
       contentType: file.type || 'video/mp4',
     });
 
@@ -68,24 +150,26 @@ export async function uploadVideoToSupabase(
 }
 
 /**
- * Sahneyi Supabase veritabanına kaydeder veya günceller
+ * Sahneyi Supabase veritabanına kaydeder veya günceller (Üye sahipliği ile)
  */
 export async function saveSceneToSupabase(scene: Scene): Promise<void> {
+  const user = await requireAuthenticatedUser();
   const record: DbCustomScene = {
     id: scene.id,
-    title: scene.title,
-    category: scene.category,
-    mood: scene.mood || '',
+    title: scene.title.trim().slice(0, 120),
+    category: (scene.category || 'MEME & MİZAH').trim().slice(0, 40),
+    mood: (scene.mood || '').trim().slice(0, 60),
     video_url: scene.video,
     poster_url: scene.poster || '',
     duration: Number(scene.duration) || 20,
     roles: (scene.roles || []).map((r, i) =>
       typeof r === 'string'
         ? { id: i, name: r, color: '#ef4444', description: '' }
-        : r
+        : r,
     ),
     cues: scene.cues || [],
     instrumental_url: scene.instrumental || null,
+    created_by: user.id,
   };
 
   const { error } = await supabase
@@ -98,7 +182,7 @@ export async function saveSceneToSupabase(scene: Scene): Promise<void> {
 }
 
 /**
- * Supabase'den tüm sahneleri çeker
+ * Supabase'den tüm sahneleri çeker (Sadece giriş yapmış üyeler okuyabilir)
  */
 export async function getScenesFromSupabase(): Promise<Scene[]> {
   const { data, error } = await supabase
@@ -126,7 +210,7 @@ export async function getScenesFromSupabase(): Promise<Scene[]> {
     roleDetails: (item.roles || []).map((r, i) =>
       typeof r === 'string'
         ? { id: i, name: r, color: '#ef4444', description: '' }
-        : r
+        : r,
     ),
     prompts: (item.cues || []).map((c) => c.text),
     cues: item.cues || [],
@@ -136,10 +220,15 @@ export async function getScenesFromSupabase(): Promise<Scene[]> {
 }
 
 /**
- * Sahneyi Supabase'den siler
+ * Sahneyi Supabase'den siler (Sadece sahneyi oluşturan üye silebilir)
  */
 export async function deleteSceneFromSupabase(id: number): Promise<void> {
-  const { error } = await supabase.from('custom_scenes').delete().eq('id', id);
+  const user = await requireAuthenticatedUser();
+  const { error } = await supabase
+    .from('custom_scenes')
+    .delete()
+    .eq('id', id)
+    .eq('created_by', user.id);
   if (error) {
     throw new Error(`Sahne silinemedi: ${error.message}`);
   }

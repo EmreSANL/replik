@@ -34,8 +34,11 @@ import {
   cleanupStaleUnpublishedRooms,
   type PublishedDub,
 } from '@/lib/game-service';
+import { useAuth, MemberTopbarBadge } from '@/components/auth-provider';
+import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
 
 export default function Home() {
+  const { displayName, requireAuth } = useAuth();
   const [allScenes, setAllScenes] = useState<Scene[]>(() => {
     if (typeof window !== 'undefined') {
       const local = getCustomScenes();
@@ -43,6 +46,11 @@ export default function Home() {
     }
     return [];
   });
+  const [siteReady, setSiteReady] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(12);
+  const [loadingStatus, setLoadingStatus] = useState(
+    'Sahne kataloğu bağlanıyor...',
+  );
   const [publishedDubs, setPublishedDubs] = useState<PublishedDub[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('TÜMÜ');
   const [parked, setParked] = useState<{ session: Session; room: Room } | null>(null);
@@ -51,12 +59,18 @@ export default function Home() {
   const [selected, setSelected] = useState(0);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [preview, setPreview] = useState<number | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => displayName || '');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [game, setGame] = useState<{ session: Session; room: Room } | null>(null);
   const previewAudio = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (displayName && !name) {
+      setName(displayName);
+    }
+  }, [displayName, name]);
 
   async function refreshPublishedFeed() {
     const dubs = await getPublishedDubsFromSupabase().catch(() => []);
@@ -64,7 +78,12 @@ export default function Home() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    setLoadingProgress(20);
+    setLoadingStatus('Sahneler veritabanından alınıyor...');
+
     void getScenesFromSupabase().then((dbScenes) => {
+      if (cancelled) return;
       const list = dbScenes && dbScenes.length > 0 ? dbScenes : getCustomScenes();
       setAllScenes(list);
       if (list.length > 0) {
@@ -75,9 +94,72 @@ export default function Home() {
         const randomIdx = pool[Math.floor(Math.random() * pool.length)] ?? 0;
         setSelected(randomIdx);
       }
+
+      const videoUrls = Array.from(
+        new Set(list.map((s) => s.video).filter(Boolean)),
+      ).slice(0, 7);
+
+      if (videoUrls.length === 0) {
+        setLoadingProgress(100);
+        setLoadingStatus('Stüdyo hazır!');
+        setTimeout(() => {
+          if (!cancelled) setSiteReady(true);
+        }, 250);
+        return;
+      }
+
+      setLoadingProgress(35);
+      setLoadingStatus(`Videolar yükleniyor (0 / ${videoUrls.length})...`);
+
+      let loadedCount = 0;
+      const total = videoUrls.length;
+      const finishLoading = () => {
+        if (cancelled) return;
+        setLoadingProgress(100);
+        setLoadingStatus('Tüm sahneler ve videolar hazır!');
+        setTimeout(() => {
+          if (!cancelled) setSiteReady(true);
+        }, 280);
+      };
+
+      const fallbackTimer = setTimeout(() => {
+        finishLoading();
+      }, 3200);
+
+      videoUrls.forEach((url) => {
+        const vid = document.createElement('video');
+        vid.preload = 'auto';
+        vid.muted = true;
+        vid.playsInline = true;
+        let done = false;
+        const markOne = () => {
+          if (done || cancelled) return;
+          done = true;
+          loadedCount += 1;
+          const pct = 35 + Math.round((loadedCount / total) * 65);
+          setLoadingProgress(pct);
+          setLoadingStatus(
+            `Videolar yükleniyor (${loadedCount} / ${total})...`,
+          );
+          if (loadedCount >= total) {
+            clearTimeout(fallbackTimer);
+            finishLoading();
+          }
+        };
+        vid.addEventListener('loadeddata', markOne, { once: true });
+        vid.addEventListener('canplay', markOne, { once: true });
+        vid.addEventListener('error', markOne, { once: true });
+        vid.src = url;
+        vid.load();
+      });
     });
+
     void refreshPublishedFeed();
     void cleanupStaleUnpublishedRooms();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const [heroPaused, setHeroPaused] = useState(false);
@@ -121,13 +203,28 @@ export default function Home() {
   }, []);
 
   function openCreate(id = selected) {
-    if (!hasScenes) {
-      setError('Önce editörden bir sahne ekle.');
-      return;
-    }
-    setSelected(id);
-    setError('');
-    setModal('create');
+    requireAuth(() => {
+      if (!hasScenes) {
+        setError('Önce editörden bir sahne ekle.');
+        return;
+      }
+      setSelected(id);
+      setError('');
+      setModal('create');
+    });
+  }
+
+  function openJoin() {
+    requireAuth(() => {
+      setError('');
+      setModal('join');
+    });
+  }
+
+  function openEditor(path = '/editor') {
+    requireAuth(() => {
+      window.location.href = path;
+    });
   }
 
   async function enter(e: React.SubmitEvent<HTMLFormElement>) {
@@ -182,6 +279,11 @@ export default function Home() {
 
   return (
     <div className="bbank-shell">
+      <ReplikLoadingScreen
+        visible={!siteReady}
+        progress={loadingProgress}
+        statusText={loadingStatus}
+      />
       {!game && (
         <header className="bbank-topbar">
           <div className="bbank-topbar-left">
@@ -207,6 +309,12 @@ export default function Home() {
             >
               Sahneler
             </button>
+            <Link
+              href="/dublajlar"
+              className="bbank-pill-btn bbank-pill-dark"
+            >
+              Dublaj Akışı
+            </Link>
             <button
               type="button"
               className="bbank-pill-btn bbank-pill-dark"
@@ -218,7 +326,7 @@ export default function Home() {
               href="/editor"
               onClick={(e) => {
                 e.preventDefault();
-                window.location.href = '/editor';
+                openEditor('/editor');
               }}
               className="bbank-pill-btn bbank-pill-sage"
             >
@@ -227,10 +335,7 @@ export default function Home() {
             <button
               type="button"
               className="bbank-pill-btn bbank-pill-coral"
-              onClick={() => {
-                setError('');
-                setModal('join');
-              }}
+              onClick={() => openJoin()}
             >
               # ODA KODUYLA GİR
             </button>
@@ -243,6 +348,7 @@ export default function Home() {
                 Odana dön ↗
               </button>
             )}
+            <MemberTopbarBadge />
           </div>
         </header>
       )}
@@ -254,18 +360,12 @@ export default function Home() {
           <>
             <section className="replik-hero" aria-labelledby="replik-hero-title">
               <div className="replik-hero-copy">
-                <div className="replik-hero-eyebrow">
-                  <span className="replik-hero-status-dot" />
-                  ARKADAŞLARINLA DUBLAJ YAP
-                  <span className="replik-hero-issue">REPLİK / 01</span>
-                </div>
                 <h1 id="replik-hero-title">
                   Sahne senin.<br />
                   <span>Sesini duyur.</span>
                 </h1>
                 <p>
-                  Bir sahne seç, arkadaşlarını çağır. Rolleri paylaşın ve finali
-                  kendi seslerinizle birlikte izleyin.
+                  Bir sahne seç, arkadaşlarınla rolleri paylaş ve kendi seslerinizle dublaj yapın.
                 </p>
                 <div className="replik-hero-actions">
                   {hasScenes ? (
@@ -277,27 +377,21 @@ export default function Home() {
                       Bu sahneyle oda kur <ArrowRight size={18} />
                     </button>
                   ) : (
-                    <Link href="/editor" className="replik-hero-primary">
+                    <button
+                      type="button"
+                      className="replik-hero-primary"
+                      onClick={() => openEditor('/editor')}
+                    >
                       İlk sahneni oluştur <ArrowRight size={18} />
-                    </Link>
+                    </button>
                   )}
                   <button
                     type="button"
                     className="replik-hero-secondary"
-                    onClick={() => {
-                      setError('');
-                      setModal('join');
-                    }}
+                    onClick={() => openJoin()}
                   >
                     Oda kodum var
                   </button>
-                </div>
-                <div className="replik-hero-steps" aria-label="Oyun akışı">
-                  <span>01&nbsp; Sahne seç</span>
-                  <span aria-hidden="true">/</span>
-                  <span>02&nbsp; Rolleri paylaş</span>
-                  <span aria-hidden="true">/</span>
-                  <span>03&nbsp; Seslendir</span>
                 </div>
               </div>
 
@@ -322,68 +416,9 @@ export default function Home() {
                     !activeScene.poster && <span>R.</span>
                   )}
                 </div>
-                <div className="replik-hero-feature-head">
-                  <span>RASTGELE SAHNE GIF</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {allScenes.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pool = allScenes
-                            .map((s, idx) => (s.video ? idx : -1))
-                            .filter((idx) => idx >= 0 && idx !== selected);
-                          if (pool.length > 0) {
-                            setSelected(pool[Math.floor(Math.random() * pool.length)]!);
-                          } else {
-                            setSelected((selected + 1) % allScenes.length);
-                          }
-                        }}
-                        aria-label="Rastgele başka bir sahne göster"
-                      >
-                        ↻ Rastgele
-                      </button>
-                    )}
-                    {hasScenes && (
-                      <button
-                        type="button"
-                        onClick={() => setPreview(selected)}
-                        aria-label={`${activeScene.title} sahnesini dinle`}
-                      >
-                        <Volume2 size={16} /> Dinle
-                      </button>
-                    )}
-                  </div>
-                </div>
                 <div className="replik-hero-feature-bottom">
-                  <span className="replik-hero-feature-category">
-                    {hasScenes ? activeScene.category || 'SAHNE' : 'SAHNE BEKLENİYOR'}
-                  </span>
                   <h2>{hasScenes ? activeScene.title : 'İlk sahneni oluştur.'}</h2>
-                  <div className="replik-hero-feature-meta">
-                    <span>{hasScenes ? `${activeCuesCount} replik` : 'Video yükle'}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>
-                      {hasScenes ? `${activeScene.roles.length} karakter` : 'Rolleri belirle'}
-                    </span>
-                    {hasScenes && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>{activeScene.duration} sn</span>
-                      </>
-                    )}
-                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="replik-hero-change-scene"
-                  onClick={() =>
-                    document
-                      .getElementById('sahneler')
-                      ?.scrollIntoView({ behavior: 'smooth' })
-                  }
-                >
-                  Başka sahne seç <ArrowRight size={16} />
-                </button>
               </div>
             </section>
 
@@ -445,8 +480,10 @@ export default function Home() {
                         }
                       }}
                     >
-                      <div className="bbank-scene-tile-top">
-                        <span className="bbank-scene-badge">#{i + 1}</span>
+                      <div
+                        className="bbank-scene-tile-top"
+                        style={{ justifyContent: 'flex-end' }}
+                      >
                         <span className="bbank-scene-dur">00:{s.duration} sn</span>
                       </div>
 
@@ -465,13 +502,13 @@ export default function Home() {
                             : {}),
                         }}
                       >
-                        <SceneVideoGifCover scene={s} cues={cues} />
+                        <SceneVideoGifCover scene={s} cues={cues} showBadge={false} />
                         <a
                           href={`/editor?sceneId=${s.id}`}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            window.location.href = `/editor?sceneId=${s.id}`;
+                            openEditor(`/editor?sceneId=${s.id}`);
                           }}
                           className="bbank-scene-edit-btn"
                           style={{ zIndex: 5 }}
@@ -523,7 +560,7 @@ export default function Home() {
                   href="/editor"
                   onClick={(e) => {
                     e.preventDefault();
-                    window.location.href = '/editor';
+                    openEditor('/editor');
                   }}
                   className="bbank-scene-tile bbank-add-tile"
                 >
@@ -535,88 +572,6 @@ export default function Home() {
                   <span className="bbank-add-btn-tag">Editöre git</span>
                 </a>
               </div>
-            </section>
-
-            {/* ============================================================
-                TOPLULUK DUBLAJLARI (YAYINLANANLAR VİTRİNİ)
-                ============================================================ */}
-            <section id="yayinlanan-dublajlar" className="bbank-catalog-section">
-              <div className="bbank-section-heading">
-                <div>
-                  <h2 className="bbank-section-title">İnsanların Yaptığı Dublajlar</h2>
-                  <p className="bbank-section-desc">
-                    Finalde &ldquo;Yayınla&rdquo; butonuna basılan topluluk dublajları.
-                  </p>
-                </div>
-              </div>
-
-              {publishedDubs.length === 0 ? (
-                <div className="bbank-empty-card">
-                  <Sparkles size={24} />
-                  <div>
-                    <strong>Henüz yayınlanan dublaj yok.</strong>
-                    <p>
-                      Finalde &ldquo;Dublajı ana sayfada yayınla&rdquo; seçeneğiyle ilk kaydı paylaşabilirsin.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bbank-published-grid">
-                  {publishedDubs.map((dub) => (
-                    <article key={dub.id} className="bbank-pub-card">
-                      <div className="bbank-pub-video-frame">
-                        <video
-                          src={dub.videoUrl}
-                          poster={dub.posterUrl || undefined}
-                          controls
-                          playsInline
-                          preload="metadata"
-                        />
-                        <span className="bbank-pub-room-pill">
-                          ODA #{dub.roomCode}
-                        </span>
-                      </div>
-                      <div className="bbank-pub-body">
-                        <div className="bbank-pub-head">
-                          <div>
-                            <span className="bbank-pub-cat">{dub.category}</span>
-                            <h3 className="bbank-pub-title">{dub.sceneTitle}</h3>
-                          </div>
-                          <button
-                            type="button"
-                            className="bbank-pub-like-btn"
-                            onClick={async () => {
-                              setPublishedDubs((prev) =>
-                                prev.map((x) =>
-                                  x.id === dub.id ? { ...x, likes: (x.likes || 0) + 1 } : x,
-                                ),
-                              );
-                              const updated = await likePublishedDubInSupabase(dub.id).catch(
-                                () => null,
-                              );
-                              if (updated) setPublishedDubs(updated);
-                            }}
-                          >
-                            <Flame size={14} /> {dub.likes || 1}
-                          </button>
-                        </div>
-
-                        <div className="bbank-pub-players-row">
-                          {dub.players.map((p, idx) => (
-                            <span key={idx} className="bbank-pub-player-chip">
-                              <span
-                                className="bbank-pub-player-dot"
-                                style={{ background: p.roleColor || '#F5E636' }}
-                              />
-                              <strong>{p.name}</strong> <small>({p.roleName})</small>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
             </section>
           </>
         )}

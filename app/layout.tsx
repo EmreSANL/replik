@@ -18,6 +18,8 @@ export const metadata: Metadata = {
     'Arkadaşlarınla bir odaya gir, rollerini paylaş ve sahneleri kendi sesinle yeniden canlandır.',
 };
 
+import { AuthProvider } from '@/components/auth-provider';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +30,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

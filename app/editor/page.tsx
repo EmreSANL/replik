@@ -57,6 +57,7 @@ import {
   getScenesFromSupabase,
   deleteSceneFromSupabase,
 } from '@/lib/supabase';
+import { MemberTopbarBadge } from '@/components/auth-provider';
 
 function waveformFromAudio(channel: Float32Array): number[] {
   const barCount = 140;
@@ -1145,22 +1146,23 @@ export default function EditorPage() {
         setSelectedCueId(loadedCues[0].id);
       }
 
-      // Vokalsiz M&E müzik parçası: Replik zamanlarıyla (loadedCues) %100 vokalsiz M&E hazırla
-      const needsCueCleanse =
-        !sc.instrumental ||
-        sc.instrumental.includes('/stereo_') ||
-        sc.instrumental.includes('/pure_htdemucs_');
-      if (sc.instrumental && !needsCueCleanse) {
+      // Saf AI (htdemucs --two-stems=vocals) ile ayrıştırılmış ses varsa doğrudan kullan; yoksa orijinal videodan ayır
+      const isPureAiInstrumental =
+        Boolean(sc.instrumental) &&
+        (sc.instrumental!.includes('/pure_htdemucs_') ||
+          sc.instrumental!.includes('/splitter_'));
+      if (isPureAiInstrumental && sc.instrumental) {
         setInstrumentalUrl(sc.instrumental);
         setAudioMode('instrumental');
       } else if (sc.video) {
-        if (sc.instrumental) setInstrumentalUrl(sc.instrumental);
-        else setInstrumentalUrl('');
+        setInstrumentalUrl(sc.instrumental || '');
         setAudioMode('instrumental');
         setIsRemovingVocals(true);
-        setVocalStage('Replik anlarındaki insan sesleri %100 siliniyor...');
+        setVocalStage(
+          'Splitter-AI (htdemucs): Müzik ve ses efektleri korunarak insan sesleri ayrıştırılıyor...',
+        );
         void removeVocalsFromVideo(
-          sc.instrumental || sc.video,
+          sc.video,
           sc.title,
           (st, pct) => {
             setVocalStage(st);
@@ -1596,6 +1598,7 @@ export default function EditorPage() {
             </span>
             <span className="editor-save-label-short">Kaydet</span>
           </button>
+          <MemberTopbarBadge />
         </div>
       </header>
 

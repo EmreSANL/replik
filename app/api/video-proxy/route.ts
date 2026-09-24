@@ -6,10 +6,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
 
+  let parsedUrl: URL;
   try {
-    const upstream = await fetch(url, {
+    parsedUrl = new URL(url);
+  } catch {
+    return NextResponse.json({ error: 'Invalid url parameter' }, { status: 400 });
+  }
+
+  // SSRF Koruması: Sadece HTTPS ve güvenli medya alan adlarına (*.supabase.co) izin ver
+  if (
+    parsedUrl.protocol !== 'https:' ||
+    !parsedUrl.hostname.toLowerCase().endsWith('.supabase.co')
+  ) {
+    return NextResponse.json(
+      { error: 'Yalnızca güvenli Supabase Storage medya bağlantılarına izin verilir.' },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const upstream = await fetch(parsedUrl.toString(), {
       headers: {
-        Accept: 'video/*,*/*;q=0.8',
+        Accept: 'video/*,audio/*;q=0.8',
       },
     });
 
