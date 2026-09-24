@@ -1,8 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  ChevronDown,
+  Clapperboard,
+  Heart,
+  MessageCircle,
+  Mic2,
+  Pause,
+  Play,
+  Send,
+  Share2,
+  Sparkles,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import {
   getPublishedDubsFromSupabase,
   toggleLikePublishedDubInSupabase,
@@ -10,993 +27,724 @@ import {
   deleteCommentFromPublishedDubInSupabase,
   type PublishedDub,
 } from '@/lib/game-service';
-import { useAuth, MemberTopbarBadge } from '@/components/auth-provider';
-import {
-  ReplikLoadingScreen,
-  triggerReplikCurtain,
-} from '@/components/replik-loading-screen';
+import { useAuth } from '@/components/auth-provider';
+import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
+import { ReplikSiteHeader } from '@/components/replik-site-header';
 
-const AVATAR_COLORS = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
+type SortBy = 'latest' | 'popular' | 'discussed' | 'liked';
+const sortTabs: { id: SortBy; label: string }[] = [
+  { id: 'latest', label: 'Yeni' },
+  { id: 'popular', label: 'Popüler' },
+  { id: 'discussed', label: 'Çok konuşulan' },
+  { id: 'liked', label: 'Beğendiklerim' },
+];
+const accents = ['#F5E636', '#9E8CA9', '#FA5636', '#CDE2CD'];
 
-function formatRelativeTime(timestamp: number): string {
-  const diffSec = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
-  if (diffSec < 60) return 'Az önce';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} dk önce`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour} saat önce`;
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 30) return `${diffDay} gün önce`;
+function relativeTime(timestamp: number) {
+  const seconds = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return 'Az önce';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} dk önce`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} sa önce`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} gün önce`;
   return new Date(timestamp).toLocaleDateString('tr-TR');
 }
 
-export default function DublajlarSocialFeedPage() {
-  const router = useRouter();
+export default function DublajlarPage() {
   const { user, displayName, requireAuth } = useAuth();
   const [dubs, setDubs] = useState<PublishedDub[]>([]);
   const [loading, setLoading] = useState(true);
-  const [progress, setProgress] = useState(30);
-  const [sortBy, setSortBy] = useState<'latest' | 'popular' | 'discussed' | 'liked'>('latest');
-  const [selectedCategory, setSelectedCategory] = useState<string>('TÜMÜ');
-  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
-  const [submittingCommentId, setSubmittingCommentId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy>('latest');
+  const [category, setCategory] = useState('TÜMÜ');
+  const [highlightedId] = useState<string | null>(() =>
+    typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('post'),
+  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [muted, setMuted] = useState(true);
+  const [pausedId, setPausedId] = useState<string | null>(null);
+  const [commentsId, setCommentsId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [feedInView, setFeedInView] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
-  const loadFeed = useCallback(async () => {
-    setProgress(55);
+  const refresh = useCallback(async () => {
     const list = await getPublishedDubsFromSupabase().catch(() => []);
     setDubs(list);
-    setProgress(100);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void loadFeed();
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const postParam = params.get('post');
-      if (postParam) setHighlightedPostId(postParam);
-    }
-    const interval = setInterval(() => {
-      void getPublishedDubsFromSupabase()
-        .then((list) => setDubs(list))
-        .catch(() => {});
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [loadFeed]);
+    const initial = window.setTimeout(() => void refresh(), 0);
+    const interval = window.setInterval(() => void refresh(), 30000);
+    return () => { window.clearTimeout(initial); window.clearInterval(interval); };
+  }, [refresh]);
 
-  const categories = ['TÜMÜ', 'MEME & MİZAH', 'DİZİ & FİLM', 'ANİME', 'YEŞİLÇAM'];
-
-  const filteredAndSortedDubs = useMemo(() => {
-    let list = [...dubs];
-
-    if (selectedCategory !== 'TÜMÜ') {
-      list = list.filter((d) =>
-        (d.category || '')
-          .toLocaleLowerCase('tr')
-          .includes(selectedCategory.toLocaleLowerCase('tr')),
+  const categories = useMemo(
+    () => [
+      'TÜMÜ',
+      ...Array.from(new Set(dubs.map((dub) => dub.category).filter(Boolean))),
+    ],
+    [dubs],
+  );
+  const visibleDubs = useMemo(() => {
+    const list = dubs.filter(
+      (dub) => category === 'TÜMÜ' || dub.category === category,
+    );
+    if (sortBy === 'liked') {
+      const liked = list.filter(
+        (dub) => user && (dub.likedBy || []).includes(user.id),
       );
-    }
-
-    if (sortBy === 'liked' && user) {
-      list = list.filter((d) => (d.likedBy || []).includes(user.id));
-    } else if (sortBy === 'popular') {
+      list.splice(0, list.length, ...liked);
+    } else if (sortBy === 'popular')
       list.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-    } else if (sortBy === 'discussed') {
+    else if (sortBy === 'discussed')
       list.sort(
         (a, b) => (b.comments?.length || 0) - (a.comments?.length || 0),
       );
-    } else {
-      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    else list.sort((a, b) => b.createdAt - a.createdAt);
+    if (highlightedId) {
+      const index = list.findIndex((dub) => dub.id === highlightedId);
+      if (index > 0) list.unshift(...list.splice(index, 1));
     }
-
-    if (highlightedPostId) {
-      const targetIdx = list.findIndex((d) => d.id === highlightedPostId);
-      if (targetIdx > 0) {
-        const [target] = list.splice(targetIdx, 1);
-        list.unshift(target);
-      }
-    }
-
     return list;
-  }, [dubs, selectedCategory, sortBy, user, highlightedPostId]);
+  }, [dubs, category, sortBy, user, highlightedId]);
 
-  const totalLikes = useMemo(
-    () => dubs.reduce((acc, d) => acc + (Number(d.likes) || 0), 0),
-    [dubs],
-  );
-  const totalComments = useMemo(
-    () => dubs.reduce((acc, d) => acc + (d.comments?.length || 0), 0),
-    [dubs],
-  );
-
-  function handleToggleLike(dub: PublishedDub) {
-    requireAuth(() => {
-      const uid = user?.id;
-      if (!uid) return;
-      const currentlyLiked = (dub.likedBy || []).includes(uid);
-
-      // Optimistic update
-      setDubs((prev) =>
-        prev.map((item) => {
-          if (item.id !== dub.id) return item;
-          const prevLikedBy = item.likedBy || [];
-          const nextLikedBy = currentlyLiked
-            ? prevLikedBy.filter((id) => id !== uid)
-            : [...prevLikedBy, uid];
-          const nextLikes = Math.max(
-            0,
-            currentlyLiked ? (item.likes || 1) - 1 : (item.likes || 0) + 1,
-          );
-          return { ...item, likes: nextLikes, likedBy: nextLikedBy };
-        }),
+  const currentActiveId = visibleDubs.some((dub) => dub.id === activeId)
+    ? activeId
+    : visibleDubs[0]?.id || null;
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || !visibleDubs.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const best = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (best && best.intersectionRatio >= 0.55)
+          setActiveId((best.target as HTMLElement).dataset.dubId || null);
+      },
+      { root, threshold: [0.55, 0.7, 0.9] },
+    );
+    root
+      .querySelectorAll<HTMLElement>('[data-dub-id]')
+      .forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [visibleDubs]);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(
+      ([entry]) =>
+        setFeedInView(
+          entry.isIntersecting && document.visibilityState === 'visible',
+        ),
+      { threshold: 0.25 },
+    );
+    observer.observe(element);
+    const onVisibilityChange = () =>
+      setFeedInView(
+        document.visibilityState === 'visible' &&
+          element.getBoundingClientRect().top < window.innerHeight &&
+          element.getBoundingClientRect().bottom > 0,
       );
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [visibleDubs.length]);
+  useEffect(() => {
+    videoRefs.current.forEach((video, id) => {
+      video.muted = muted;
+      if (
+        !feedInView ||
+        id !== currentActiveId ||
+        pausedId === id ||
+        commentsId
+      )
+        video.pause();
+      else void video.play().catch(() => setPausedId(id));
+    });
+  }, [currentActiveId, muted, pausedId, commentsId, visibleDubs, feedInView]);
 
+  const activeIndex = Math.max(
+    0,
+    visibleDubs.findIndex((dub) => dub.id === currentActiveId),
+  );
+  const commentsDub = dubs.find((dub) => dub.id === commentsId);
+  const totalLikes = dubs.reduce((sum, dub) => sum + (dub.likes || 0), 0);
+
+  function scrollTo(index: number) {
+    const dub = visibleDubs[index];
+    if (!dub) return;
+    scrollRef.current
+      ?.querySelector<HTMLElement>(`[data-dub-index="${index}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveId(dub.id);
+    setPausedId(null);
+  }
+  function changeSort(next: SortBy) {
+    if (next === 'liked' && !user)
+      requireAuth(() => {
+        setSortBy('liked');
+        setActiveId(null);
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      });
+    else {
+      setSortBy(next);
+      setActiveId(null);
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    }
+  }
+  function toggleLike(dub: PublishedDub) {
+    requireAuth(() => {
+      if (user) {
+        const liked = (dub.likedBy || []).includes(user.id);
+        setDubs((current) =>
+          current.map((item) =>
+            item.id === dub.id
+              ? {
+                  ...item,
+                  likes: Math.max(0, (item.likes || 0) + (liked ? -1 : 1)),
+                  likedBy: liked
+                    ? (item.likedBy || []).filter((id) => id !== user.id)
+                    : [...(item.likedBy || []), user.id],
+                }
+              : item,
+          ),
+        );
+      }
       void toggleLikePublishedDubInSupabase(dub.id)
-        .then((updated) => {
-          if (updated) setDubs(updated);
-        })
-        .catch(() => {});
+        .then(setDubs)
+        .catch(() => void refresh());
     });
   }
-
-  function handleCommentSubmit(e: React.FormEvent, dubId: string) {
-    e.preventDefault();
-    const rawText = (commentInputs[dubId] || '').trim();
-    if (!rawText) return;
-
+  function submitComment(event: React.SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = commentText.trim();
+    if (!commentsDub || !text || submitting) return;
+    const dubId = commentsDub.id;
     requireAuth(() => {
-      setSubmittingCommentId(dubId);
-      const optimisticComment = {
-        id: `temp_${Date.now()}`,
-        userId: user?.id || 'me',
-        userName: displayName || 'Oyuncu',
-        text: rawText,
-        createdAt: Date.now(),
-      };
-
-      setDubs((prev) =>
-        prev.map((item) =>
-          item.id === dubId
-            ? { ...item, comments: [...(item.comments || []), optimisticComment] }
-            : item,
-        ),
-      );
-      setCommentInputs((prev) => ({ ...prev, [dubId]: '' }));
-
-      void addCommentToPublishedDubInSupabase(dubId, rawText)
-        .then((updated) => {
-          if (updated) setDubs(updated);
-        })
-        .finally(() => {
-          setSubmittingCommentId(null);
-        });
-    });
-  }
-
-  function handleDeleteComment(dubId: string, commentId: string) {
-    requireAuth(() => {
-      setDubs((prev) =>
-        prev.map((item) =>
-          item.id === dubId
+      setSubmitting(true);
+      setCommentText('');
+      setDubs((current) =>
+        current.map((dub) =>
+          dub.id === dubId
             ? {
-                ...item,
-                comments: (item.comments || []).filter((c) => c.id !== commentId),
+                ...dub,
+                comments: [
+                  ...(dub.comments || []),
+                  {
+                    id: `temp-${Date.now()}`,
+                    userId: user?.id || 'me',
+                    userName: displayName || 'Oyuncu',
+                    text,
+                    createdAt: Date.now(),
+                  },
+                ],
               }
-            : item,
+            : dub,
         ),
       );
-      void deleteCommentFromPublishedDubInSupabase(dubId, commentId).then(
-        (updated) => {
-          if (updated) setDubs(updated);
-        },
-      );
+      void addCommentToPublishedDubInSupabase(dubId, text)
+        .then(setDubs)
+        .catch(() => {
+          setCommentText(text);
+          void refresh();
+        })
+        .finally(() => setSubmitting(false));
     });
   }
-
-  function handleSharePost(dubId: string) {
-    if (typeof window === 'undefined') return;
+  function deleteComment(dubId: string, commentId: string) {
+    requireAuth(() => {
+      setDubs((current) =>
+        current.map((dub) =>
+          dub.id === dubId
+            ? {
+                ...dub,
+                comments: (dub.comments || []).filter(
+                  (comment) => comment.id !== commentId,
+                ),
+              }
+            : dub,
+        ),
+      );
+      void deleteCommentFromPublishedDubInSupabase(dubId, commentId)
+        .then(setDubs)
+        .catch(() => void refresh());
+    });
+  }
+  async function share(dubId: string) {
     const url = `${window.location.origin}/dublajlar?post=${encodeURIComponent(dubId)}`;
-    void navigator.clipboard?.writeText(url);
-    setCopiedId(dubId);
-    setTimeout(() => {
-      setCopiedId((prev) => (prev === dubId ? null : prev));
-    }, 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(dubId);
+      window.setTimeout(
+        () => setCopiedId((current) => (current === dubId ? null : current)),
+        2200,
+      );
+    } catch {
+      if (navigator.share)
+        await navigator.share({ title: 'Replik dublajı', url }).catch(() => {});
+    }
   }
 
   return (
-    <div className="bbank-shell" style={{ minHeight: '100vh', background: '#090909' }}>
+    <div className="bbank-shell dub-page">
       <ReplikLoadingScreen
         visible={loading}
-        progress={progress}
-        statusText="Topluluk dublaj akışı yükleniyor..."
+        progress={loading ? 56 : 100}
+        statusText="Dublaj akışı yükleniyor..."
       />
+      <ReplikSiteHeader
+        active="feed"
+        subtitle="Topluluğun seslendirdiği sahneler."
+      />
+      <main className="dub-main">
 
-      {/* ÜST BAR (SİTENİN MAXIMALIST SOLID BENTO HEADER'I) */}
-      <header className="bbank-topbar">
-        <div className="bbank-topbar-left">
-          <Link
-            href="/"
-            className="bbank-brand"
-            aria-label="Replik ana sayfa"
-            onClick={(e) => {
-              e.preventDefault();
-              triggerReplikCurtain('ANA SAYFAYA GEÇİLİYOR', () => {
-                router.push('/');
-              });
-            }}
-          >
-            <span className="bbank-brand-title">Replik</span>
-          </Link>
-          <span className="bbank-date-label">
-            Topluluk Dublaj Akışı
-          </span>
-        </div>
-
-        <div className="bbank-topbar-right">
-          <Link
-            href="/"
-            className="bbank-pill-btn bbank-pill-dark"
-            onClick={(e) => {
-              e.preventDefault();
-              triggerReplikCurtain('SAHNELER AÇILIYOR', () => {
-                router.push('/');
-              });
-            }}
-          >
-            Sahneler &amp; Oyun
-          </Link>
-          <Link
-            href="/dublajlar"
-            className="bbank-pill-btn bbank-pill-yellow"
-            onClick={(e) => {
-              e.preventDefault();
-              triggerReplikCurtain('DUBLAJ AKIŞI YENİLENİYOR', () => {
-                window.scrollTo({ top: 0, behavior: 'auto' });
-              });
-            }}
-          >
-            Dublaj Akışı
-          </Link>
-          <Link
-            href="/editor"
-            className="bbank-pill-btn bbank-pill-coral"
-            onClick={(e) => {
-              e.preventDefault();
-              triggerReplikCurtain('SAHNE EDİTÖRÜ AÇILIYOR', () => {
-                router.push('/editor');
-              });
-            }}
-          >
-            + Sahne Yükle
-          </Link>
-          <MemberTopbarBadge />
-        </div>
-      </header>
-
-      <main
-        style={{
-          maxWidth: '1240px',
-          margin: '0 auto',
-          padding: '28px 4% 80px',
-          display: 'grid',
-          gridTemplateColumns: 'minmax(260px, 310px) minmax(0, 1fr)',
-          gap: '24px',
-          alignItems: 'start',
-        }}
-        className="replik-social-layout"
-      >
-        <style>{`
-          @media (max-width: 900px) {
-            .replik-social-layout {
-              grid-template-columns: 1fr !important;
-            }
-            .replik-social-sidebar {
-              position: static !important;
-            }
-          }
-        `}</style>
-
-        {/* SOL SÜTUN: SOSYAL MEDYA MENÜSÜ, SIRALAMA VE İSTATİSTİK BENTO KARTLARI */}
-        <aside
-          className="replik-social-sidebar"
-          style={{
-            position: 'sticky',
-            top: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-          }}
+        <section
+          id="akis"
+          className="dub-feed-section"
+          aria-label="Dublaj akışı"
         >
-          {/* Sarı Maximalist Başlık Bloğu */}
-          <div
-            style={{
-              background: '#F5E636',
-              color: '#090909',
-              borderRadius: '24px',
-              padding: '24px',
-              border: '2px solid #2a2a2a',
-            }}
-          >
-            <h1
-              style={{
-                fontSize: '32px',
-                fontWeight: 900,
-                letterSpacing: '-0.05em',
-                lineHeight: 0.98,
-                margin: '0 0 8px 0',
-                color: '#090909',
-              }}
-            >
-              Dublaj Akışı.
-            </h1>
-            <p
-              style={{
-                fontSize: '13.5px',
-                fontWeight: 700,
-                margin: '0 0 18px 0',
-                color: '#1a1a17',
-                lineHeight: 1.4,
-              }}
-            >
-              Oyuncuların kaydettiği en komik ve efsane dublajları izle, beğen ve yorum bırak.
-            </p>
-            <Link
-              href="/"
-              style={{
-                display: 'block',
-                textAlign: 'center',
-                background: '#090909',
-                color: '#F5E636',
-                padding: '13px 16px',
-                borderRadius: '999px',
-                fontWeight: 900,
-                fontSize: '13.5px',
-              }}
-            >
-              Yeni Dublaj Kaydet
-            </Link>
-          </div>
-
-          {/* Akış Sıralama Bento Kartı */}
-          <div
-            style={{
-              background: '#121212',
-              border: '2px solid #2a2a2a',
-              borderRadius: '24px',
-              padding: '18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 900,
-                letterSpacing: '0.08em',
-                color: '#888888',
-                marginBottom: '4px',
-              }}
-            >
-              AKIŞ SIRALAMASI
+          <div className="dub-feed-toolbar">
+            <div className="dub-toolbar-title">
+              <span className="dub-toolbar-icon">
+                <Clapperboard size={22} />
+              </span>
+              <div>
+                <span>ŞİMDİ OYNATILIYOR</span>
+                <strong>Topluluk akışı</strong>
+              </div>
             </div>
-            {[
-              { id: 'latest', label: 'En Son Paylaşılanlar', color: '#F5E636' },
-              { id: 'popular', label: 'En Çok Beğenilenler', color: '#FF6B4A' },
-              { id: 'discussed', label: 'En Çok Yorum Alanlar', color: '#B8E6C1' },
-              { id: 'liked', label: 'Beğendiğim Dublajlar', color: '#D4C2FC' },
-            ].map((tab) => {
-              const active = sortBy === tab.id;
-              return (
+            <div className="dub-feed-tabs" aria-label="Akış sıralaması">
+              {sortTabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => {
-                    if (tab.id === 'liked' && !user) {
-                      requireAuth(() => setSortBy('liked'));
-                      return;
-                    }
-                    setSortBy(tab.id as typeof sortBy);
-                  }}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '12px 14px',
-                    borderRadius: '14px',
-                    border: active ? '2px solid #090909' : '1.5px solid #242424',
-                    background: active ? tab.color : '#1a1a1a',
-                    color: active ? '#090909' : '#e4e4e7',
-                    fontSize: '13.5px',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
+                  className={sortBy === tab.id ? 'is-active' : ''}
+                  aria-pressed={sortBy === tab.id}
+                  onClick={() => changeSort(tab.id)}
                 >
                   {tab.label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <span className="dub-count-label">
+              {dubs.length} DUBLAJ • {totalLikes} BEĞENİ
+            </span>
           </div>
-
-          {/* Kategori Filtreleri Bento Kartı */}
-          <div
-            style={{
-              background: '#121212',
-              border: '2px solid #2a2a2a',
-              borderRadius: '24px',
-              padding: '18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '11px',
-                fontWeight: 900,
-                letterSpacing: '0.08em',
-                color: '#888888',
-                marginBottom: '4px',
-              }}
-            >
-              KATEGORİLER
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-              {categories.map((cat) => {
-                const active = selectedCategory === cat;
-                return (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat)}
-                    style={{
-                      padding: '8px 13px',
-                      borderRadius: '999px',
-                      border: '1.5px solid #2e2e2e',
-                      background: active ? '#F5E636' : '#1c1c1c',
-                      color: active ? '#090909' : '#b8b8ae',
-                      fontSize: '11.5px',
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {cat}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Topluluk Özeti Bento Kartı */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '8px',
-            }}
-          >
-            <div
-              style={{
-                background: '#B8E6C1',
-                color: '#090909',
-                borderRadius: '18px',
-                padding: '14px 10px',
-                textAlign: 'center',
-                border: '2px solid #2a2a2a',
-              }}
-            >
-              <div style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1 }}>
-                {dubs.length}
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 900, marginTop: '4px' }}>
-                DUBLAJ
-              </div>
-            </div>
-            <div
-              style={{
-                background: '#FF6B4A',
-                color: '#090909',
-                borderRadius: '18px',
-                padding: '14px 10px',
-                textAlign: 'center',
-                border: '2px solid #2a2a2a',
-              }}
-            >
-              <div style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1 }}>
-                {totalLikes}
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 900, marginTop: '4px' }}>
-                BEĞENİ
-              </div>
-            </div>
-            <div
-              style={{
-                background: '#D4C2FC',
-                color: '#090909',
-                borderRadius: '18px',
-                padding: '14px 10px',
-                textAlign: 'center',
-                border: '2px solid #2a2a2a',
-              }}
-            >
-              <div style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1 }}>
-                {totalComments}
-              </div>
-              <div style={{ fontSize: '10px', fontWeight: 900, marginTop: '4px' }}>
-                YORUM
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* SAĞ ANA SÜTUN: SOSYAL MEDYA POST AKIŞI */}
-        <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {filteredAndSortedDubs.length === 0 ? (
-            <div
-              style={{
-                background: '#121212',
-                border: '2px solid #2a2a2a',
-                borderRadius: '26px',
-                padding: '48px 28px',
-                textAlign: 'center',
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: '24px',
-                  fontWeight: 900,
-                  margin: '0 0 8px 0',
-                  color: '#ffffff',
-                }}
-              >
-                Bu akışta henüz paylaşılan dublaj yok.
-              </h2>
-              <p
-                style={{
-                  fontSize: '14px',
-                  color: '#888888',
-                  margin: '0 0 22px 0',
-                }}
-              >
-                Bir sahne seçip dublajını tamamladıktan sonra &ldquo;Yayınla&rdquo; butonuna basarak ilk gönderiyi sen paylaş!
-              </p>
-              <Link
-                href="/"
-                className="bbank-pill-btn bbank-pill-yellow"
-                style={{ padding: '12px 24px', fontSize: '14px' }}
-              >
-                Sahne Seç ve Başla
-              </Link>
-            </div>
-          ) : (
-            filteredAndSortedDubs.map((dub, index) => {
-              const isLiked = Boolean(user && (dub.likedBy || []).includes(user.id));
-              const comments = dub.comments || [];
-              const headerThemeColor = AVATAR_COLORS[index % AVATAR_COLORS.length];
-
-              return (
-                <article
-                  key={dub.id}
-                  style={{
-                    background: '#121212',
-                    border:
-                      highlightedPostId === dub.id
-                        ? '2px solid #F5E636'
-                        : '2px solid #2a2a2a',
-                    borderRadius: '26px',
-                    overflow: 'hidden',
-                    color: '#ffffff',
+          {categories.length > 1 && (
+            <div className="dub-categories" aria-label="Kategori filtreleri">
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={category === item ? 'is-active' : ''}
+                  aria-pressed={category === item}
+                  onClick={() => {
+                    setCategory(item);
+                    setActiveId(null);
+                    if (scrollRef.current) scrollRef.current.scrollTop = 0;
                   }}
                 >
-                  {/* 1. SOSYAL POST ÜST BİLGİSİ (OYUNCULAR, ROLLER VE ZAMAN) */}
-                  <div
-                    style={{
-                      padding: '18px 22px',
-                      borderBottom: '2px solid #222222',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                      background: '#161616',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      {/* Oyuncu Baş Harf Bloğu */}
-                      <div
-                        style={{
-                          width: '44px',
-                          height: '44px',
-                          borderRadius: '12px',
-                          background: headerThemeColor,
-                          color: '#090909',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 900,
-                          fontSize: '18px',
-                          border: '2px solid #090909',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {(dub.players?.[0]?.name || 'R').slice(0, 1).toUpperCase()}
-                      </div>
-
-                      <div>
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            flexWrap: 'wrap',
-                            gap: '6px',
-                            fontSize: '15px',
-                            fontWeight: 900,
-                          }}
-                        >
-                          {dub.players && dub.players.length > 0 ? (
-                            dub.players.map((p, i) => (
-                              <span key={i}>
-                                @{p.name}
-                                {i < dub.players.length - 1 ? ' & ' : ''}
-                              </span>
-                            ))
-                          ) : (
-                            <span>@Oyuncu</span>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            color: '#888888',
-                            marginTop: '2px',
-                          }}
-                        >
-                          {formatRelativeTime(dub.createdAt)} &middot; ODA #{dub.roomCode}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Kategori & Sahne Etiketi */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span
-                        style={{
-                          background: '#222222',
-                          color: '#F5E636',
-                          border: '1.5px solid #333333',
-                          borderRadius: '999px',
-                          padding: '5px 12px',
-                          fontSize: '11px',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {dub.category}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 2. SAHNE BAŞLIĞI VE SESLENDİRİLEN KARAKTERLER */}
-                  <div style={{ padding: '16px 22px 14px' }}>
-                    <h3
-                      style={{
-                        fontSize: '22px',
-                        fontWeight: 900,
-                        letterSpacing: '-0.03em',
-                        margin: '0 0 10px 0',
-                      }}
+                  {item}
+                </button>
+              ))}
+            </div>
+          )}
+          {visibleDubs.length ? (
+            <div className="dub-feed-frame">
+              <div
+                className="dub-feed-scroller"
+                ref={scrollRef}
+                aria-label="Dublajlar arasında yukarı aşağı kaydır"
+              >
+                {visibleDubs.map((dub, index) => {
+                  const isLiked = Boolean(
+                    user && (dub.likedBy || []).includes(user.id),
+                  );
+                  const isActive = currentActiveId === dub.id;
+                  const accent = accents[index % accents.length];
+                  return (
+                    <article
+                      className="dub-slide"
+                      key={dub.id}
+                      data-dub-id={dub.id}
+                      data-dub-index={index}
+                      style={{ '--dub-accent': accent } as React.CSSProperties}
                     >
-                      {dub.sceneTitle}
-                    </h3>
-
-                    {dub.players && dub.players.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {dub.players.map((p, idx) => (
-                          <span
-                            key={idx}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              background: '#1c1c1c',
-                              border: '1.5px solid #2e2e2e',
-                              padding: '5px 11px',
-                              borderRadius: '10px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                background: p.roleColor || '#F5E636',
-                              }}
-                            />
-                            <span>{p.name}</span>
-                            <span style={{ color: '#888888' }}>({p.roleName})</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 3. DUBLAJ VİDEO OYNATICISI (ÇİFT TIKLAYINCA BEĞENİR) */}
-                  <div
-                    onDoubleClick={() => handleToggleLike(dub)}
-                    style={{
-                      position: 'relative',
-                      background: '#050505',
-                      borderTop: '2px solid #222222',
-                      borderBottom: '2px solid #222222',
-                      aspectRatio: '16 / 9',
-                      width: '100%',
-                    }}
-                  >
-                    <video
-                      src={dub.videoUrl}
-                      poster={dub.posterUrl || undefined}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'contain',
-                        display: 'block',
-                      }}
-                    />
-                  </div>
-
-                  {/* 4. SOSYAL MEDYA ETKİLEŞİM ÇUBUĞU (BEĞEN, YORUM, PAYLAŞ) */}
-                  <div
-                    style={{
-                      padding: '14px 22px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '10px',
-                      borderBottom: '1.5px solid #222222',
-                      background: '#161616',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {/* BEĞEN BUTONU */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleLike(dub)}
-                        style={{
-                          padding: '10px 18px',
-                          borderRadius: '999px',
-                          border: isLiked ? '2px solid #090909' : '1.5px solid #333333',
-                          background: isLiked ? '#FF6B4A' : '#1c1c1c',
-                          color: isLiked ? '#090909' : '#ffffff',
-                          fontWeight: 900,
-                          fontSize: '13.5px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {isLiked ? 'Beğenildi' : 'Beğen'} &middot; {dub.likes || 0}
-                      </button>
-
-                      {/* YORUM SAYISI GÖSTERGESİ */}
-                      <div
-                        style={{
-                          padding: '10px 16px',
-                          borderRadius: '999px',
-                          border: '1.5px solid #2e2e2e',
-                          background: '#1c1c1c',
-                          color: '#e4e4e7',
-                          fontWeight: 800,
-                          fontSize: '13px',
-                        }}
-                      >
-                        {comments.length} Yorum
-                      </div>
-
-                      {/* PAYLAŞ BUTONU */}
-                      <button
-                        type="button"
-                        onClick={() => handleSharePost(dub.id)}
-                        style={{
-                          padding: '10px 16px',
-                          borderRadius: '999px',
-                          border: '1.5px solid #2e2e2e',
-                          background: copiedId === dub.id ? '#B8E6C1' : '#1c1c1c',
-                          color: copiedId === dub.id ? '#090909' : '#e4e4e7',
-                          fontWeight: 800,
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {copiedId === dub.id ? 'Bağlantı Kopyalandı' : 'Paylaş'}
-                      </button>
-                    </div>
-
-                    <Link
-                      href="/"
-                      style={{
-                        padding: '10px 16px',
-                        borderRadius: '999px',
-                        background: '#F5E636',
-                        color: '#090909',
-                        fontWeight: 900,
-                        fontSize: '12.5px',
-                      }}
-                    >
-                      Bu Sahneyi Oyna
-                    </Link>
-                  </div>
-
-                  {/* 5. YORUMLAR VE YORUM YAZMA ALANI */}
-                  <div style={{ padding: '18px 22px 22px', background: '#121212' }}>
-                    {/* Mevcut Yorumlar Listesi */}
-                    {comments.length > 0 ? (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '10px',
-                          marginBottom: '16px',
-                          maxHeight: '280px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {comments.map((c, cIdx) => {
-                          const canDelete = Boolean(user && c.userId === user.id);
-                          const badgeColor = AVATAR_COLORS[cIdx % AVATAR_COLORS.length];
-                          return (
+                      <div className="dub-stage">
+                        <div className="dub-video-shell">
+                          {dub.posterUrl && (
                             <div
-                              key={c.id}
+                              className="dub-video-backdrop"
                               style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                justifyContent: 'space-between',
-                                gap: '12px',
-                                background: '#1a1a1a',
-                                border: '1.5px solid #262626',
-                                borderRadius: '14px',
-                                padding: '11px 14px',
+                                backgroundImage: `url("${dub.posterUrl}")`,
                               }}
+                              aria-hidden="true"
+                            />
+                          )}
+                          {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+                          <video
+                            ref={(element) => {
+                              if (element)
+                                videoRefs.current.set(dub.id, element);
+                              else videoRefs.current.delete(dub.id);
+                            }}
+                            src={dub.videoUrl}
+                            poster={dub.posterUrl || undefined}
+                            muted={muted}
+                            playsInline
+                            loop
+                            preload={
+                              index <= activeIndex + 1 ? 'metadata' : 'none'
+                            }
+                            onClick={() => {
+                              if (isActive)
+                                setPausedId((current) =>
+                                  current === dub.id ? null : dub.id,
+                                );
+                            }}
+                            onDoubleClick={() => toggleLike(dub)}
+                            aria-label={`${dub.sceneTitle} dublaj videosu`}
+                          />
+                          <div className="dub-video-top">
+                            <span className="dub-live-badge">
+                              <span /> TOPLULUK DUBLAJI
+                            </span>
+                            <span className="dub-video-number">
+                              {String(index + 1).padStart(2, '0')} /{' '}
+                              {String(visibleDubs.length).padStart(2, '0')}
+                            </span>
+                          </div>
+                          {isActive && pausedId === dub.id && (
+                            <button
+                              type="button"
+                              className="dub-big-play"
+                              aria-label="Videoyu oynat"
+                              onClick={() => setPausedId(null)}
                             >
-                              <div style={{ display: 'flex', gap: '10px', minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    width: '28px',
-                                    height: '28px',
-                                    borderRadius: '8px',
-                                    background: badgeColor,
-                                    color: '#090909',
-                                    fontWeight: 900,
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                    marginTop: '1px',
-                                  }}
-                                >
-                                  {(c.userName || 'O').slice(0, 1).toUpperCase()}
-                                </div>
-                                <div style={{ minWidth: 0 }}>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '8px',
-                                      marginBottom: '2px',
-                                    }}
-                                  >
-                                    <strong style={{ fontSize: '13px', color: '#F5E636' }}>
-                                      @{c.userName}
-                                    </strong>
-                                    <span style={{ fontSize: '11px', color: '#777777', fontWeight: 700 }}>
-                                      {formatRelativeTime(c.createdAt)}
-                                    </span>
-                                  </div>
-                                  <p
-                                    style={{
-                                      margin: 0,
-                                      fontSize: '13.5px',
-                                      color: '#f4f4f5',
-                                      lineHeight: 1.45,
-                                      wordBreak: 'break-word',
-                                    }}
-                                  >
-                                    {c.text}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {canDelete && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteComment(dub.id, c.id)}
-                                  style={{
-                                    background: '#261616',
-                                    color: '#ff8881',
-                                    border: '1px solid #FA5636',
-                                    borderRadius: '8px',
-                                    padding: '4px 9px',
-                                    fontSize: '11px',
-                                    fontWeight: 800,
-                                    cursor: 'pointer',
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  Sil
-                                </button>
-                              )}
+                              <Play size={31} fill="currentColor" />
+                            </button>
+                          )}
+                          <div className="dub-video-bottom">
+                            <div>
+                              <span className="dub-video-category">
+                                {dub.category || 'SAHNE'}
+                              </span>
+                              <h2>{dub.sceneTitle}</h2>
+                              <p>
+                                {dub.players?.length
+                                  ? dub.players
+                                      .map((player) => `@${player.name}`)
+                                      .join('  ×  ')
+                                  : '@Oyuncu'}{' '}
+                                <span>· {relativeTime(dub.createdAt)}</span>
+                              </p>
                             </div>
-                          );
-                        })}
+                            <div className="dub-video-controls">
+                              <button
+                                type="button"
+                                aria-label={
+                                  pausedId === dub.id ? 'Oynat' : 'Duraklat'
+                                }
+                                onClick={() =>
+                                  setPausedId((current) =>
+                                    current === dub.id ? null : dub.id,
+                                  )
+                                }
+                              >
+                                {pausedId === dub.id ? (
+                                  <Play size={18} fill="currentColor" />
+                                ) : (
+                                  <Pause size={18} fill="currentColor" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+                                onClick={() => setMuted((current) => !current)}
+                              >
+                                {muted ? (
+                                  <VolumeX size={20} />
+                                ) : (
+                                  <Volume2 size={20} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="dub-action-rail">
+                          <button
+                            type="button"
+                            className={isLiked ? 'is-liked' : ''}
+                            onClick={() => toggleLike(dub)}
+                            aria-label={`Beğen, ${dub.likes || 0} beğeni`}
+                            aria-pressed={isLiked}
+                          >
+                            <Heart
+                              size={25}
+                              fill={isLiked ? 'currentColor' : 'none'}
+                            />
+                            <span>{dub.likes || 0}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCommentsId(dub.id);
+                              setCommentText('');
+                            }}
+                            aria-label={`${dub.comments?.length || 0} yorumu aç`}
+                          >
+                            <MessageCircle size={25} />
+                            <span>{dub.comments?.length || 0}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void share(dub.id)}
+                            aria-label="Dublajı paylaş"
+                          >
+                            <Share2 size={25} />
+                            <span>
+                              {copiedId === dub.id ? 'Kopyalandı' : 'Paylaş'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: '#777777',
-                          fontWeight: 700,
-                          marginBottom: '14px',
-                        }}
-                      >
-                        İlk yorumu sen yaz!
-                      </div>
-                    )}
-
-                    {/* Yorum Yazma Formu */}
-                    <form
-                      onSubmit={(e) => handleCommentSubmit(e, dub.id)}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr auto',
-                        gap: '10px',
+                      <aside className="dub-story-panel">
+                        <div className="dub-story-top">
+                          <span className="dub-story-label">
+                            <Sparkles size={15} /> REPLİK ORIGINAL
+                          </span>
+                          <span className="dub-story-index">
+                            #{String(index + 1).padStart(2, '0')}
+                          </span>
+                        </div>
+                        <div className="dub-story-main">
+                          <span className="dub-story-category">
+                            {dub.category || 'SAHNE'}
+                          </span>
+                          <h3>
+                            {dub.sceneTitle}
+                            <span>.</span>
+                          </h3>
+                          <p>Bu sahneye kendi sesini verenler:</p>
+                          <div className="dub-cast">
+                            {dub.players?.length ? (
+                              dub.players.map((player, playerIndex) => (
+                                <div key={`${player.name}-${playerIndex}`}>
+                                  <span
+                                    className="dub-avatar"
+                                    style={{
+                                      background: player.roleColor || accent,
+                                    }}
+                                  >
+                                    {player.name.slice(0, 1).toUpperCase()}
+                                  </span>
+                                  <div>
+                                    <strong>@{player.name}</strong>
+                                    <small>{player.roleName}</small>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="dub-anon">
+                                Replik oyuncuları
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="dub-story-bottom">
+                          <div className="dub-story-stats">
+                            <span>
+                              <Heart size={17} /> {dub.likes || 0} beğeni
+                            </span>
+                            <span>
+                              <MessageCircle size={17} />{' '}
+                              {dub.comments?.length || 0} yorum
+                            </span>
+                          </div>
+                          <Link href="/#sahneler" className="dub-make-cta">
+                            <Mic2 size={19} /> Sen de dublaj yap{' '}
+                            <ArrowRight size={19} />
+                          </Link>
+                          <span className="dub-swipe-hint">
+                            SONRAKİ DUBLAJ İÇİN KAYDIR <ChevronDown size={17} />
+                          </span>
+                        </div>
+                      </aside>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="dub-feed-navigation">
+                <span>
+                  {String(activeIndex + 1).padStart(2, '0')} <i>/</i>{' '}
+                  {String(visibleDubs.length).padStart(2, '0')}
+                </span>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => scrollTo(activeIndex - 1)}
+                    disabled={activeIndex === 0}
+                    aria-label="Önceki dublaj"
+                  >
+                    <ArrowUp size={21} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scrollTo(activeIndex + 1)}
+                    disabled={activeIndex >= visibleDubs.length - 1}
+                    aria-label="Sonraki dublaj"
+                  >
+                    <ArrowDown size={21} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            !loading && (
+              <div className="dub-empty">
+                <div className="dub-empty-symbol">
+                  <Clapperboard size={76} strokeWidth={1.3} />
+                </div>
+                <span>
+                  {sortBy === 'liked'
+                    ? 'BEĞENDİKLERİM'
+                    : category === 'TÜMÜ'
+                      ? 'İLK PERDE'
+                      : category}
+                </span>
+                <h2>
+                  {sortBy === 'liked'
+                    ? 'Henüz beğendiğin bir dublaj yok.'
+                    : category !== 'TÜMÜ'
+                      ? 'Bu kategoride henüz dublaj yok.'
+                      : 'Sahne hazır. İlk ses seninki olsun.'}
+                </h2>
+                <p>
+                  Bir sahne seç, dublajını kaydet ve burada herkesle paylaş.
+                </p>
+                <div>
+                  <Link href="/#sahneler">
+                    <Mic2 size={19} /> Sahne seç ve başla{' '}
+                    <ArrowRight size={18} />
+                  </Link>
+                  {(sortBy === 'liked' || category !== 'TÜMÜ') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortBy('latest');
+                        setCategory('TÜMÜ');
                       }}
                     >
-                      <input
-                        type="text"
-                        maxLength={400}
-                        value={commentInputs[dub.id] || ''}
-                        onChange={(e) =>
-                          setCommentInputs((prev) => ({
-                            ...prev,
-                            [dub.id]: e.target.value,
-                          }))
-                        }
-                        placeholder="Bu dublaja yorum yaz..."
-                        className="bbank-input"
-                        style={{
-                          padding: '12px 15px',
-                          fontSize: '13.5px',
-                          borderRadius: '14px',
-                        }}
-                      />
-                      <button
-                        type="submit"
-                        disabled={submittingCommentId === dub.id}
-                        style={{
-                          padding: '0 22px',
-                          borderRadius: '14px',
-                          border: 'none',
-                          background: '#F5E636',
-                          color: '#090909',
-                          fontSize: '13.5px',
-                          fontWeight: 900,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {submittingCommentId === dub.id ? '...' : 'Gönder'}
-                      </button>
-                    </form>
-                  </div>
-                </article>
-              );
-            })
+                      Tüm akışı gör
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
           )}
         </section>
+        <div className="dub-footer-strip">
+          <span>SESİNİ DUYUR ✳ SAHNEYİ PAYLAŞ ✳ TOPLULUĞA KATIL</span>
+          <Link href="/nasil-oynanir">
+            Nasıl oynanır? <ArrowRight size={18} />
+          </Link>
+        </div>
       </main>
+      {commentsDub && (
+        <div className="dub-comments-layer">
+          <button type="button" className="dub-comments-backdrop" aria-label="Yorumları kapat" onClick={() => setCommentsId(null)} />
+          <dialog
+            open
+            className="dub-comments-drawer"
+            aria-modal="true"
+            aria-label={`${commentsDub.sceneTitle} yorumları`}
+          >
+            <div className="dub-comments-head">
+              <div>
+                <span>TOPLULUK SOHBETİ</span>
+                <h2>
+                  Yorumlar <b>{commentsDub.comments?.length || 0}</b>
+                </h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Yorumları kapat"
+                onClick={() => setCommentsId(null)}
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <p className="dub-comments-context">
+              {commentsDub.sceneTitle} ·{' '}
+              {commentsDub.players
+                ?.map((player) => `@${player.name}`)
+                .join(', ')}
+            </p>
+            <div className="dub-comments-list">
+              {commentsDub.comments?.length ? (
+                commentsDub.comments.map((comment, index) => (
+                  <div className="dub-comment" key={comment.id}>
+                    <span
+                      className="dub-avatar"
+                      style={{ background: accents[index % accents.length] }}
+                    >
+                      {comment.userName?.slice(0, 1).toUpperCase() || 'O'}
+                    </span>
+                    <div>
+                      <div className="dub-comment-meta">
+                        <strong>@{comment.userName}</strong>
+                        <time>{relativeTime(comment.createdAt)}</time>
+                      </div>
+                      <p>{comment.text}</p>
+                    </div>
+                    {user?.id === comment.userId && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          deleteComment(commentsDub.id, comment.id)
+                        }
+                        aria-label="Yorumu sil"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="dub-no-comments">
+                  <MessageCircle size={43} />
+                  <strong>İlk yorumu sen yaz!</strong>
+                  <span>Bu dublaja ne diyorsun?</span>
+                </div>
+              )}
+            </div>
+            <form onSubmit={submitComment} className="dub-comment-form">
+              <input
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                maxLength={400}
+                placeholder="Bir yorum bırak..."
+                aria-label="Yorumun"
+              />
+              <button
+                type="submit"
+                disabled={!commentText.trim() || submitting}
+                aria-label="Yorumu gönder"
+              >
+                {submitting ? <span>...</span> : <Send size={20} />}
+              </button>
+            </form>
+          </dialog>
+        </div>
+      )}
     </div>
   );
 }
