@@ -491,7 +491,8 @@ export async function saveAudioRecording(
   const ext = blob.type.includes('wav') ? 'wav' : 'webm';
   const filePath = `recordings/${cleanCode}/${playerId}_${segment ?? 'full'}_${Date.now()}.${ext}`;
 
-  // 1. Supabase Storage'a yükle
+  // 1. Supabase Storage'a yükle (başarısız olursa Base64 Data URL fallback kullan)
+  let publicUrl = '';
   const { error: uploadError } = await supabase.storage
     .from('videos')
     .upload(filePath, blob, {
@@ -500,12 +501,17 @@ export async function saveAudioRecording(
     });
 
   if (uploadError) {
-    console.error('Ses yükleme hatası:', uploadError);
-    throw new Error(`Ses kaydedilemedi: ${uploadError.message}`);
+    console.warn('Supabase storage upload fallback to data URL:', uploadError.message);
+    publicUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => reject(new Error('Ses verisi okunamadı.'));
+      reader.readAsDataURL(blob);
+    });
+  } else {
+    const { data: urlData } = supabase.storage.from('videos').getPublicUrl(filePath);
+    publicUrl = urlData.publicUrl;
   }
-
-  const { data: urlData } = supabase.storage.from('videos').getPublicUrl(filePath);
-  const publicUrl = urlData.publicUrl;
 
   // 2. Odayı çek ve güncelle
   const { data: row, error: fetchError } = await supabase
@@ -518,24 +524,28 @@ export async function saveAudioRecording(
     throw new Error('Oda bulunamadı.');
   }
 
+  const segNum = Number(segment ?? 0);
   const recordings = (row.recordings || []).filter(
-    (r) => !(r.player === playerId && r.segment === (segment ?? 0)),
+    (r) => !(r.player === playerId && Number(r.segment) === segNum),
   );
   recordings.push({
     player: playerId,
-    segment: segment ?? 0,
+    segment: segNum,
     url: publicUrl,
   });
 
-  // Supabase'den güncel sahne repliklerini al
+  // Supabase'den ve yerel önbellekten güncel sahne repliklerini al
   const remoteScenes = await getScenesFromSupabase().catch(() => []);
-  const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
-  const sceneCuesList = sceneCues(row.scene, customList);
+  const localScenes = typeof window !== 'undefined' ? getCustomScenes() : [];
+  const mergedMap = new Map<number, Scene>();
+  localScenes.forEach((s) => mergedMap.set(Number(s.id), s));
+  remoteScenes.forEach((s) => mergedMap.set(Number(s.id), s));
+  const customList = mergedMap.size > 0 ? Array.from(mergedMap.values()) : undefined;
 
   const player = row.players.find((p) => p.id === playerId);
   if (player) {
-    const segs = new Set(player.segments || []);
-    if (segment !== null) segs.add(segment);
+    const segs = new Set((player.segments || []).map(Number));
+    if (segment !== null) segs.add(segNum);
     player.segments = Array.from(segs);
   }
 
@@ -549,18 +559,22 @@ export async function saveAudioRecording(
       customList,
       preferredRoles,
     );
-    const playerRecSegs = recordings.filter((r) => r.player === p.id).map((r) => r.segment);
-    const pSegs = new Set([...(p.segments || []), ...playerRecSegs]);
+    const playerRecSegs = recordings
+      .filter((r) => r.player === p.id)
+      .map((r) => Number(r.segment));
+    const pSegs = new Set([...(p.segments || []).map(Number), ...playerRecSegs]);
     p.segments = Array.from(pSegs);
-    const hasCompletedAll = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : true;
+    const hasCompletedAll =
+      pCues.length > 0 ? pCues.every((c) => pSegs.has(Number(c.id))) : true;
     p.audio = hasCompletedAll;
-    if (p.id === playerId) {
-      p.ready = hasCompletedAll ? 1 : 0;
+    if (hasCompletedAll) {
+      p.ready = 1;
+    } else if (p.id === playerId) {
+      p.ready = 0;
     }
   });
 
-  // ASLA tek taraf bitirince oyunu sonlandırma!
-  // SADECE VE SADECE odadaki TÜM oyuncular kendi repliklerini 100% tamamlayıp ready verdiğinde finale geç!
+  // Odadaki TÜM oyuncular kendi repliklerini 100% tamamlayıp ready verdiğinde finale geç!
   const allPlayersReadyAndFinished =
     row.players.length > 0 &&
     row.players.every((p, idx) => {
@@ -571,8 +585,9 @@ export async function saveAudioRecording(
         customList,
         preferredRoles,
       );
-      const pSegs = new Set(p.segments || []);
-      const isComplete = pCues.length > 0 ? pCues.every((c) => pSegs.has(c.id)) : true;
+      const pSegs = new Set((p.segments || []).map(Number));
+      const isComplete =
+        pCues.length > 0 ? pCues.every((c) => pSegs.has(Number(c.id))) : true;
       return p.ready === 1 && isComplete;
     });
 

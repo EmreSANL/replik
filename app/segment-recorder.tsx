@@ -589,10 +589,11 @@ export default function SegmentRecorder({
         media.getTracks().forEach((t) => t.stop());
         if (!mounted.current) return;
         if (!parts.length) return;
-        const blob = new Blob(parts, { type: r.mimeType }),
+        const blob = new Blob(parts, { type: r.mimeType || 'audio/webm' }),
           url = URL.createObjectURL(blob);
         urls.current.push(url);
-        setReviewedTakeId(null);
+        setReviewedTakeId(id);
+        setSavedUrls((u) => ({ ...u, [id]: url }));
         setTakes((t) => ({ ...t, [id]: { blob, url, peaks: [] } }));
         void blob
           .arrayBuffer()
@@ -601,19 +602,18 @@ export default function SegmentRecorder({
             if (mounted.current) {
               const peaks = peaksOf(buffer);
               setWaves((w) => ({ ...w, [id]: peaks }));
-              setTakes((t) => ({ ...t, [id]: { blob, url, peaks } }));
             }
           })
-          .catch(() =>
-            setError('Ses önizlemesi hazırlanamadı. Tekrar kaydet.'),
-          );
+          .catch(() => {});
         setError('');
+        // Kayıt bittiği veya "Kaydı bitir"e basıldığı anda otomatik olarak kaydet ve sıradaki repliğe/finale geç!
+        void save(id, blob);
       };
       recorder.current = r;
       // Orijinal konuşma kapalıdır; yalnızca ayrıştırılmış müzik ve efektler duyulur.
       v.muted = true;
       if (backing) backing.volume = 1;
-      r.start();
+      r.start(200);
       await Promise.all([
         v.play(),
         backing && (backing.src || readyInstrumentalUrl) ? backing.play().catch(() => {}) : Promise.resolve(),
@@ -622,14 +622,24 @@ export default function SegmentRecorder({
       setRecording(true);
       setPosition(current.start);
       previewEnd.current = scene.start + end;
+      const recStartedAt = Date.now();
+      const clipDuration = Math.max(0.25, end - current.start);
       timer.current = setInterval(() => {
-        setPosition(v.currentTime - scene.start);
+        const elapsed = (Date.now() - recStartedAt) / 1000;
+        setPosition(Math.min(end, v.currentTime - scene.start));
         if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
           backing.currentTime = v.currentTime;
         }
-        if (v.currentTime - scene.start >= end) {
+        if (
+          v.currentTime - scene.start >= end - 0.05 ||
+          v.ended ||
+          v.paused ||
+          elapsed >= clipDuration + 0.15
+        ) {
           stop();
-          v.currentTime = scene.start + end;
+          if (Number.isFinite(v.duration) && v.duration > 0) {
+            v.currentTime = Math.min(v.duration, scene.start + end);
+          }
         }
       }, 25);
     } catch (e) {
@@ -653,12 +663,24 @@ export default function SegmentRecorder({
     setBusy(true);
     setError('');
     try {
+      // Önce bellekte bekleyen diğer kaydedilmiş ama yüklenmemiş replikler varsa onları da sırayla kaydet
+      const pendingEntries = Object.entries(takes).filter(
+        ([k, v]) => Number(k) !== Number(targetId) && v?.blob && !me.segments?.includes(Number(k)),
+      );
+      for (const [k, pendingTake] of pendingEntries) {
+        try {
+          await saveAudioRecording(room.code, session.id, Number(k), pendingTake.blob);
+        } catch {
+          // ignore individual pending fallback
+        }
+      }
+
       let updatedRoom: Room | null = null;
       try {
         const res = await saveAudioRecording(
           room.code,
           session.id,
-          targetId,
+          Number(targetId),
           targetBlob,
         );
         updatedRoom = res.room;
@@ -684,13 +706,17 @@ export default function SegmentRecorder({
       setTakes((previous) => {
         const nextTakes = { ...previous };
         delete nextTakes[targetId];
+        for (const [k] of pendingEntries) {
+          delete nextTakes[Number(k)];
+        }
         return nextTakes;
       });
       setReviewedTakeId(null);
-      const myUpdatedSegs =
-        updatedRoom.players.find((p) => p.id === me.id)?.segments || [];
+      const myUpdatedSegs = (
+        updatedRoom.players.find((p) => p.id === me.id)?.segments || []
+      ).map(Number);
       const next = mine.find(
-        (c) => c.id !== targetId && !myUpdatedSegs.includes(c.id),
+        (c) => Number(c.id) !== Number(targetId) && !myUpdatedSegs.includes(Number(c.id)),
       );
       if (next) {
         setSelected(next.id);
@@ -944,19 +970,21 @@ export default function SegmentRecorder({
                   })}
                 </div>
 
-                {/* Oda Kurucusu (Host) için Opsiyonel Zorla Başlat Butonu (Eğer biri AFK kaldıysa) */}
-                {me.host === 1 && !isAllPlayersReady && room.players.length > 1 && (
-                  <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                {/* Final Sahnesine Geç Butonu */}
+                {me.host === 1 && (
+                  <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
-                      className="secondary"
+                      className="primary"
                       disabled={busy}
-                      style={{ fontSize: '12px', padding: '6px 12px', opacity: 0.8 }}
+                      style={{ width: '100%' }}
                       onClick={async () => {
-                        const ok = window.confirm(
-                          'Tüm oyuncular henüz dublajlarını tamamlamadı. Yine de finali başlatmak istiyor musunuz?',
-                        );
-                        if (!ok) return;
+                        if (!isAllPlayersReady && room.players.length > 1) {
+                          const ok = window.confirm(
+                            'Tüm oyuncular henüz dublajlarını tamamlamadı. Yine de finali başlatmak istiyor musunuz?',
+                          );
+                          if (!ok) return;
+                        }
                         setBusy(true);
                         try {
                           const finalRoom = await executeGameRoomAction(
@@ -973,7 +1001,9 @@ export default function SegmentRecorder({
                         }
                       }}
                     >
-                      Oda Kurucusu: Finali Şimdi Başlat (Zorla)
+                      {isAllPlayersReady || room.players.length === 1
+                        ? 'Final Sahnesine Geç 🎬'
+                        : 'Oda Kurucusu: Finali Şimdi Başlat'}
                     </button>
                   </div>
                 )}
@@ -1257,19 +1287,15 @@ export default function SegmentRecorder({
                 className="primary cue-record"
                 onClick={() => {
                   if (take) {
-                    if (reviewedTakeId === selected) {
-                      void save();
-                    } else {
-                      void savedAudio.current?.play().catch(() => setError('Kayıt oynatılamadı. Tekrar dene.'));
-                    }
+                    void save();
                   } else {
                     void record();
                   }
                 }}
                 disabled={busy}
               >
-                {take ? <Play size={19} /> : <Mic size={19} />}
-                {take ? (reviewedTakeId === selected ? 'Kaydı kullan' : 'Kaydı dinle') : isSaved ? 'Yeniden kaydet' : 'Şimdi seslendir'}
+                {take ? <Check size={19} /> : <Mic size={19} />}
+                {take ? 'Kaydı kaydet ve devam et' : isSaved ? 'Yeniden kaydet' : 'Şimdi seslendir'}
               </button>
             )}
             <div className="cue-selected-summary">
