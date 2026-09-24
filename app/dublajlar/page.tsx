@@ -388,14 +388,14 @@ export default function DublajlarPage() {
                   const isActive = currentActiveId === dub.id;
                   const accent = accents[index % accents.length];
                   return (
-                    <article
+                      <article
                       className="dub-slide"
                       key={dub.id}
                       data-dub-id={dub.id}
                       data-dub-index={index}
                       style={{ '--dub-accent': accent } as React.CSSProperties}
                     >
-                      
+                      <div className="dub-slide-center">
                         <div className="dub-video-shell">
                           {dub.posterUrl && (
                             <div
@@ -441,90 +441,89 @@ export default function DublajlarPage() {
                               <Play size={31} fill="currentColor" />
                             </button>
                           )}
-                          <div className="dub-video-bottom">
-                            <div>
-                              <span className="dub-video-category">
-                                {dub.category || 'SAHNE'}
-                              </span>
-                              <h2>{dub.sceneTitle}</h2>
-                              <p>
-                                {dub.players?.length
-                                  ? dub.players
-                                      .map((player) => `@${player.name}`)
-                                      .join('  ×  ')
-                                  : '@Oyuncu'}{' '}
-                                <span>· {relativeTime(dub.createdAt)}</span>
-                              </p>
-                            </div>
-                            <div className="dub-video-controls">
-                              <button
-                                type="button"
-                                aria-label={
-                                  pausedId === dub.id ? 'Oynat' : 'Duraklat'
-                                }
-                                onClick={() =>
-                                  setPausedId((current) =>
-                                    current === dub.id ? null : dub.id,
-                                  )
-                                }
-                              >
-                                {pausedId === dub.id ? (
-                                  <Play size={18} fill="currentColor" />
-                                ) : (
-                                  <Pause size={18} fill="currentColor" />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-                                onClick={() => setMuted((current) => !current)}
-                              >
-                                {muted ? (
-                                  <VolumeX size={20} />
-                                ) : (
-                                  <Volume2 size={20} />
-                                )}
-                              </button>
-                            </div>
+                          <div className="dub-video-controls">
+                            <button
+                              type="button"
+                              aria-label={
+                                pausedId === dub.id ? 'Oynat' : 'Duraklat'
+                              }
+                              onClick={() =>
+                                setPausedId((current) =>
+                                  current === dub.id ? null : dub.id,
+                                )
+                              }
+                            >
+                              {pausedId === dub.id ? (
+                                <Play size={18} fill="currentColor" />
+                              ) : (
+                                <Pause size={18} fill="currentColor" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+                              onClick={() => setMuted((current) => !current)}
+                            >
+                              {muted ? (
+                                <VolumeX size={20} />
+                              ) : (
+                                <Volume2 size={20} />
+                              )}
+                            </button>
                           </div>
                         </div>
-                        <div className="dub-action-rail">
-                          <button
-                            type="button"
-                            className={isLiked ? 'is-liked' : ''}
-                            onClick={() => toggleLike(dub)}
-                            aria-label={`Beğen, ${dub.likes || 0} beğeni`}
-                            aria-pressed={isLiked}
-                          >
-                            <Heart
-                              size={25}
-                              fill={isLiked ? 'currentColor' : 'none'}
-                            />
-                            <span>{dub.likes || 0}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCommentsId(dub.id);
-                              setCommentText('');
-                            }}
-                            aria-label={`${dub.comments?.length || 0} yorumu aç`}
-                          >
-                            <MessageCircle size={25} />
-                            <span>{dub.comments?.length || 0}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void share(dub.id)}
-                            aria-label="Dublajı paylaş"
-                          >
-                            <Share2 size={25} />
-                            <span>
-                              {copiedId === dub.id ? 'Kopyalandı' : 'Paylaş'}
-                            </span>
-                          </button>
+                        <div className="dub-slide-info">
+                          <span className="dub-video-category">
+                            {dub.category || 'SAHNE'}
+                          </span>
+                          <h2>{dub.sceneTitle}</h2>
+                          <p>
+                            {dub.players?.length
+                              ? dub.players
+                                  .map((player) => `@${player.name}`)
+                                  .join('  ×  ')
+                              : '@Oyuncu'}{' '}
+                            <span>· {relativeTime(dub.createdAt)}</span>
+                          </p>
                         </div>
-                      </article>
+                      </div>
+                      <div className="dub-action-rail">
+                        <button
+                          type="button"
+                          className={isLiked ? 'is-liked' : ''}
+                          onClick={() => toggleLike(dub)}
+                          aria-label={`Beğen, ${dub.likes || 0} beğeni`}
+                          aria-pressed={isLiked}
+                        >
+                          <Heart
+                            size={25}
+                            fill={isLiked ? 'currentColor' : 'none'}
+                          />
+                          <span>{dub.likes || 0}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCommentsId(dub.id);
+                            setCommentText('');
+                          }}
+                          aria-label={`${dub.comments?.length || 0} yorumu aç`}
+                        >
+                          <MessageCircle size={25} />
+                          <span>{dub.comments?.length || 0}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void share(dub.id)}
+                          aria-label="Dublajı paylaş"
+                        >
+                          <Share2 size={25} />
+                          <span>
+                            {copiedId === dub.id ? 'Kopyalandı' : 'Paylaş'}
+                          </span>
+                        </button>
+                      </div>
+                    </article>
                   );
                 })}
               </div>
