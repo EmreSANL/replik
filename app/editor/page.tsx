@@ -310,6 +310,7 @@ export default function EditorPage() {
   const handleLoadedMetadata = () => {
     const vid = videoRef.current;
     if (!vid) return;
+    const job = videoJobRef.current;
     if (localVideoUrlRef.current && vid.src !== localVideoUrlRef.current) {
       URL.revokeObjectURL(localVideoUrlRef.current);
       localVideoUrlRef.current = null;
@@ -323,7 +324,7 @@ export default function EditorPage() {
         sourceFileRef.current || undefined,
         duration,
       ).then((resolved) => {
-        if (Number.isFinite(resolved) && resolved >= 0.5) {
+        if (videoJobRef.current === job && Number.isFinite(resolved) && resolved >= 0.5) {
           setDuration(resolved);
         }
       });
@@ -954,6 +955,7 @@ export default function EditorPage() {
   const [isPreparingTrim, setIsPreparingTrim] = useState(false);
 
   const openTrimModal = useCallback(async () => {
+    const job = videoJobRef.current;
     if (originalFileRef.current) {
       setPendingVideo(originalFileRef.current);
       return;
@@ -968,15 +970,18 @@ export default function EditorPage() {
         showToast('Video kırpma editörüne hazırlanıyor...');
         const res = await fetch(videoUrl);
         const blob = await res.blob();
+        if (videoJobRef.current !== job) return;
         const file = new File([blob], `${title || 'sahne'}.mp4`, {
           type: blob.type || 'video/mp4',
         });
         sourceFileRef.current = file;
         setPendingVideo(file);
       } catch {
-        showToast('Video kırpıcı açılamadı. Lütfen dosyayı doğrudan seçin.');
+        if (videoJobRef.current === job) {
+          showToast('Video kırpıcı açılamadı. Lütfen dosyayı doğrudan seçin.');
+        }
       } finally {
-        setIsPreparingTrim(false);
+        if (videoJobRef.current === job) setIsPreparingTrim(false);
       }
     } else {
       showToast('Önce bir video yükleyin veya sahne seçin.');
@@ -1127,6 +1132,7 @@ export default function EditorPage() {
 
   const handleRemoveVideo = useCallback(() => {
     videoJobRef.current += 1;
+    hasLoadedUrlScene.current = true;
     audioPreparationRef.current?.controller.abort();
     sourceFileRef.current = null;
     originalFileRef.current = null;
@@ -1148,9 +1154,21 @@ export default function EditorPage() {
     setVocalError('');
     setVocalNotice('');
     setPendingVideo(null);
+    setIsPreparingTrim(false);
+    setUploadProgress(0);
     setTimelineExpanded(false);
-    showToast('Video düzenleyiciden kaldırıldı. Yeni video ekleyebilirsiniz.');
-  }, [showToast]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('sceneId')) {
+        url.searchParams.delete('sceneId');
+        window.history.replaceState(window.history.state, '', url);
+      }
+    }
+    showToast(isEditingExisting
+      ? 'Video bu düzenlemeden kaldırıldı. Kayıtlı sahne değişmedi; yeni video seçip kaydedin.'
+      : 'Video düzenleyiciden kaldırıldı. Yeni video ekleyebilirsiniz.');
+  }, [isEditingExisting, showToast]);
 
   // URL query parametresinden sceneId oku ve ilgili sahneyi otomatik yükle
   useEffect(() => {
@@ -1169,6 +1187,7 @@ export default function EditorPage() {
       queueMicrotask(() => loadScene(found));
     } else {
       void getScenesFromSupabase().then((scs) => {
+        if (hasLoadedUrlScene.current) return;
         const merged = getAllScenes(scs || []);
         const f = merged.find((s) => s.id === targetId);
         if (f) {
