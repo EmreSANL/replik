@@ -83,15 +83,19 @@ button:disabled {
 }
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 4px;
-}
-textarea:focus-visible,
-select:focus-visible,
 [role='button']:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 3px;
+}
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
 }
 a {
   text-decoration: none;
@@ -5147,7 +5151,7 @@ audio {
 .trim-confirm { display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; background: var(--primary); color: var(--ink); }
 .trim-confirm:hover { background: #fff267; }
 .trim-actions button:disabled { opacity: .5; cursor: not-allowed; }
-.trim-dialog button:focus-visible, .trim-dialog input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.trim-dialog button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 @media (max-width: 560px) {
   .trim-dialog { padding: 18px; gap: 15px; }
   .trim-actions { flex-direction: column-reverse; }
