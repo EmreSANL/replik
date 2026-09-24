@@ -1173,29 +1173,154 @@ export default function Studio({
                 </span>
               </div>
 
-              <ul className="players">
-                {room.players.map((p) => (
-                  <li key={p.id}>
-                    <span className="avatar">
-                      {p.name[0].toLocaleUpperCase('tr')}
-                    </span>
-                    <div className="player-details">
-                      <span>
-                        {p.name} {p.id === me.id && <small>(sen)</small>}
-                        {p.host === 1 && <small> · kurucu</small>}
-                      </span>
-                      {p.micTested && (
-                        <span className="mic-verified-badge">
-                          <Check size={11} /> Mikrofon OK
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '10px',
+                  marginBottom: '16px',
+                }}
+              >
+                {Array.from({
+                  length: Math.max(room.players.length, room.maxPlayers || 1),
+                }).map((_, slotIdx) => {
+                  const p = room.players[slotIdx];
+                  const tileColors = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
+                  const bg = tileColors[slotIdx % tileColors.length];
+
+                  if (!p) {
+                    return (
+                      <div
+                        key={`empty-slot-${slotIdx}`}
+                        style={{
+                          aspectRatio: '1 / 1',
+                          minHeight: '118px',
+                          borderRadius: '16px',
+                          border: '2px dashed #2e2e28',
+                          background: '#141412',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '12px',
+                          color: '#6e6e66',
+                        }}
+                      >
+                        <Users size={20} />
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 900,
+                            letterSpacing: '0.06em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          BEKLENİYOR
                         </span>
-                      )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        aspectRatio: '1 / 1',
+                        minHeight: '118px',
+                        borderRadius: '16px',
+                        border: '2px solid #090909',
+                        background: bg,
+                        color: '#090909',
+                        boxShadow: '0 4px 0 #090909',
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: '6px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '10px',
+                            background: '#090909',
+                            color: bg,
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontSize: '16px',
+                            fontWeight: 950,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {p.name[0]?.toLocaleUpperCase('tr') || '?'}
+                        </span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 8px',
+                            borderRadius: '999px',
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            background: p.ready ? '#090909' : 'rgba(9,9,9,0.12)',
+                            color: p.ready ? '#B8E6C1' : '#090909',
+                            border: '1.5px solid #090909',
+                          }}
+                        >
+                          {p.ready ? (
+                            <>
+                              <Check size={12} strokeWidth={3} /> HAZIR
+                            </>
+                          ) : (
+                            'BEKLİYOR'
+                          )}
+                        </span>
+                      </div>
+
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            letterSpacing: '0.06em',
+                            textTransform: 'uppercase',
+                            opacity: 0.72,
+                            marginBottom: '2px',
+                          }}
+                        >
+                          {p.host === 1 ? 'KURUCU' : 'OYUNCU'}
+                          {p.id === me.id ? ' · SEN' : ''}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '17px',
+                            fontWeight: 950,
+                            letterSpacing: '-0.04em',
+                            lineHeight: 1.05,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {p.name}
+                        </div>
+                      </div>
                     </div>
-                    <span className={`player-ready-status ${p.ready ? 'ready' : ''}`}>
-                      {p.ready ? <><Check size={16} /> Hazır</> : 'Bekleniyor'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
 
               <div className="lobby-action-buttons">
                 <button
@@ -1286,30 +1411,76 @@ export default function Studio({
                   </span>
 
                   <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #2d3423' }}>
-                    <div className="eyebrow" style={{ marginBottom: 6 }}>ODADAKİ OYUNCULAR</div>
-                    <ul className="players">
+                    <div className="eyebrow" style={{ marginBottom: 8 }}>ODADAKİ OYUNCULAR</div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: '8px',
+                      }}
+                    >
                       {room.players.map((p, pIdx) => {
                         const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
                         const pDone = pAssigned.length > 0 ? pAssigned.every((c) => p.segments?.includes(c.id)) : p.audio;
                         const isReady = p.ready === 1 && pDone;
+                        const tileColors = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
+                        const bg = tileColors[pIdx % tileColors.length];
                         return (
-                          <li key={p.id}>
-                            <span className="avatar">{p.name[0]?.toLocaleUpperCase('tr') || '?'}</span>
-                            <span className="player-details">
-                              <strong>{p.name} {p.id === me.id ? '(Sen)' : ''}</strong>
-                              <small style={{ color: isReady ? '#4ade80' : '#8c8e82' }}>
-                                {isReady ? 'Hazır (Ready) ✓' : `${p.segments?.length || 0}/${pAssigned.length} replik`}
-                              </small>
-                            </span>
-                            {isReady ? (
-                              <Check size={16} color="#4ade80" />
-                            ) : (
-                              <span className="waiting-dot" />
-                            )}
-                          </li>
+                          <div
+                            key={p.id}
+                            style={{
+                              aspectRatio: '1 / 1',
+                              minHeight: '104px',
+                              borderRadius: '14px',
+                              border: '2px solid #090909',
+                              background: bg,
+                              color: '#090909',
+                              boxShadow: '0 3px 0 #090909',
+                              padding: '10px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span
+                                style={{
+                                  width: '28px',
+                                  height: '28px',
+                                  borderRadius: '8px',
+                                  background: '#090909',
+                                  color: bg,
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  fontSize: '13px',
+                                  fontWeight: 950,
+                                }}
+                              >
+                                {p.name[0]?.toLocaleUpperCase('tr') || '?'}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 900,
+                                  padding: '3px 7px',
+                                  borderRadius: '999px',
+                                  background: isReady ? '#090909' : 'rgba(9,9,9,0.14)',
+                                  color: isReady ? '#B8E6C1' : '#090909',
+                                  border: '1.5px solid #090909',
+                                }}
+                              >
+                                {isReady ? 'HAZIR ✓' : `${p.segments?.length || 0}/${pAssigned.length}`}
+                              </span>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '-0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {p.name}
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
-                    </ul>
+                    </div>
                   </div>
                 </>
               );
@@ -1320,22 +1491,59 @@ export default function Studio({
                 <Volume2 />
               </div>
               <h2>Final hazır</h2>
-              <p>
-                Birlikte başlatınca 3 saniyelik geri sayımın ardından video ve sesler oynar.
-              </p>
-              <ul className="players">
-                {room.players.map((p) => (
-                  <li key={p.id}>
-                    <span className="avatar">{p.name[0]}</span>
-                    <span className="player-details">{p.name}</span>
-                    {p.ready ? (
-                      <Check size={16} />
-                    ) : (
-                      <span className="waiting-dot" />
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '8px',
+                  marginBottom: '12px',
+                }}
+              >
+                {room.players.map((p, pIdx) => {
+                  const tileColors = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
+                  const bg = tileColors[pIdx % tileColors.length];
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        aspectRatio: '1 / 1',
+                        minHeight: '100px',
+                        borderRadius: '14px',
+                        border: '2px solid #090909',
+                        background: bg,
+                        color: '#090909',
+                        boxShadow: '0 3px 0 #090909',
+                        padding: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '8px',
+                            background: '#090909',
+                            color: bg,
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontSize: '13px',
+                            fontWeight: 950,
+                          }}
+                        >
+                          {p.name[0]?.toLocaleUpperCase('tr') || '?'}
+                        </span>
+                        {p.ready ? <Check size={16} strokeWidth={3} /> : <span className="waiting-dot" />}
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '-0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.name}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
               {/* Ana Dublaj Oynat/Durdur Butonu */}
               <button
                 className={`primary final-main-play-btn ${playing ? 'is-playing' : ''}`}
