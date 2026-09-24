@@ -41,3 +41,7 @@ next-env.d.ts
 *.tsbuildinfo
 .venv-splitter/
 .venv/
+
+# Python model-worker bytecode
+__pycache__/
+*.pyc

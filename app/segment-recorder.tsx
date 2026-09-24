@@ -12,13 +12,6 @@ import {
 } from '@/lib/scenes';
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
-import {
-  createMneAudioBuffer,
-  decodeMediaAudioBuffer,
-  audioBufferToWav,
-  removeVocalsFromVideo,
-} from '@/lib/vocal-remover';
-import { supabase } from '@/lib/supabase';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 
@@ -195,75 +188,14 @@ export default function SegmentRecorder({
     savedAudio = useRef<HTMLAudioElement>(null),
     segmentAudio = useRef<HTMLAudioElement | null>(null),
     instrumentalAudio = useRef<HTMLAudioElement | null>(null);
-  const [resolvedInstrumentalUrl, setResolvedInstrumentalUrl] = useState<string>(scene.instrumental || '');
-  const generatingMneRef = useRef<Promise<string> | null>(null);
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
 
-  async function ensureInstrumentalReady(): Promise<string> {
-    const isPureAi =
-      Boolean(scene.instrumental) &&
-      (scene.instrumental!.includes('/pure_htdemucs_') ||
-        scene.instrumental!.includes('/splitter_'));
-    if (isPureAi && scene.instrumental) {
-      if (resolvedInstrumentalUrl !== scene.instrumental) {
-        setResolvedInstrumentalUrl(scene.instrumental);
-      }
-      if (
-        instrumentalAudio.current &&
-        instrumentalAudio.current.src !== scene.instrumental
-      ) {
-        instrumentalAudio.current.src = scene.instrumental;
-      }
-      return scene.instrumental;
+  function ensureInstrumentalReady(): string {
+    if (!scene.instrumental || !scene.instrumental.startsWith('https://')) {
+      throw new Error('Bu sahnenin arka plan sesi hazır değil. Sahneyi editörde hazırlayıp kaydedin.');
     }
-    if (resolvedInstrumentalUrl && resolvedInstrumentalUrl.includes('/pure_htdemucs_')) {
-      return resolvedInstrumentalUrl;
-    }
-    if (!scene.video) return scene.instrumental || '';
-    if (generatingMneRef.current) return generatingMneRef.current;
-
-    const task = (async () => {
-      try {
-        const cloudRes = await removeVocalsFromVideo(
-          scene.video,
-          scene.title,
-          undefined,
-          cues,
-        );
-        if (cloudRes.url) {
-          if (mounted.current) {
-            setResolvedInstrumentalUrl(cloudRes.url);
-            if (instrumentalAudio.current) {
-              instrumentalAudio.current.src = cloudRes.url;
-              instrumentalAudio.current.load();
-            }
-          }
-          if (!cloudRes.url.startsWith('blob:')) {
-            await supabase
-              .from('custom_scenes')
-              .update({ instrumental_url: cloudRes.url })
-              .eq('id', scene.id);
-          }
-          return cloudRes.url;
-        }
-        return scene.instrumental || '';
-      } catch (err) {
-        console.warn('Splitter-AI hazırlama uyarısı:', err);
-        return scene.instrumental || '';
-      } finally {
-        generatingMneRef.current = null;
-      }
-    })();
-
-    generatingMneRef.current = task;
-    return task;
+    return scene.instrumental;
   }
-
-  useEffect(() => {
-    if (scene.video || scene.instrumental) {
-      void ensureInstrumentalReady();
-    }
-  }, [scene.id, scene.instrumental, scene.video]);
 
   function stop() {
     previewEnd.current = null;
@@ -567,7 +499,7 @@ export default function SegmentRecorder({
     stop();
     try {
       const backing = instrumentalAudio.current;
-      const readyInstrumentalUrl = await ensureInstrumentalReady();
+      const readyInstrumentalUrl = ensureInstrumentalReady();
       if (backing && readyInstrumentalUrl && backing.src !== readyInstrumentalUrl) {
         backing.src = readyInstrumentalUrl;
         backing.load();
@@ -787,48 +719,28 @@ export default function SegmentRecorder({
         ([k, v]) => Number(k) !== Number(targetId) && v?.blob && !me.segments?.includes(Number(k)),
       );
       for (const [k, pendingTake] of pendingEntries) {
-        try {
-          await saveAudioRecording(room.code, session.id, Number(k), pendingTake.blob);
-        } catch {
-          // ignore individual pending fallback
-        }
-      }
-
-      let updatedRoom: Room | null = null;
-      try {
-        const res = await saveAudioRecording(
-          room.code,
-          session.id,
-          Number(targetId),
-          targetBlob,
-        );
-        updatedRoom = res.room;
-      } catch (err) {
-        console.warn('Direct Supabase save warning, trying API fallback:', err);
-      }
-
-      if (!updatedRoom) {
-        const r = await fetch(`${api}?segment=${targetId}`, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${session.token}`,
-            'Content-Type': targetBlob.type,
-          },
-          body: targetBlob,
+        const result = await saveAudioRecording(room.code, session.id, Number(k), pendingTake.blob);
+        onRoom(result.room);
+        setTakes((previous) => {
+          const remaining = { ...previous };
+          delete remaining[Number(k)];
+          return remaining;
         });
-        const data = (await r.json()) as { room: Room; error?: string };
-        if (!r.ok) throw new Error(data.error);
-        updatedRoom = data.room;
       }
 
+      // A failed database write must leave the local take available for retry.
+      // The legacy API uses a separate room store and cannot recover a Supabase save.
+      const { room: updatedRoom } = await saveAudioRecording(
+        room.code,
+        session.id,
+        Number(targetId),
+        targetBlob,
+      );
       onRoom(updatedRoom);
       setTakes((previous) => {
-        const nextTakes = { ...previous };
-        delete nextTakes[targetId];
-        for (const [k] of pendingEntries) {
-          delete nextTakes[Number(k)];
-        }
-        return nextTakes;
+        const remaining = { ...previous };
+        delete remaining[targetId];
+        return remaining;
       });
       setReviewedTakeId(null);
       const myUpdatedSegs = (
@@ -865,32 +777,13 @@ export default function SegmentRecorder({
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
       <audio
         ref={instrumentalAudio}
-        src={resolvedInstrumentalUrl || undefined}
+        src={scene.instrumental || undefined}
         preload="auto"
         playsInline
         aria-hidden="true"
         onError={() => {
-          if (scene.video) {
-            setResolvedInstrumentalUrl('');
-            void (async () => {
-              try {
-                const decoded = await decodeMediaAudioBuffer(scene.video);
-                const mneBuf = await createMneAudioBuffer(decoded);
-                const wavBlob = audioBufferToWav(mneBuf);
-                const localUrl = URL.createObjectURL(wavBlob);
-                urls.current.push(localUrl);
-                if (mounted.current) {
-                  setResolvedInstrumentalUrl(localUrl);
-                  if (instrumentalAudio.current) {
-                    instrumentalAudio.current.src = localUrl;
-                    instrumentalAudio.current.load();
-                  }
-                }
-              } catch {
-                // ignore
-              }
-            })();
-          }
+          stop();
+          setError('Hazırlanmış arka plan sesi yüklenemedi. Bağlantınızı kontrol edin veya sahneyi editörde açın.');
         }}
         style={{ display: 'none' }}
       />

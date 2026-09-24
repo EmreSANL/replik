@@ -448,18 +448,24 @@ export default function Home() {
 
               <div
                 className="replik-hero-feature"
+                role={hasScenes ? 'button' : undefined}
+                tabIndex={hasScenes ? 0 : -1}
+                aria-label={hasScenes ? `${activeScene.title} sahnesini önizle` : undefined}
                 onMouseEnter={() => setHeroPaused(true)}
                 onMouseLeave={() => setHeroPaused(false)}
                 onClick={() => {
                   if (hasScenes) setPreview(selected);
                 }}
+                onKeyDown={(event) => {
+                  if (hasScenes && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    setPreview(selected);
+                  }
+                }}
                 style={{
                   cursor: hasScenes ? 'pointer' : 'default',
                   display: 'flex',
                   flexDirection: 'column',
-                  height: '100%',
-                  minHeight: '500px',
-                  maxHeight: '500px',
                   overflow: 'hidden',
                   position: 'relative',
                 }}

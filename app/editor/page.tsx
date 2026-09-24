@@ -45,7 +45,7 @@ import {
   deleteCustomScene,
 } from '@/lib/scenes';
 import { useWhisper } from '@/lib/use-whisper';
-import { removeVocalsFromVideo, reduceCenteredVocals } from '@/lib/vocal-remover';
+import { prepareSceneBackground } from '@/lib/vocal-remover';
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
 import { VideoTrimDialog } from '@/components/video-trim-dialog';
@@ -107,7 +107,7 @@ export default function EditorPage() {
   const [vocalNotice, setVocalNotice] = useState('');
   const [isRemovingVocals, setIsRemovingVocals] = useState<boolean>(false);
   const [vocalProgress, setVocalProgress] = useState<number>(0);
-  const [, setVocalStage] = useState<string>('');
+  const [vocalStage, setVocalStage] = useState<string>('');
   const [audioMode, setAudioMode] = useState<'original' | 'instrumental'>(
     'instrumental',
   );
@@ -150,6 +150,7 @@ export default function EditorPage() {
   const [timelineZoom, setTimelineZoom] = useState<number>(2);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const videoJobRef = useRef(0);
+  const audioPreparationRef = useRef<{ job: number; controller: AbortController } | null>(null);
   const sourceFileRef = useRef<File | null>(null);
   const originalFileRef = useRef<File | null>(null);
   const localVideoUrlRef = useRef<string | null>(null);
@@ -796,10 +797,46 @@ export default function EditorPage() {
     );
   };
 
+  const prepareBackground = useCallback(async (source: string, job: number, retry = false) => {
+    if (audioPreparationRef.current?.job === job) return;
+    audioPreparationRef.current?.controller.abort();
+    const controller = new AbortController();
+    audioPreparationRef.current = { job, controller };
+    setIsRemovingVocals(true);
+    setVocalError('');
+    setVocalNotice('');
+    setVocalProgress(10);
+    setVocalStage('Arka plan sesi hazırlanıyor...');
+    try {
+      const result = await prepareSceneBackground(source, (stage, percent) => {
+        if (videoJobRef.current !== job) return;
+        setVocalStage(stage);
+        setVocalProgress(percent);
+      }, { retry, signal: controller.signal });
+      if (videoJobRef.current !== job) return;
+      setInstrumentalUrl(result.url);
+      setAudioMode('instrumental');
+      setVocalNotice('Arka plan sesi hazır. Orijinal sesle karşılaştırıp dinleyin; ardından sahneyi kaydedin.');
+      showToast('Arka plan sesi hazır. Oyunlarda bu kayıt kullanılacak.');
+    } catch (error) {
+      if (videoJobRef.current !== job || controller.signal.aborted) return;
+      setVocalError((error as Error).message);
+      setAudioMode('original');
+    } finally {
+      if (audioPreparationRef.current?.controller === controller) audioPreparationRef.current = null;
+      if (videoJobRef.current === job) setIsRemovingVocals(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => () => { audioPreparationRef.current?.controller.abort(); }, []);
+
   // Video işleme fonksiyonu (Önizleme + Supabase Yükleme + AI Transkripsiyon)
   const processVideoFile = useCallback(
     (file: File, selectedDuration: number) => {
       const job = ++videoJobRef.current;
+      audioPreparationRef.current?.controller.abort();
+      setIsRemovingVocals(false);
+      setAudioMode('original');
       sourceFileRef.current = file;
       setVocalError('');
       setVocalNotice('');
@@ -868,7 +905,8 @@ export default function EditorPage() {
           if (videoJobRef.current !== job) return;
           setVideoUrl(url); // Artık herkese açık kalıcı Supabase URL'si
           setIsUploadingToSupabase(false);
-          showToast('Video Supabase Storage bulutuna başarıyla yüklendi!');
+          showToast('Video yüklendi. Arka plan sesi hazırlanıyor...');
+          void prepareBackground(url, job);
         })
         .catch((err) => {
           if (videoJobRef.current !== job) return;
@@ -890,32 +928,7 @@ export default function EditorPage() {
             const newCues = result.cues;
             setCues(newCues);
             if (newCues.length > 0) setSelectedCueId(newCues[0].id);
-            showToast(
-              `AI Altyazı tamamlandı: ${newCues.length} replik yakalandı ve diyalog sesleri M&E kanalından siliniyor.`,
-            );
-            // Altyazı zaman aralıkları (newCues) belli olduğunda bu replik anlarındaki insan sesini %100 sıfırla
-            void removeVocalsFromVideo(
-              file,
-              file.name,
-              (st, pct) => {
-                if (videoJobRef.current !== job) return;
-                setVocalStage(st);
-                setVocalProgress(pct);
-              },
-              newCues,
-            ).then(async (res) => {
-              if (videoJobRef.current !== job) return;
-              setInstrumentalUrl(res.url);
-              setIsRemovingVocals(false);
-              setAudioMode('instrumental');
-              try {
-                const { supabase } = await import('@/lib/supabase');
-                await supabase
-                  .from('custom_scenes')
-                  .update({ instrumental_url: res.url })
-                  .eq('id', sceneId);
-              } catch {}
-            });
+            showToast(`AI Altyazı tamamlandı: ${newCues.length} replik yakalandı.`);
           } else {
             showToast('ℹ️ Videoda belirgin konuşma tespit edilemedi.');
           }
@@ -925,46 +938,8 @@ export default function EditorPage() {
           showToast(`Altyazı analizi: ${(err as Error).message}`);
         });
 
-      // 4. Videodaki konuşma kanalını anında ayır (VAD + AI M&E)
-      setIsRemovingVocals(true);
-      setVocalProgress(15);
-      setVocalStage('Konuşma sesleri silinip müzik ve efektler ayrıştırılıyor...');
-      removeVocalsFromVideo(
-        file,
-        file.name,
-        (stage, pct) => {
-          if (videoJobRef.current !== job) return;
-          setVocalStage(stage);
-          setVocalProgress(pct);
-        },
-        cues,
-      )
-        .then(async (res) => {
-          if (videoJobRef.current !== job) return;
-          setInstrumentalUrl(res.url);
-          setIsRemovingVocals(false);
-          setVocalError('');
-          setVocalNotice('');
-          setAudioMode('instrumental');
-          // Sahne zaten kaydedilmişse instrumental_url alanını anında güncelle
-          try {
-            const { supabase } = await import('@/lib/supabase');
-            await supabase
-              .from('custom_scenes')
-              .update({ instrumental_url: res.url })
-              .eq('id', sceneId);
-          } catch {}
-          showToast('Vokaller silindi, sadece müzik ve ses efektleri (M&E) bırakıldı.');
-        })
-        .catch((err) => {
-          if (videoJobRef.current !== job) return;
-          setIsRemovingVocals(false);
-          setVocalError((err as Error).message);
-          showToast(`Vokal temizleme başarısız: ${(err as Error).message}`);
-          console.warn('Vokal temizleme uyarısı:', err);
-        });
     },
-    [roles, whisper, showToast, sceneId, cues],
+    [roles, whisper, showToast, prepareBackground],
   );
 
   const stageVideoFile = (file: File) => {
@@ -1014,82 +989,13 @@ export default function EditorPage() {
     e.target.value = '';
   };
 
-  const handleManualVocalRemoval = useCallback(async () => {
-    if (!videoUrl) {
-      showToast('Lütfen önce bir video seçin veya yükleyin.');
+  const handleManualVocalRemoval = useCallback(() => {
+    if (!videoUrl || isUploadingToSupabase || !videoUrl.startsWith('https://')) {
+      showToast('Önce video yüklemesinin tamamlanmasını bekleyin.');
       return;
     }
-    setIsRemovingVocals(true);
-    setVocalError('');
-    setVocalNotice('');
-    const job = videoJobRef.current;
-    setVocalProgress(10);
-    setVocalStage('Konuşma müzik ve efektlerden ayrıştırılıyor...');
-    try {
-      showToast(
-        'Konuşma kanalı ayrıştırılıyor. Sonucu mutlaka dinleyerek kontrol edin.',
-      );
-      const res = await removeVocalsFromVideo(
-        sourceFileRef.current || videoUrl,
-        title || 'instrumental',
-        (stage, pct) => {
-          setVocalStage(stage);
-          setVocalProgress(pct);
-        },
-        cues,
-      );
-      if (videoJobRef.current !== job) return;
-      setInstrumentalUrl(res.url);
-      setAudioMode('instrumental');
-      try {
-        const { supabase } = await import('@/lib/supabase');
-        await supabase
-          .from('custom_scenes')
-          .update({ instrumental_url: res.url })
-          .eq('id', sceneId);
-      } catch {}
-      showToast(
-        'Vokaller tamamen temizlendi (Müzik & Efekt kanalı hazır).',
-      );
-    } catch (err) {
-      if (videoJobRef.current !== job) return;
-      setVocalError((err as Error).message);
-      showToast(`Vokal temizleme hatası: ${(err as Error).message}`);
-    } finally {
-      if (videoJobRef.current === job) setIsRemovingVocals(false);
-    }
-  }, [videoUrl, title, showToast, sceneId, cues]);
-
-  const handleStereoVocalReduction = useCallback(async () => {
-    if (!videoUrl) return;
-    const job = videoJobRef.current;
-    setIsRemovingVocals(true);
-    setVocalError('');
-    try {
-      const result = await reduceCenteredVocals(
-        sourceFileRef.current || videoUrl,
-        title || 'scene',
-        (stage, percent) => {
-          if (videoJobRef.current !== job) return;
-          setVocalStage(stage);
-          setVocalProgress(percent);
-        },
-        cues,
-      );
-      if (videoJobRef.current !== job) return;
-      setInstrumentalUrl(result.url);
-      setAudioMode('instrumental');
-      setVocalNotice('Stereo yedek yöntem kullanıldı. Merkezdeki ses azaltılır; bazı efektler de etkilenebilir. Önizlemeden kontrol edin.');
-      const { supabase } = await import('@/lib/supabase');
-      await supabase.from('custom_scenes').update({ instrumental_url: result.url }).eq('id', sceneId);
-      showToast('Stereo yedek ses hazır. Sonucu dinleyerek kontrol edin.');
-    } catch (error) {
-      if (videoJobRef.current !== job) return;
-      setVocalError((error as Error).message);
-    } finally {
-      if (videoJobRef.current === job) setIsRemovingVocals(false);
-    }
-  }, [videoUrl, title, sceneId, showToast]);
+    void prepareBackground(videoUrl, videoJobRef.current, true);
+  }, [videoUrl, isUploadingToSupabase, showToast, prepareBackground]);
 
   // Sahne Yükle (Hem Supabase / Meme hem de Hazır Oyun Sahneleri)
   const loadScene = useCallback(
@@ -1149,50 +1055,13 @@ export default function EditorPage() {
         setSelectedCueId(loadedCues[0].id);
       }
 
-      // Saf AI (htdemucs --two-stems=vocals) ile ayrıştırılmış ses varsa doğrudan kullan; yoksa orijinal videodan ayır
-      const isPureAiInstrumental =
-        Boolean(sc.instrumental) &&
-        (sc.instrumental!.includes('/pure_htdemucs_') ||
-          sc.instrumental!.includes('/splitter_'));
-      if (isPureAiInstrumental && sc.instrumental) {
-        setInstrumentalUrl(sc.instrumental);
-        setAudioMode('instrumental');
-      } else if (sc.video) {
-        setInstrumentalUrl(sc.instrumental || '');
-        setAudioMode('instrumental');
-        setIsRemovingVocals(true);
-        setVocalStage(
-          'Splitter-AI (htdemucs): Müzik ve ses efektleri korunarak insan sesleri ayrıştırılıyor...',
-        );
-        void removeVocalsFromVideo(
-          sc.video,
-          sc.title,
-          (st, pct) => {
-            setVocalStage(st);
-            setVocalProgress(pct);
-          },
-          loadedCues,
-        )
-          .then(async (res) => {
-            setInstrumentalUrl(res.url);
-            setIsRemovingVocals(false);
-            setVocalError('');
-            setVocalNotice('');
-            try {
-              const { supabase } = await import('@/lib/supabase');
-              await supabase
-                .from('custom_scenes')
-                .update({ instrumental_url: res.url })
-                .eq('id', sc.id);
-            } catch {}
-          })
-          .catch(() => {
-            setIsRemovingVocals(false);
-          });
-      } else {
-        setInstrumentalUrl('');
-        setAudioMode('original');
-      }
+      // Opening or editing a saved scene never starts another separation job.
+      audioPreparationRef.current?.controller.abort();
+      setIsRemovingVocals(false);
+      setIsUploadingToSupabase(false);
+      setInstrumentalUrl(sc.instrumental || '');
+      setAudioMode(sc.instrumental ? 'instrumental' : 'original');
+      if (!sc.instrumental) setVocalNotice('Bu sahnenin arka plan sesi henüz hazır değil. Ses hazırlamayı başlatın.');
 
       setIsEditingExisting(true);
       setEditingSceneTitle(sc.title);
@@ -1212,6 +1081,7 @@ export default function EditorPage() {
   // Sıfırdan Yeni Sahneye Geç
   const handleStartNewScene = useCallback(() => {
     videoJobRef.current += 1;
+    audioPreparationRef.current?.controller.abort();
     sourceFileRef.current = null;
     originalFileRef.current = null;
     if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
@@ -1257,6 +1127,7 @@ export default function EditorPage() {
 
   const handleRemoveVideo = useCallback(() => {
     videoJobRef.current += 1;
+    audioPreparationRef.current?.controller.abort();
     sourceFileRef.current = null;
     originalFileRef.current = null;
     videoRef.current?.pause();
@@ -1395,27 +1266,13 @@ export default function EditorPage() {
       } catch {}
     }
 
-    let finalInstrumentalUrl = instrumentalUrl || '';
-    if ((!finalInstrumentalUrl || sortedCues.length > 0) && videoUrl) {
-      try {
-        showToast('Replik anlarındaki vokaller %100 silinip müzik & efekt (M&E) kanalı kaydediliyor...');
-        const res = await removeVocalsFromVideo(
-          sourceFileRef.current || videoUrl,
-          targetTitle,
-          (st, pct) => {
-            setVocalStage(st);
-            setVocalProgress(pct);
-          },
-          sortedCues,
-        );
-        if (res.url) {
-          finalInstrumentalUrl = res.url;
-          setInstrumentalUrl(res.url);
-        }
-      } catch (err) {
-        console.warn('Kaydetme sırasında otomatik M&E uyarısı:', err);
-      }
+    if (isRemovingVocals || !instrumentalUrl || !instrumentalUrl.startsWith('https://')) {
+      showToast(isRemovingVocals
+        ? 'Arka plan sesi hazırlanıyor. İşlem tamamlandıktan sonra kaydedin.'
+        : 'Sahneyi oyuna eklemeden önce arka plan sesini hazırlayın.');
+      return;
     }
+    const finalInstrumentalUrl = instrumentalUrl;
 
     const newScene: Scene = {
       id: targetId,
@@ -1595,6 +1452,7 @@ export default function EditorPage() {
           <button
             type="button"
             onClick={() => handleSaveScene(false)}
+            disabled={isUploadingToSupabase || isRemovingVocals || !instrumentalUrl}
             className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-lg shadow-[#F5E636]/15 transition cursor-pointer"
           >
             <Check size={16} strokeWidth={2.5} />
@@ -1637,7 +1495,7 @@ export default function EditorPage() {
                   <div className="flex items-center justify-between text-xs font-semibold text-[#9E8CA9]">
                     <span className="flex items-center gap-2">
                       <Loader2 size={14} className="animate-spin" />
-                      Konuşma sesleri ayrıştırılıyor, ses efektleri korunuyor...
+                      {vocalStage || 'Arka plan sesi hazırlanıyor...'}
                     </span>
                     <span>%{vocalProgress}</span>
                   </div>
@@ -1856,11 +1714,11 @@ export default function EditorPage() {
                       <button
                         type="button"
                         onClick={handleManualVocalRemoval}
-                        disabled={isRemovingVocals}
+                        disabled={isRemovingVocals || isUploadingToSupabase}
                         className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1A1A17] hover:bg-[#22221E] text-[#9E8CA9] border border-[#383832] flex items-center gap-1.5 cursor-pointer"
                       >
                         <Music size={14} />
-                        <span>{vocalError ? 'Vokal Ayırmayı Yeniden Dene' : 'Vokalleri Temizle'}</span>
+                        <span>{vocalError ? 'Tekrar Kontrol Et / Dene' : 'Arka Plan Sesini Hazırla'}</span>
                       </button>
                     )}
 
@@ -1878,14 +1736,12 @@ export default function EditorPage() {
                 </div>
 
                 {vocalError && (
-                  <div role="alert" className="rounded-xl border border-[#FA5636]/40 bg-[#FA5636]/10 px-3 py-2 text-xs text-[#F4B2A6]">
+                  <div role="alert" className="rounded-xl border border-[#FA5636] bg-[#1A1A17] px-3 py-2 text-xs text-[#F4B2A6]">
                     <p>Vokalsiz ses hazırlanamadı: {vocalError}</p>
-                    <button type="button" onClick={handleStereoVocalReduction} disabled={isRemovingVocals} className="mt-2 rounded-lg border border-[#FA5636]/40 px-3 py-1.5 font-bold hover:bg-[#FA5636]/15 disabled:opacity-50">
-                      Stereo yedek yöntemle azalt
-                    </button>
+
                   </div>
                 )}
-                {vocalNotice && <div role="status" className="rounded-xl border border-[#AEA932]/50 bg-[#AEA932]/10 px-3 py-2 text-xs text-[#E4DE8B]">{vocalNotice}</div>}
+                {vocalNotice && <div role="status" className="rounded-xl border border-[#AEA932] bg-[#1A1A17] px-3 py-2 text-xs text-[#E4DE8B]">{vocalNotice}</div>}
 
                 {/* GÖRSEL ÇOK KATMANLI (MULTI-TRACK) ZAMAN ÇİZELGESİ KUTUSU */}
                 <div

@@ -28,6 +28,7 @@ async function renderMixedDubbingAudio(
   // 1. Arka plan (M&E / Instrumental) sesini ekle
   const instKey = `__scene_instrumental__:${scene.id}`;
   const instBuffer = buffers.get(instKey);
+  if (!instBuffer) throw new Error('Arka plan sesi yüklenmeden video oluşturulamaz. Sesleri yeniden yükleyin.');
   if (instBuffer) {
     const instSource = offline.createBufferSource();
     instSource.buffer = instBuffer;

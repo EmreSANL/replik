@@ -13,7 +13,6 @@ import {
 import {
   getSceneById,
   getCustomScenes,
-  sceneCues,
   playerCues,
   getPlayerCharacterMap,
   type Scene,
@@ -39,7 +38,7 @@ export type GameRoomRow = {
   activities: ActivityItem[];
   recordings: { player: string; segment: number; url: string }[];
   host_user_id?: string | null;
-  updated_at?: string;
+  updated_at?: string | null;
 };
 
 function rowToRoom(row: GameRoomRow): Room {
@@ -56,7 +55,7 @@ function rowToRoom(row: GameRoomRow): Room {
     recordings: recs,
     players: (row.players || []).map((p) => {
       const fromRecs = recs.filter((r) => r.player === p.id).map((r) => r.segment);
-      const mergedSegments = Array.from(new Set([...(p.segments || []), ...fromRecs]));
+      const mergedSegments = Array.from(new Set([...(p.segments || []), ...fromRecs].map(Number)));
       return {
         id: p.id,
         name: p.name,
@@ -71,6 +70,76 @@ function rowToRoom(row: GameRoomRow): Room {
   };
 }
 
+/** Retry against the latest row so simultaneous uploads cannot overwrite each other. */
+async function updateGameRoom(
+  code: string,
+  change: (row: GameRoomRow) => Promise<boolean>,
+  initial?: GameRoomRow,
+): Promise<GameRoomRow> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let row = attempt === 0 ? initial : undefined;
+    if (!row) {
+      const { data, error } = await supabase.from('game_rooms').select('*').eq('code', code).single<GameRoomRow>();
+      if (error || !data) throw new Error('Oda bulunamadı veya süresi dolmuş.');
+      row = data;
+    }
+    const previousVersion = row.updated_at;
+    if (!(await change(row))) return row;
+    // Always advance the version, even when two writes occur in the same millisecond.
+    row.updated_at = new Date(Math.max(Date.now(), (Date.parse(previousVersion || '') || 0) + 1)).toISOString();
+    let update = supabase.from('game_rooms').update({
+      scene: row.scene,
+      status: row.status,
+      play_at: row.play_at,
+      players: row.players,
+      reactions: row.reactions,
+      activities: row.activities,
+      recordings: row.recordings,
+      updated_at: row.updated_at,
+    }).eq('code', code);
+    update = previousVersion == null
+      ? update.is('updated_at', null)
+      : update.eq('updated_at', previousVersion);
+    const { data, error } = await update.select('*').maybeSingle<GameRoomRow>();
+    if (error) throw new Error(`İşlem kaydedilemedi: ${error.message}`);
+    if (data) return data;
+  }
+  throw new Error('Oda aynı anda güncelleniyor. Kaydı tekrar kaydetmeyi deneyin.');
+}
+
+async function recordingScenes(): Promise<Scene[]> {
+  const remote = await getScenesFromSupabase().catch(() => []);
+  const merged = new Map<number, Scene>();
+  getCustomScenes().forEach((scene) => merged.set(Number(scene.id), scene));
+  remote.forEach((scene) => merged.set(Number(scene.id), scene));
+  return Array.from(merged.values());
+}
+
+/** Stored audio, rather than a separate ready click, determines completion. */
+function completeRecordings(row: GameRoomRow, customScenes: Scene[]): boolean {
+  if (row.status !== 'recording' || !customScenes.some((scene) => Number(scene.id) === Number(row.scene))) return false;
+  const preferredRoles = row.players.map((player) => player.role);
+  row.players.forEach((player, index) => {
+    const assigned = playerCues(row.scene, index, row.players.length, customScenes, preferredRoles);
+    const segments = new Set((row.recordings || [])
+      .filter((recording) => recording.player === player.id && recording.url)
+      .map((recording) => Number(recording.segment)));
+    player.segments = Array.from(segments);
+    player.audio = assigned.every((cue) => segments.has(Number(cue.id)));
+    player.ready = player.audio ? 1 : 0;
+  });
+  if (!row.players.length || !row.players.every((player) => player.audio)) return false;
+  row.status = 'final';
+  row.play_at = Date.now() + 3000;
+  row.activities = [{
+    id: crypto.randomUUID(),
+    text: 'Tüm replikler kaydedildi! Büyük Final başlıyor! 🎬',
+    time: Date.now(),
+    type: 'system' as const,
+  }, ...(row.activities || [])].slice(0, 30);
+  return true;
+}
+
 /**
  * Yeni oyun odası oluşturur (Sadece giriş yapmış üyeler).
  */
@@ -80,6 +149,10 @@ export async function createGameRoom(
   maxPlayers = 4,
 ): Promise<{ room: Room; token: string; id: string }> {
   const user = await requireAuthenticatedUser();
+  const selectedScene = (await recordingScenes()).find((item) => Number(item.id) === Number(scene));
+  if (!selectedScene?.instrumental?.startsWith('https://')) {
+    throw new Error('Bu sahnenin arka plan sesi hazır değil. Önce editörde hazırlayıp kaydedin.');
+  }
   const codeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
@@ -262,6 +335,12 @@ export async function getGameRoom(code: string): Promise<Room> {
     throw new Error('Oda bulunamadı veya süresi dolmuş.');
   }
 
+  // Recover rooms left in recording by an interrupted final update or older clients.
+  if (row.status === 'recording' && row.recordings?.length) {
+    const scenes = await recordingScenes();
+    const updated = await updateGameRoom(row.code, async (current) => completeRecordings(current, scenes), row);
+    return rowToRoom(updated);
+  }
   return rowToRoom(row);
 }
 
@@ -275,216 +354,153 @@ export async function executeGameRoomAction(
   extra: Record<string, unknown> = {},
 ): Promise<Room> {
   const cleanCode = code.toUpperCase().trim();
-  const { data: row, error } = await supabase
-    .from('game_rooms')
-    .select('*')
-    .eq('code', cleanCode)
-    .single<GameRoomRow>();
+  const updated = await updateGameRoom(cleanCode, async (row) => {
+    const playerIndex = (row.players || []).findIndex((p) => p.token === token);
+    if (playerIndex === -1) {
+      throw new Error('Oturum bulunamadı. Lütfen odaya tekrar katılın.');
+    }
 
-  if (error || !row) {
-    throw new Error('Oda bulunamadı.');
-  }
+    const player = row.players[playerIndex];
+    const activities = row.activities = [...(row.activities || [])];
+    const addLog = (text: string, type: ActivityItem['type'] = 'system') => {
+      activities.unshift({
+        id: crypto.randomUUID(),
+        text,
+        time: Date.now(),
+        type,
+      });
+      if (activities.length > 30) activities.length = 30;
+    };
 
-  const playerIndex = (row.players || []).findIndex((p) => p.token === token);
-  if (playerIndex === -1) {
-    throw new Error('Oturum bulunamadı. Lütfen odaya tekrar katılın.');
-  }
-
-  const player = row.players[playerIndex];
-  const activities = [...(row.activities || [])];
-  const addLog = (text: string, type: ActivityItem['type'] = 'system') => {
-    activities.unshift({
-      id: crypto.randomUUID(),
-      text,
-      time: Date.now(),
-      type,
-    });
-    if (activities.length > 30) activities.length = 30;
-  };
-
-  if (action === 'ready' || action === 'recording_ready') {
-    const isReadyRequested = extra.ready !== undefined ? Boolean(extra.ready) : true;
-    if (row.status === 'recording') {
-      const remoteScenes = await getScenesFromSupabase().catch(() => []);
-      const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
-      const preferredRoles = row.players.map((p) => p.role);
-      const assigned = playerCues(
-        row.scene,
-        playerIndex,
-        row.players.length,
-        customList,
-        preferredRoles,
-      );
-      const playerSegs = new Set(player.segments || []);
-      const hasCompletedAll = assigned.length > 0 ? assigned.every((c) => playerSegs.has(c.id)) : true;
-
-      player.audio = hasCompletedAll;
-      player.ready = isReadyRequested && hasCompletedAll ? 1 : 0;
-
-      if (player.ready === 1) {
-        addLog(`${player.name} dublajını tamamladı ve hazır! (Ready) ✓`, 'ready');
+    if (action === 'ready' || action === 'recording_ready') {
+      const isReadyRequested = extra.ready !== undefined ? Boolean(extra.ready) : true;
+      if (row.status === 'recording') {
+        completeRecordings(row, await recordingScenes());
       } else {
-        addLog(`${player.name} kaydını düzenliyor.`, 'ready');
+        player.ready = isReadyRequested ? 1 : 0;
+        addLog(
+          `${player.name} ${player.ready ? 'hazır olduğunu bildirdi.' : 'hazırlığını geri aldı.'}`,
+          'ready',
+        );
+      }
+    } else if (action === 'mic_tested') {
+      player.micTested = true;
+      addLog(`${player.name} mikrofon testini tamamladı.`, 'ready');
+    } else if (action === 'change_scene') {
+      if (!player.host) throw new Error('Sahneyi yalnızca oda kurucusu değiştirebilir.');
+      if (row.status !== 'lobby') throw new Error('Oyun başladıktan sonra sahne değiştirilemez.');
+      const sceneId = Number(extra.scene);
+      row.scene = sceneId;
+      const sceneObj = getSceneById(sceneId);
+      const title = typeof extra.title === 'string' ? extra.title : (sceneObj?.title || `Sahne #${sceneId}`);
+      addLog(`Sahne "${title}" olarak değiştirildi.`, 'system');
+    } else if (action === 'set_role') {
+      player.role = Number(extra.role);
+      const sceneInfo = getSceneById(row.scene);
+      const roleName = sceneInfo?.roles?.[player.role] || `${player.role + 1}. Karakter`;
+      addLog(`${player.name} rolünü seçti: ${roleName}`, 'ready');
+    } else if (action === 'start') {
+      if (!player.host) throw new Error('Oyunu oda kurucusu başlatabilir.');
+      if (row.status !== 'lobby') throw new Error('Oyun zaten başlamış.');
+      const preparedScene = (await recordingScenes()).find((item) => Number(item.id) === Number(row.scene));
+      if (!preparedScene?.instrumental?.startsWith('https://')) {
+        throw new Error('Bu sahnenin arka plan sesi hazır değil. Önce editörde hazırlayıp kaydedin.');
+      }
+
+      const requiredPlayers = Math.max(1, Number(row.max_players) || 1);
+      if (row.players.length < requiredPlayers) {
+        throw new Error(
+          `Oda ${requiredPlayers} kişilik kuruldu. Oyunun başlaması için ${requiredPlayers - row.players.length} oyuncunun daha katılması gerekiyor.`,
+        );
       }
 
       // Herkes hazır mı kontrol et
-      const allDone =
-        row.players.length > 0 &&
-        row.players.every((p, idx) => {
-          const pAssigned = playerCues(
-            row.scene,
-            idx,
-            row.players.length,
-            customList,
-            preferredRoles,
-          );
-          const pSegs = new Set(p.segments || []);
-          const pCompleted = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
-          return p.ready === 1 && pCompleted;
+      const notReady = row.players.filter((p) => !p.ready);
+      if (notReady.length > 0) {
+        throw new Error('Başlamadan önce odadaki tüm oyuncular hazır olmalı.');
+      }
+
+      // 1 Karakter = 1 Oyuncu kuralına göre her oyuncuya ana karakterini ata
+      const remoteScenesForStart = await getScenesFromSupabase().catch(() => []);
+      const customListForStart =
+        remoteScenesForStart.length > 0 ? remoteScenesForStart : undefined;
+      const initialPrefs = row.players.map((p) => p.role);
+      const charToPlayerMap = getPlayerCharacterMap(
+        row.scene,
+        row.players.length,
+        customListForStart,
+        initialPrefs,
+      );
+
+      const usedRoles = new Set<number>();
+      row.players.forEach((p, pIdx) => {
+        // Bu oyuncuya atanan karakterlerden ilkini ana rolü olarak kaydet
+        let assignedRole = -1;
+        charToPlayerMap.forEach((ownerIdx, roleIdx) => {
+          if (ownerIdx === pIdx && assignedRole === -1 && !usedRoles.has(roleIdx)) {
+            assignedRole = roleIdx;
+          }
         });
-
-      if (allDone) {
-        row.status = 'final';
-        row.play_at = Date.now() + 3000;
-        addLog('Tüm oyuncular hazır ve dublajlarını tamamladı! 🎬 Büyük Final başlıyor...', 'system');
-      }
-    } else {
-      player.ready = isReadyRequested ? 1 : 0;
-      addLog(
-        `${player.name} ${player.ready ? 'hazır olduğunu bildirdi.' : 'hazırlığını geri aldı.'}`,
-        'ready',
-      );
-    }
-  } else if (action === 'mic_tested') {
-    player.micTested = true;
-    addLog(`${player.name} mikrofon testini tamamladı.`, 'ready');
-  } else if (action === 'change_scene') {
-    if (!player.host) throw new Error('Sahneyi yalnızca oda kurucusu değiştirebilir.');
-    if (row.status !== 'lobby') throw new Error('Oyun başladıktan sonra sahne değiştirilemez.');
-    const sceneId = Number(extra.scene);
-    row.scene = sceneId;
-    const sceneObj = getSceneById(sceneId);
-    const title = typeof extra.title === 'string' ? extra.title : (sceneObj?.title || `Sahne #${sceneId}`);
-    addLog(`Sahne "${title}" olarak değiştirildi.`, 'system');
-  } else if (action === 'set_role') {
-    player.role = Number(extra.role);
-    const sceneInfo = getSceneById(row.scene);
-    const roleName = sceneInfo?.roles?.[player.role] || `${player.role + 1}. Karakter`;
-    addLog(`${player.name} rolünü seçti: ${roleName}`, 'ready');
-  } else if (action === 'start') {
-    if (!player.host) throw new Error('Oyunu oda kurucusu başlatabilir.');
-    if (row.status !== 'lobby') throw new Error('Oyun zaten başlamış.');
-
-    const requiredPlayers = Math.max(1, Number(row.max_players) || 1);
-    if (row.players.length < requiredPlayers) {
-      throw new Error(
-        `Oda ${requiredPlayers} kişilik kuruldu. Oyunun başlaması için ${requiredPlayers - row.players.length} oyuncunun daha katılması gerekiyor.`,
-      );
-    }
-
-    // Herkes hazır mı kontrol et
-    const notReady = row.players.filter((p) => !p.ready);
-    if (notReady.length > 0) {
-      throw new Error('Başlamadan önce odadaki tüm oyuncular hazır olmalı.');
-    }
-
-    // 1 Karakter = 1 Oyuncu kuralına göre her oyuncuya ana karakterini ata
-    const remoteScenesForStart = await getScenesFromSupabase().catch(() => []);
-    const customListForStart =
-      remoteScenesForStart.length > 0 ? remoteScenesForStart : undefined;
-    const initialPrefs = row.players.map((p) => p.role);
-    const charToPlayerMap = getPlayerCharacterMap(
-      row.scene,
-      row.players.length,
-      customListForStart,
-      initialPrefs,
-    );
-
-    const usedRoles = new Set<number>();
-    row.players.forEach((p, pIdx) => {
-      // Bu oyuncuya atanan karakterlerden ilkini ana rolü olarak kaydet
-      let assignedRole = -1;
-      charToPlayerMap.forEach((ownerIdx, roleIdx) => {
-        if (ownerIdx === pIdx && assignedRole === -1 && !usedRoles.has(roleIdx)) {
-          assignedRole = roleIdx;
+        if (assignedRole === -1) {
+          let fallback = 0;
+          while (usedRoles.has(fallback)) fallback++;
+          assignedRole = fallback;
         }
+        p.role = assignedRole;
+        usedRoles.add(assignedRole);
+        // Kayıt aşaması için hazır durumunu ve segmentleri sıfırla
+        p.ready = 0;
+        p.audio = false;
+        p.segments = [];
       });
-      if (assignedRole === -1) {
-        let fallback = 0;
-        while (usedRoles.has(fallback)) fallback++;
-        assignedRole = fallback;
+
+      row.status = 'recording';
+      addLog('Kayıt aşaması başladı! Sahneye çıkın!', 'system');
+    } else if (action === 'play' || action === 'finish') {
+      const remoteScenes = await getScenesFromSupabase().catch(() => []);
+      const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
+      const preferredRoles = row.players.map((p) => p.role);
+      const notReadyPlayers = row.players.filter((p, idx) => {
+        const pAssigned = playerCues(row.scene, idx, row.players.length, customList, preferredRoles);
+        const pSegs = new Set(p.segments || []);
+        const isComplete = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
+        return !isComplete || p.ready !== 1;
+      });
+
+      if (notReadyPlayers.length > 0 && !extra.force && !player.host) {
+        throw new Error(`Diğer oyuncuların dublajı devam ediyor: ${notReadyPlayers.map((p) => p.name).join(', ')} henüz hazır değil.`);
       }
-      p.role = assignedRole;
-      usedRoles.add(assignedRole);
-      // Kayıt aşaması için hazır durumunu ve segmentleri sıfırla
-      p.ready = 0;
-      p.audio = false;
-      p.segments = [];
-    });
 
-    row.status = 'recording';
-    addLog('Kayıt aşaması başladı! Sahneye çıkın!', 'system');
-  } else if (action === 'play' || action === 'finish') {
-    const remoteScenes = await getScenesFromSupabase().catch(() => []);
-    const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
-    const preferredRoles = row.players.map((p) => p.role);
-    const notReadyPlayers = row.players.filter((p, idx) => {
-      const pAssigned = playerCues(row.scene, idx, row.players.length, customList, preferredRoles);
-      const pSegs = new Set(p.segments || []);
-      const isComplete = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
-      return !isComplete || p.ready !== 1;
-    });
-
-    if (notReadyPlayers.length > 0 && !extra.force && !player.host) {
-      throw new Error(`Diğer oyuncuların dublajı devam ediyor: ${notReadyPlayers.map((p) => p.name).join(', ')} henüz hazır değil.`);
+      row.status = 'final';
+      row.play_at = Date.now() + 3000;
+      addLog('Tüm replikler tamamlandı! Büyük final başlıyor, odadaki herkesle birlikte izleniyor... 🎬', 'system');
+    } else if (action === 'reaction') {
+      const emoji = typeof extra.emoji === 'string' ? extra.emoji : '😂';
+      row.reactions = row.reactions || { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
+      row.reactions[emoji] = (row.reactions[emoji] || 0) + 1;
+    } else if (action === 'restart') {
+      if (!player.host) throw new Error('Yeni turu yalnızca oda kurucusu başlatabilir.');
+      const wasPublished = (row.recordings || []).some((r) => r.player === '__published_mp4__');
+      if (!wasPublished) {
+        await removeRoomStorageRecordings(cleanCode, row.recordings || []);
+      }
+      row.status = 'lobby';
+      row.play_at = 0;
+      if (extra.scene !== undefined && !isNaN(Number(extra.scene))) row.scene = Number(extra.scene);
+      row.recordings = [];
+      row.players.forEach((p) => {
+        p.audio = false;
+        p.ready = 0;
+        p.role = -1;
+        p.segments = [];
+      });
+      row.reactions = { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
+      addLog('Yeni tur için lobiye dönüldü.', 'system');
     }
 
-    row.status = 'final';
-    row.play_at = Date.now() + 3000;
-    addLog('Tüm replikler tamamlandı! Büyük final başlıyor, odadaki herkesle birlikte izleniyor... 🎬', 'system');
-  } else if (action === 'reaction') {
-    const emoji = typeof extra.emoji === 'string' ? extra.emoji : '😂';
-    row.reactions = row.reactions || { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
-    row.reactions[emoji] = (row.reactions[emoji] || 0) + 1;
-  } else if (action === 'restart') {
-    if (!player.host) throw new Error('Yeni turu yalnızca oda kurucusu başlatabilir.');
-    const wasPublished = (row.recordings || []).some((r) => r.player === '__published_mp4__');
-    if (!wasPublished) {
-      await removeRoomStorageRecordings(cleanCode, row.recordings || []);
-    }
-    row.status = 'lobby';
-    row.play_at = 0;
-    if (extra.scene !== undefined && !isNaN(Number(extra.scene))) row.scene = Number(extra.scene);
-    row.recordings = [];
-    row.players.forEach((p) => {
-      p.audio = false;
-      p.ready = 0;
-      p.role = -1;
-      p.segments = [];
-    });
-    row.reactions = { '😂': 0, '🔥': 0, '👏': 0, '❤️': 0 };
-    addLog('Yeni tur için lobiye dönüldü.', 'system');
-  }
-
-  const { error: saveError } = await supabase
-    .from('game_rooms')
-    .update({
-      scene: row.scene,
-      status: row.status,
-      play_at: row.play_at,
-      players: row.players,
-      reactions: row.reactions,
-      activities,
-      recordings: row.recordings,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('code', cleanCode);
-
-  if (saveError) {
-    throw new Error(`İşlem kaydedilemedi: ${saveError.message}`);
-  }
-
-  return rowToRoom({ ...row, activities });
+    return true;
+  });
+  return rowToRoom(updated);
 }
 
 /**
@@ -498,7 +514,7 @@ export async function saveAudioRecording(
 ): Promise<{ room: Room; url: string }> {
   const cleanCode = code.toUpperCase().trim();
   const ext = blob.type.includes('wav') ? 'wav' : 'webm';
-  const filePath = `recordings/${cleanCode}/${playerId}_${segment ?? 'full'}_${Date.now()}.${ext}`;
+  const filePath = `recordings/${cleanCode}/${playerId}_${segment ?? 'full'}_${crypto.randomUUID()}.${ext}`;
 
   // 1. Supabase Storage'a yükle (başarısız olursa Base64 Data URL fallback kullan)
   let publicUrl = '';
@@ -522,124 +538,34 @@ export async function saveAudioRecording(
     publicUrl = urlData.publicUrl;
   }
 
-  // 2. Odayı çek ve güncelle
-  const { data: row, error: fetchError } = await supabase
-    .from('game_rooms')
-    .select('*')
-    .eq('code', cleanCode)
-    .single<GameRoomRow>();
-
-  if (fetchError || !row) {
-    throw new Error('Oda bulunamadı.');
-  }
-
+  const customScenes = await recordingScenes();
   const segNum = Number(segment ?? 0);
-  const recordings = (row.recordings || []).filter(
-    (r) => !(r.player === playerId && Number(r.segment) === segNum),
-  );
-  recordings.push({
-    player: playerId,
-    segment: segNum,
-    url: publicUrl,
-  });
-
-  // Supabase'den ve yerel önbellekten güncel sahne repliklerini al
-  const remoteScenes = await getScenesFromSupabase().catch(() => []);
-  const localScenes = typeof window !== 'undefined' ? getCustomScenes() : [];
-  const mergedMap = new Map<number, Scene>();
-  localScenes.forEach((s) => mergedMap.set(Number(s.id), s));
-  remoteScenes.forEach((s) => mergedMap.set(Number(s.id), s));
-  const customList = mergedMap.size > 0 ? Array.from(mergedMap.values()) : undefined;
-
-  const player = row.players.find((p) => p.id === playerId);
-  if (player) {
-    const segs = new Set((player.segments || []).map(Number));
-    if (segment !== null) segs.add(segNum);
-    player.segments = Array.from(segs);
-  }
-
-  // Her oyuncunun kendi repliklerini tamamlayıp tamamlamadığını recordings tablosuyla birleştirerek hesapla
-  const preferredRoles = row.players.map((p) => p.role);
-  row.players.forEach((p, idx) => {
-    const pCues = playerCues(
-      row.scene,
-      idx,
-      row.players.length,
-      customList,
-      preferredRoles,
+  const updated = await updateGameRoom(cleanCode, async (row) => {
+    if (row.status !== 'recording') throw new Error('Kayıt aşaması sona ermiş.');
+    const playerIndex = row.players.findIndex((player) => player.id === playerId);
+    if (playerIndex < 0) throw new Error('Oyuncu odada bulunamadı.');
+    if (!customScenes.some((scene) => Number(scene.id) === Number(row.scene))) {
+      throw new Error('Sahne replikleri yüklenemedi. Lütfen tekrar deneyin.');
+    }
+    const assigned = playerCues(row.scene, playerIndex, row.players.length, customScenes, row.players.map((player) => player.role));
+    if (!Number.isInteger(segNum) || !assigned.some((cue) => Number(cue.id) === segNum)) {
+      throw new Error('Bu bölüm sana ait değil.');
+    }
+    row.recordings = (row.recordings || []).filter(
+      (recording) => !(recording.player === playerId && Number(recording.segment) === segNum),
     );
-    const playerRecSegs = recordings
-      .filter((r) => r.player === p.id)
-      .map((r) => Number(r.segment));
-    const pSegs = new Set([...(p.segments || []).map(Number), ...playerRecSegs]);
-    p.segments = Array.from(pSegs);
-    const hasCompletedAll =
-      pCues.length > 0 ? pCues.every((c) => pSegs.has(Number(c.id))) : true;
-    p.audio = hasCompletedAll;
-    if (hasCompletedAll) {
-      p.ready = 1;
-    } else if (p.id === playerId) {
-      p.ready = 0;
-    }
+    row.recordings.push({ player: playerId, segment: segNum, url: publicUrl });
+    row.activities = [{
+      id: crypto.randomUUID(),
+      text: `${row.players[playerIndex].name} bir replik seslendirdi (Bölüm ${segNum + 1}) ✓`,
+      time: Date.now(),
+      type: 'record' as const,
+    }, ...(row.activities || [])].slice(0, 30);
+    completeRecordings(row, customScenes);
+    return true;
   });
 
-  // Odadaki TÜM oyuncular kendi repliklerini 100% tamamlayıp ready verdiğinde finale geç!
-  const allPlayersReadyAndFinished =
-    row.players.length > 0 &&
-    row.players.every((p, idx) => {
-      const pCues = playerCues(
-        row.scene,
-        idx,
-        row.players.length,
-        customList,
-        preferredRoles,
-      );
-      const pSegs = new Set((p.segments || []).map(Number));
-      const isComplete =
-        pCues.length > 0 ? pCues.every((c) => pSegs.has(Number(c.id))) : true;
-      return p.ready === 1 && isComplete;
-    });
-
-  if (allPlayersReadyAndFinished) {
-    row.status = 'final';
-    row.play_at = Date.now() + 3000;
-  }
-
-  const activities = [...(row.activities || [])];
-  if (player) {
-    activities.unshift({
-      id: crypto.randomUUID(),
-      text: `${player.name} bir replik seslendirdi ${segment !== null ? `(Bölüm ${segment + 1})` : ''} ✓`,
-      time: Date.now(),
-      type: 'record',
-    });
-    if (row.status === 'final') {
-      activities.unshift({
-        id: crypto.randomUUID(),
-        text: 'Tüm replikler kaydedildi! Büyük Final başlıyor! 🎬',
-        time: Date.now(),
-        type: 'system',
-      });
-    }
-    if (activities.length > 30) activities.length = 30;
-  }
-
-  await supabase
-    .from('game_rooms')
-    .update({
-      status: row.status,
-      play_at: row.play_at,
-      players: row.players,
-      recordings,
-      activities,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('code', cleanCode);
-
-  return {
-    room: rowToRoom({ ...row, recordings, activities }),
-    url: publicUrl,
-  };
+  return { room: rowToRoom(updated), url: publicUrl };
 }
 
 /**

@@ -25,7 +25,6 @@ import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
 import {
   decodeMediaAudioBuffer,
-  removeVocalsFromVideo,
 } from '@/lib/vocal-remover';
 import MicTestDialog from '@/components/mic-test-dialog';
 import RoleRevealDialog from '@/components/role-reveal-dialog';
@@ -39,7 +38,7 @@ import {
   type Room,
   type Scene,
 } from '@/lib/scenes';
-import { getScenesFromSupabase, supabase } from '@/lib/supabase';
+import { getScenesFromSupabase } from '@/lib/supabase';
 import {
   createGameRoom,
   joinGameRoom,
@@ -152,6 +151,8 @@ export default function Studio({
     ctx = useRef<AudioContext | null>(null),
     masterGain = useRef<GainNode | null>(null),
     buffers = useRef<Map<string, AudioBuffer>>(new Map()),
+    bufferUrls = useRef<Map<string, string>>(new Map()),
+    roomRequestVersion = useRef(0),
     sources = useRef<AudioBufferSourceNode[]>([]),
     seenPlay = useRef(0),
     playStop = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -187,6 +188,11 @@ export default function Studio({
     cues = sceneCues(room.scene, customScenes);
 
   const api = `/api/rooms/${session.code}`;
+
+  function receiveRoom(updated: Room) {
+    roomRequestVersion.current++;
+    setRoom(updated);
+  }
 
   const revealedSceneRef = useRef<string | null>(null);
 
@@ -225,30 +231,14 @@ export default function Studio({
       }
 
       const instKey = `__scene_instrumental__:${scene.id}`;
-      // Sahnenin Saf AI (htdemucs --two-stems=vocals) ile ayrıştırılmış sesini yükle
-      if (!buffers.current.has(instKey)) {
-        const isPureAi =
-          Boolean(scene.instrumental) &&
-          (scene.instrumental!.includes('/pure_htdemucs_') ||
-            scene.instrumental!.includes('/splitter_'));
-        try {
-          if (isPureAi && scene.instrumental) {
-            const rawBuf = await decodeMediaAudioBuffer(scene.instrumental);
-            buffers.current.set(instKey, rawBuf);
-          } else if (scene.video) {
-            const aiRes = await removeVocalsFromVideo(scene.video, scene.title);
-            const rawBuf = await decodeMediaAudioBuffer(aiRes.blob);
-            buffers.current.set(instKey, rawBuf);
-            if (aiRes.url && !aiRes.url.startsWith('blob:')) {
-              await supabase
-                .from('custom_scenes')
-                .update({ instrumental_url: aiRes.url })
-                .eq('id', scene.id);
-            }
-          }
-        } catch (instErr) {
-          console.warn('Sahne AI ses ayrıştırma uyarısı:', instErr);
-        }
+      // Rooms only load the background already prepared and saved in the editor.
+      if (!scene.instrumental) {
+        throw new Error('Bu sahnenin arka plan sesi hazır değil. Sahneyi editörde hazırlayıp kaydedin.');
+      }
+      if (!buffers.current.has(instKey) || bufferUrls.current.get(instKey) !== scene.instrumental) {
+        const rawBuf = await decodeMediaAudioBuffer(scene.instrumental);
+        buffers.current.set(instKey, rawBuf);
+        bufferUrls.current.set(instKey, scene.instrumental);
       }
 
       // 1. Öncelikle odadaki tüm kayıtları (room.recordings) doğrudan önbelleğe al
@@ -284,10 +274,14 @@ export default function Studio({
             ],
       );
 
-      const allTracks = [...directRecs, ...playerTracks];
+      const allTracks = Array.from(new Map(
+        [...playerTracks, ...directRecs]
+          .map((track) => [track.key, track]),
+      ).values());
       await Promise.all(
         allTracks.map(async (track) => {
           if (
+            (!track.directUrl || bufferUrls.current.get(track.key) === track.directUrl) &&
             buffers.current.has(track.key) &&
             (!track.cueKey || buffers.current.has(track.cueKey))
           ) {
@@ -310,6 +304,7 @@ export default function Studio({
             if (buf.byteLength === 0) return;
             const decoded = await ctx.current!.decodeAudioData(buf);
             buffers.current.set(track.key, decoded);
+            bufferUrls.current.set(track.key, audioUrl);
             if (track.cueKey) {
               buffers.current.set(track.cueKey, decoded);
             }
@@ -322,17 +317,20 @@ export default function Studio({
       return true;
     } catch (e) {
       console.warn('Audio preload warning:', e);
+      setAudioLoaded(false);
+      setError((e as Error).message || 'Arka plan sesi yüklenemedi.');
       return false;
     } finally {
       setAudioLoading(false);
     }
   }
 
+  const recordingsVersion = JSON.stringify(room.recordings);
   useEffect(() => {
     if (room.status === 'final') {
       void loadAudio();
     }
-  }, [room.status, room.recordings?.length]);
+  }, [room.status, recordingsVersion]);
 
   useEffect(() => {
     if (masterGain.current && ctx.current) {
@@ -350,16 +348,22 @@ export default function Studio({
 
   useEffect(() => {
     mounted.current = true;
+    let refreshing = false;
     const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
       try {
         const before = Date.now();
+        const version = ++roomRequestVersion.current;
         const d = await request(api, session.token);
-        if (mounted.current) {
+        if (mounted.current && version === roomRequestVersion.current) {
           clockOffset.current = d.room.serverNow - (before + Date.now()) / 2;
           setRoom(d.room);
         }
       } catch (e) {
         if (mounted.current) setError((e as Error).message);
+      } finally {
+        refreshing = false;
       }
     };
     const t = setInterval(refresh, 1500);
@@ -388,7 +392,7 @@ export default function Studio({
     setError('');
     try {
       const d = await request(api, session.token, { action, ...extra });
-      setRoom(d.room);
+      receiveRoom(d.room);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -431,8 +435,9 @@ export default function Studio({
         await ctx.current.resume().catch(() => {});
       }
 
-      if (buffers.current.size === 0) {
-        await loadAudio();
+      if (!(await loadAudio())) {
+        setAutoplayPrompt(true);
+        return;
       }
 
       const audio = ctx.current;
@@ -611,11 +616,7 @@ export default function Studio({
       seenPlay.current = targetPlayAt;
       clearInterval(tick);
       setCountdown(0);
-      loadAudio()
-        .then(() => scheduledPlay(0))
-        .catch(() => {
-          setAutoplayPrompt(true);
-        });
+      void scheduledPlay(0);
     }, remaining);
 
     return () => {
@@ -675,7 +676,7 @@ export default function Studio({
     setPublishing(true);
     try {
       const ok = await loadAudio();
-      if (!ok && buffers.current.size === 0) {
+      if (!ok) {
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
 
@@ -740,7 +741,7 @@ export default function Studio({
     setExporting(true);
     try {
       const ok = await loadAudio();
-      if (!ok && buffers.current.size === 0) {
+      if (!ok) {
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
 
@@ -1114,7 +1115,7 @@ export default function Studio({
             <SegmentRecorder
               room={room}
               session={session}
-              onRoom={setRoom}
+              onRoom={receiveRoom}
               customScenes={customScenes}
             />
           )}

@@ -153,6 +153,9 @@ export async function uploadVideoToSupabase(
  * Sahneyi Supabase veritabanına kaydeder veya günceller (Üye sahipliği ile)
  */
 export async function saveSceneToSupabase(scene: Scene): Promise<void> {
+  if (!scene.instrumental?.startsWith('https://')) {
+    throw new Error('Sahneyi oyuna eklemeden önce editörde arka plan sesini hazırlayın.');
+  }
   const user = await requireAuthenticatedUser();
   const record: DbCustomScene = {
     id: scene.id,

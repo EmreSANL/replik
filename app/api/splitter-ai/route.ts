@@ -1,237 +1,61 @@
-import { NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
-import os from 'os';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { verifySupabaseAuthHeader } from '@/lib/supabase';
+import {
+  prepareDialogueBackground,
+  validateSeparationSource,
+  type SeparationJob,
+  type SeparationStore,
+} from '@/lib/dialogue-separation';
 
-const execFileAsync = promisify(execFile);
+export const maxDuration = 120;
 
-export const runtime = 'nodejs';
-export const maxDuration = 300;
-
-function isSafeExternalMediaUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.protocol !== 'https:') return false;
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '0.0.0.0' ||
-      host.startsWith('10.') ||
-      host.startsWith('192.168.') ||
-      host.startsWith('169.254.') ||
-      host.endsWith('.local')
-    ) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function findBinary(candidates: string[]): Promise<string> {
-  for (const c of candidates) {
-    try {
-      await fs.access(c);
-      return c;
-    } catch {}
-  }
-  return candidates[0];
-}
-
-/**
- * vocalremover.org / splitter-ai tarzı Gerçek AI Vokal & Efekt Ayrıştırıcı
- * Meta Hybrid Transformer Demucs v4 (htdemucs --two-stems=vocals) + FFmpeg
- * Sadece giriş yapmış üyeler kullanabilir.
- */
+/** Editor-only preparation. Each request starts or checks one durable job. */
 export async function POST(req: Request) {
-  const { user, client: authSupabase } = await verifySupabaseAuthHeader(req);
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Bu işlemi yapmak için üye girişi yapmalısınız.' },
-      { status: 401 },
-    );
-  }
-
-  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'replik-splitter-'));
+  const { user, client } = await verifySupabaseAuthHeader(req);
+  if (!user) return Response.json({ error: 'Ses hazırlamak için giriş yapın.' }, { status: 401 });
   try {
-    const contentType = req.headers.get('content-type') || '';
-    const inputPath = path.join(workDir, 'input_media');
-    const wavPath = path.join(workDir, 'input_audio.wav');
-    let sceneId = Date.now();
-
-    if (contentType.includes('application/json')) {
-      const body = (await req.json()) as { videoUrl?: string; sceneId?: number };
-      if (!body.videoUrl || !isSafeExternalMediaUrl(body.videoUrl)) {
-        return NextResponse.json(
-          { error: 'Geçerli bir HTTPS videoUrl gerekli' },
-          { status: 400 },
-        );
-      }
-      if (body.sceneId) sceneId = Number(body.sceneId);
-      const res = await fetch(body.videoUrl);
-      if (!res.ok) {
-        return NextResponse.json({ error: 'Video indirilemedi' }, { status: 400 });
-      }
-      const buf = Buffer.from(await res.arrayBuffer());
-      await fs.writeFile(inputPath, buf);
-    } else {
-      const urlObj = new URL(req.url);
-      if (urlObj.searchParams.get('sceneId')) {
-        sceneId = Number(urlObj.searchParams.get('sceneId'));
-      }
-      const buf = Buffer.from(await req.arrayBuffer());
-      if (buf.byteLength === 0 || buf.byteLength > 120 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: 'Geçersiz veya çok büyük medya verisi' },
-          { status: 400 },
-        );
-      }
-      await fs.writeFile(inputPath, buf);
-    }
-
-    const ffmpegBin = await findBinary([
-      '/opt/homebrew/bin/ffmpeg',
-      '/usr/local/bin/ffmpeg',
-      'ffmpeg',
-    ]);
-
-    // 1. FFmpeg ile videodan 44.1kHz Stereo WAV çıkar
-    await execFileAsync(ffmpegBin, [
-      '-y',
-      '-i',
-      inputPath,
-      '-vn',
-      '-acodec',
-      'pcm_s16le',
-      '-ar',
-      '44100',
-      '-ac',
-      '2',
-      wavPath,
-    ]);
-
-    const outDir = path.join(workDir, 'separated');
-    const localPython = path.join(process.cwd(), '.venv-splitter', 'bin', 'python3');
-    const splitterScript = path.join(process.cwd(), 'scripts', 'splitter_engine.py');
-    const engineOutWav = path.join(workDir, 'splitter_clean.wav');
-
-    let noVocalsWavPath: string | null = null;
-
-    // 2. Local Python Splitter-AI (htdemucs --two-stems=vocals + Vocal Bleed Gate) çalıştır
-    try {
-      await fs.access(localPython);
-      await execFileAsync(
-        localPython,
-        [splitterScript, wavPath, engineOutWav],
-        {
-          env: {
-            ...process.env,
-            PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ''}`,
-            TORCH_HOME: path.join(process.cwd(), '.venv-splitter', 'cache'),
-          },
-          timeout: 240000,
-        },
-      );
-
-      await fs.access(engineOutWav);
-      noVocalsWavPath = engineOutWav;
-    } catch (localErr) {
-      console.warn('[Splitter-AI] Local htdemucs uyarısı, bulut Demucs deneniyor:', localErr);
-    }
-
-    // 3. Eğer local python henüz kurulmadıysa veya hata verdiyse Bulut Demucs v4 (SAF no_vocals, orijinal ses karıştırmadan!)
-    if (!noVocalsWavPath) {
-      const wavBuffer = await fs.readFile(wavPath);
-      const form = new FormData();
-      form.append('files', new Blob([wavBuffer], { type: 'audio/wav' }), 'input_audio.wav');
-      const upRes = await fetch('https://abidlabs-music-separation.hf.space/gradio_api/upload', {
-        method: 'POST',
-        body: form,
-      });
-      if (!upRes.ok) throw new Error('Bulut AI yükleme hatası');
-      const uploaded = (await upRes.json()) as string[];
-      const remotePath = uploaded[0];
-
-      const callRes = await fetch(
-        'https://abidlabs-music-separation.hf.space/gradio_api/call/inference',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: [
-              {
-                path: remotePath,
-                url: `https://abidlabs-music-separation.hf.space/gradio_api/file=${remotePath}`,
-                orig_name: 'input_audio.wav',
-                meta: { _type: 'gradio.FileData' },
-              },
-            ],
-          }),
-        },
-      );
-      if (!callRes.ok) throw new Error('Bulut AI çağrı hatası');
-      const { event_id } = (await callRes.json()) as { event_id: string };
-      const sseRes = await fetch(
-        `https://abidlabs-music-separation.hf.space/gradio_api/call/inference/${event_id}`,
-      );
-      const sseText = await sseRes.text();
-      let noVocalsUrl = '';
-      for (const line of sseText.split('\n')) {
-        if (line.startsWith('data: ')) {
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (Array.isArray(parsed) && parsed.length >= 2 && parsed[1]?.url) {
-              noVocalsUrl = parsed[1].url;
-            }
-          } catch {}
+    const body = await req.json() as { videoUrl?: string; retry?: boolean };
+    if (typeof body.videoUrl !== 'string') return Response.json({ error: 'Video adresi gerekli.' }, { status: 400 });
+    const source = validateSeparationSource(body.videoUrl, process.env.NEXT_PUBLIC_SUPABASE_URL || '');
+    const bucket = client.storage.from('videos');
+    const store: SeparationStore = {
+      async read(path) {
+        const { data, error } = await bucket.download(path);
+        if (error) {
+          if (['404', 'not_found', 'NoSuchKey', 'notFound'].includes(String(error.statusCode)) ||
+              error.message.toLowerCase() === 'object not found') return null;
+          throw new Error(`İşlem durumu okunamadı: ${error.message}`);
         }
-      }
-      if (!noVocalsUrl) throw new Error('Bulut AI no_vocals üretemedi');
-      const dl = await fetch(noVocalsUrl);
-      const dlBuf = Buffer.from(await dl.arrayBuffer());
-      const cloudOut = path.join(workDir, 'cloud_no_vocals.wav');
-      await fs.writeFile(cloudOut, dlBuf);
-      noVocalsWavPath = cloudOut;
-    }
-
-    // 4. Doğrudan yapay zekanın (htdemucs) ürettiği saf no_vocals.wav dosyasını oku
-    const finalWavBuffer = await fs.readFile(noVocalsWavPath);
-
-    // 5. Supabase Storage'a yükle ve URL'sini dön
-    const storagePath = `instrumentals/pure_htdemucs_${sceneId}_${Date.now()}.wav`;
-    const { error: uploadError } = await authSupabase.storage
-      .from('videos')
-      .upload(storagePath, finalWavBuffer, {
-        contentType: 'audio/wav',
-        cacheControl: '3600',
-        upsert: true,
-      });
-
-    if (uploadError) {
-      throw new Error(`Supabase yükleme hatası: ${uploadError.message}`);
-    }
-
-    const { data: pubUrl } = authSupabase.storage
-      .from('videos')
-      .getPublicUrl(storagePath);
-
-    return NextResponse.json({
-      ok: true,
-      engine: 'splitter-ai-htdemucs',
-      instrumentalUrl: pubUrl.publicUrl,
+        return JSON.parse(await data.text()) as SeparationJob;
+      },
+      async create(path, job) {
+        const { error } = await bucket.upload(path, JSON.stringify(job), { contentType: 'application/json', cacheControl: '0', upsert: false });
+        if (error) {
+          if (String(error.statusCode) === '409' || error.message.toLowerCase().includes('already exists')) return false;
+          throw new Error(`Ses hazırlama başlatılamadı: ${error.message}`);
+        }
+        return true;
+      },
+      async write(path, job) {
+        const { error } = await bucket.update(path, JSON.stringify(job), { contentType: 'application/json', cacheControl: '0' });
+        if (error) throw new Error(`İşlem durumu kaydedilemedi: ${error.message}`);
+      },
+      async saveAudio(path, audio) {
+        const { error } = await bucket.upload(path, audio, { contentType: 'audio/wav', cacheControl: '31536000', upsert: false });
+        if (error && String(error.statusCode) !== '409' && !error.message.toLowerCase().includes('already exists')) {
+          throw new Error(`Arka plan sesi kaydedilemedi: ${error.message}`);
+        }
+        return bucket.getPublicUrl(path).data.publicUrl;
+      },
+    };
+    const useAudioShake = Boolean(process.env.AUDIOSHAKE_API_KEY?.trim());
+    const job = await prepareDialogueBackground({
+      source, userId: user.id, store, retry: body.retry === true,
+      apiKey: useAudioShake ? process.env.AUDIOSHAKE_API_KEY?.trim() : process.env.CINEMATIC_API_KEY?.trim(),
+      apiBase: useAudioShake ? 'https://api.audioshake.ai' : process.env.CINEMATIC_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8011',
+      engine: useAudioShake ? 'audioshake-dme-v1' : 'cinematic-cdx23-ensemble-v1',
     });
-  } catch (err) {
-    console.error('[Splitter-AI API Error]:', err);
-    return NextResponse.json(
-      { error: (err as Error).message || 'Vokal ayrıştırma hatası' },
-      { status: 500 },
-    );
-  } finally {
-    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+    return Response.json(job, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    return Response.json({ error: (error as Error).message || 'Ses hazırlanamadı.' }, { status: 503 });
   }
 }
