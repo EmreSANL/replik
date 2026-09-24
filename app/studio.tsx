@@ -1161,27 +1161,30 @@ export default function Studio({
         <aside className="room-card studio-panel">
           {room.status === 'lobby' ? (
             <>
-              <div className="small-icon">
-                <Users />
-              </div>
-              <h2>
-                {room.maxPlayers === 1 ? 'Solo oda' : 'Oyuncular toplansın'}
-              </h2>
-              <p>
-                {room.maxPlayers === 1
-                  ? 'Bütün replikler sende. Hazır olduğunda başla.'
-                  : 'Oda kodunu paylaş. Herkes hazır olunca roller dağıtılacak.'}
-              </p>
-
-              <div className="lobby-scene-preview">
-                <span className="lobby-scene-label">Seçili Sahne & Mod:</span>
-                <strong>{scene.title}</strong>
-                <small>
-                  {room.maxPlayers === 1
-                    ? 'Solo Mod (Tüm Replikler)'
-                    : `${room.maxPlayers || 4} Kişilik Oda (${room.players.length}/${room.maxPlayers || 4} Katıldı)`}
-                  {' · '}00:{scene.duration} sn
-                </small>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px',
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: '20px' }}>
+                  {room.maxPlayers === 1 ? 'Solo Oda' : 'Oyuncular'}
+                </h2>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    color: '#A0A096',
+                    background: '#1c1c1c',
+                    border: '1px solid #2a2a2a',
+                    padding: '4px 10px',
+                    borderRadius: '999px',
+                  }}
+                >
+                  {room.players.length}/{room.maxPlayers || 4}
+                </span>
               </div>
 
               <ul className="players">
@@ -1208,15 +1211,6 @@ export default function Studio({
                 ))}
               </ul>
 
-              {room.maxPlayers && room.players.length < room.maxPlayers && (
-                <div className="lobby-waiting-players-hint">
-                  <Users size={14} />
-                  <span>
-                    {room.maxPlayers - room.players.length} oyuncu daha bekleniyor ({room.players.length}/{room.maxPlayers})
-                  </span>
-                </div>
-              )}
-
               <div className="lobby-action-buttons">
                 <button
                   className="secondary"
@@ -1233,12 +1227,12 @@ export default function Studio({
                     onClick={() => act('start')}
                   >
                     {room.maxPlayers === 1
-                      ? 'Sahneye çık ve başla'
+                      ? 'Başlat'
                       : 'Rolleri dağıt ve başlat'}{' '}
                     <Play size={17} />
                   </button>
                 ) : (
-                  <p className="microcopy">Oda kurucusu oyunu başlatacak.</p>
+                  <p className="microcopy">Kurucu oyunu başlatacak.</p>
                 )}
               </div>
             </>
@@ -1495,22 +1489,6 @@ export default function Studio({
                 </div>
               )}
             </>
-          )}
-
-          {/* Canlı Oda Aktivite Akışı */}
-          {room.activities && room.activities.length > 0 && (
-            <div className="activity-box">
-              <div className="activity-box-title">
-                <Sparkles size={13} /> ODA CANLI AKIŞI
-              </div>
-              <ul className="activity-list">
-                {room.activities.slice(0, 5).map((a) => (
-                  <li key={a.id} className="activity-item">
-                    <span>{a.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           )}
 
           {busy && <p className="microcopy">Bir saniye…</p>}
