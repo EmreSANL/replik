@@ -83,6 +83,7 @@ export default function EditorPage() {
   const instrumentalAudioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const cueListRef = useRef<HTMLDivElement>(null);
   const [pendingVideo, setPendingVideo] = useState<File | null>(null);
 
   // Sahne bilgileri (Demo video yok, kullanıcı kendi videosunu yükler)
@@ -136,6 +137,36 @@ export default function EditorPage() {
   const [cues, setCues] = useState<Cue[]>([]);
   const [selectedCueId, setSelectedCueId] = useState<number>(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const list = cueListRef.current;
+    if (!list) return;
+
+    const handleCueTextWheel = (event: WheelEvent) => {
+      const input = event.target;
+      if (
+        !(input instanceof HTMLInputElement) ||
+        !input.classList.contains('cue-text-input')
+      ) return;
+
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+        ? event.deltaX
+        : event.deltaY;
+      if (!delta) return;
+      const distance = delta * (
+        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? input.clientWidth : 1
+      );
+      const previous = input.scrollLeft;
+      input.scrollLeft += distance;
+      if (input.scrollLeft !== previous) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    list.addEventListener('wheel', handleCueTextWheel, { passive: false });
+    return () => list.removeEventListener('wheel', handleCueTextWheel);
+  }, [cues.length]);
 
   // Mevcut Sahne Düzenleme Modu ve Sahne Seçici Modal Durumu
   const [isEditingExisting, setIsEditingExisting] = useState(false);
@@ -2416,7 +2447,7 @@ export default function EditorPage() {
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col gap-2.5 max-h-[520px] overflow-y-auto pr-1">
+              <div ref={cueListRef} className="flex flex-col gap-2.5 max-h-[520px] overflow-y-auto pr-1">
                 {cues.map((cue, index) => {
                   const isSelected = cue.id === selectedCueId;
                   return (
@@ -2498,7 +2529,7 @@ export default function EditorPage() {
                         }
                         style={{ fontSize: '15px', color: '#FFFFFF' }}
                         placeholder="Karakterin söyleyeceği cümleyi buraya yaz..."
-                        className="w-full bg-[#161613] border border-[#383832] rounded-lg px-3.5 py-2.5 text-sm sm:text-base font-semibold text-white focus:outline-none focus:border-[#F5E636] placeholder:text-[#8E8E84]"
+                        className="cue-text-input w-full bg-[#161613] border border-[#383832] rounded-lg px-3.5 py-2.5 text-sm sm:text-base font-semibold text-white focus:outline-none focus:border-[#F5E636] placeholder:text-[#8E8E84]"
                       />
                     </div>
                   );
