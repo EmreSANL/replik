@@ -55,8 +55,6 @@ export function triggerReplikCurtain(
  */
 export function ReplikCurtainTransition() {
   const [phase, setPhase] = useState<'idle' | 'covering' | 'revealing'>('idle');
-  const [label, setLabel] = useState('Replik.');
-  const [sublabel, setSublabel] = useState('Sahne hazırlanıyor...');
   const [startColor, setStartColor] = useState('#F5E636');
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -68,8 +66,6 @@ export function ReplikCurtainTransition() {
 
     const handleTrigger: CurtainListener = (cmd) => {
       clearTimers();
-      setLabel(cmd.label || 'Replik.');
-      setSublabel(cmd.sublabel || 'Ekran değiştiriliyor...');
       setStartColor(cmd.accent || '#F5E636');
 
       // 1. Perdeyi sağ kenara (102%) konumlandır ve hemen merkeze (0%) kaydır
@@ -184,40 +180,31 @@ export function ReplikCurtainTransition() {
         <div
           style={{
             width: '100%',
-            maxWidth: '460px',
+            maxWidth: '420px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '16px',
           }}
         >
           <div
             style={{
-              fontSize: 'clamp(40px, 5.8vw, 62px)',
+              fontSize: 'clamp(42px, 6vw, 64px)',
               fontWeight: 900,
-              letterSpacing: '-0.055em',
-              lineHeight: 0.96,
+              letterSpacing: '-0.06em',
+              lineHeight: 0.95,
               color: '#090909',
             }}
           >
-            {label}
+            Replik.
           </div>
           <div
             style={{
               width: '100%',
-              height: '10px',
+              height: '14px',
               borderRadius: '999px',
               background: '#090909',
             }}
           />
-          <div
-            style={{
-              fontSize: '14px',
-              fontWeight: 800,
-              color: '#090909',
-            }}
-          >
-            {sublabel}
-          </div>
         </div>
       </div>
     </div>
@@ -231,7 +218,6 @@ export function ReplikCurtainTransition() {
  */
 export function ReplikLoadingScreen({
   progress,
-  statusText = 'Videolar yükleniyor...',
   visible,
 }: ReplikLoadingScreenProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(progress)));
@@ -342,17 +328,6 @@ export function ReplikLoadingScreen({
                 transition: 'width 0.22s ease-out',
               }}
             />
-          </div>
-
-          <div
-            style={{
-              fontSize: '14px',
-              fontWeight: 800,
-              color: '#090909',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {statusText}
           </div>
         </div>
       </div>
