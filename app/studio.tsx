@@ -841,15 +841,7 @@ export default function Studio({
       )}
 
       <div
-        className="studio-grid"
-        style={
-          room.status === 'recording'
-            ? {
-                gridTemplateColumns: 'minmax(0, 880px)',
-                justifyContent: 'center',
-              }
-            : undefined
-        }
+        className={`studio-grid ${room.status === 'recording' ? 'recording-stage-grid' : ''}`}
       >
         <div>
           {room.status !== 'recording' && (
@@ -1154,7 +1146,235 @@ export default function Studio({
           )}
         </div>
 
-        {room.status !== 'recording' && (
+        {room.status === 'recording' ? (
+          (() => {
+            const preferredRoles = room.players.map((p) => p.role);
+            const playerStats = room.players.map((p, pIdx) => {
+              const assigned = playerCues(
+                room.scene,
+                pIdx,
+                room.players.length,
+                customScenes,
+                preferredRoles,
+              );
+              const total = Math.max(1, assigned.length);
+              const done = assigned.filter((c) => p.segments?.includes(c.id)).length;
+              const pct = Math.min(100, Math.round((done / total) * 100));
+              const isDone = (assigned.length > 0 && done >= assigned.length) || p.ready === 1;
+              const roleNames = Array.from(
+                new Set(assigned.map((c) => c.roleName).filter(Boolean)),
+              );
+              const roleLabel =
+                roleNames.join(' + ') ||
+                scene.roles?.[p.role >= 0 ? p.role : pIdx] ||
+                `${pIdx + 1}. Karakter`;
+              return {
+                player: p,
+                pIdx,
+                assigned,
+                total,
+                done,
+                pct,
+                isDone,
+                roleLabel,
+              };
+            });
+            const totalCuesSum = playerStats.reduce((acc, s) => acc + s.total, 0);
+            const totalDoneSum = playerStats.reduce((acc, s) => acc + s.done, 0);
+            const roomPct =
+              totalCuesSum > 0 ? Math.min(100, Math.round((totalDoneSum / totalCuesSum) * 100)) : 0;
+            const slotPalette = ['#F5E636', '#FF6B4A', '#D4C2FC', '#FFD166'];
+
+            return (
+              <aside
+                aria-label="Oyuncu replik tamamlanma barı"
+                style={{
+                  background: '#11110e',
+                  border: '2px solid #282821',
+                  borderRadius: '20px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingBottom: '6px',
+                    borderBottom: '1.5px solid #22221c',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 900,
+                      letterSpacing: '0.08em',
+                      color: '#A0A096',
+                      fontFamily: 'var(--font-technical)',
+                    }}
+                  >
+                    OYUNCU İLERLEME BARI
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 950,
+                      fontFamily: 'var(--font-technical)',
+                      background: roomPct === 100 ? '#7BF1A8' : '#F5E636',
+                      color: '#090909',
+                      border: '1.5px solid #090909',
+                      borderRadius: '6px',
+                      padding: '2px 7px',
+                    }}
+                  >
+                    %{roomPct}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {playerStats.map(({ player: p, pIdx, total, done, pct, isDone, roleLabel }) => {
+                    const baseColor = slotPalette[pIdx % slotPalette.length];
+                    const activeColor = isDone ? '#7BF1A8' : baseColor;
+                    const isMe = p.id === me.id;
+                    const segmentBlocks = Math.min(10, Math.max(2, total));
+
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          background: isDone ? '#14221a' : '#181814',
+                          border: `2px solid ${isDone ? '#7BF1A8' : '#090909'}`,
+                          boxShadow: '4px 4px 0 #090909',
+                          borderRadius: '14px',
+                          padding: '11px 12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              minWidth: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: '26px',
+                                height: '26px',
+                                borderRadius: '7px',
+                                background: activeColor,
+                                color: '#090909',
+                                border: '1.5px solid #090909',
+                                display: 'grid',
+                                placeItems: 'center',
+                                fontSize: '12px',
+                                fontWeight: 950,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.name[0]?.toLocaleUpperCase('tr') || '?'}
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: '13.5px',
+                                  fontWeight: 950,
+                                  color: '#F4F4E9',
+                                  letterSpacing: '-0.02em',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {p.name}
+                                {isMe ? ' (Sen)' : ''}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  color: '#9e9e93',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {roleLabel}
+                              </div>
+                            </div>
+                          </div>
+
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 950,
+                              fontFamily: 'var(--font-technical)',
+                              padding: '3px 7px',
+                              borderRadius: '6px',
+                              background: '#090909',
+                              color: activeColor,
+                              border: `1.5px solid ${activeColor}`,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isDone ? 'TAMAM ✓' : `${done}/${total}`}
+                          </span>
+                        </div>
+
+                        {/* Maksimalist Bento Parçalı İlerleme Barı */}
+                        <div
+                          style={{
+                            position: 'relative',
+                            height: '16px',
+                            borderRadius: '7px',
+                            background: '#090909',
+                            border: '1.5px solid #090909',
+                            padding: '2px',
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${segmentBlocks}, minmax(0, 1fr))`,
+                            gap: '2px',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {Array.from({ length: segmentBlocks }).map((_, bIdx) => {
+                            const blockThreshold = ((bIdx + 1) / segmentBlocks) * 100;
+                            const blockHalf = ((bIdx + 0.35) / segmentBlocks) * 100;
+                            const filled = pct >= blockThreshold || (done > 0 && pct >= blockHalf);
+                            return (
+                              <span
+                                key={bIdx}
+                                style={{
+                                  borderRadius: '3px',
+                                  background: filled ? activeColor : '#23231e',
+                                  transition: 'background 0.22s ease',
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </aside>
+            );
+          })()
+        ) : (
         <aside className="room-card studio-panel">
           {room.status === 'lobby' ? (
             <>

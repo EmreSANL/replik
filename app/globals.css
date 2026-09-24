@@ -4698,6 +4698,7 @@ audio {
 .studio .section-heading { gap: 16px; flex-wrap: wrap; }
 .studio-title { font-weight: 850; font-size: clamp(28px, 3.5vw, 52px); letter-spacing: -.055em; }
 .studio-grid { grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 20px; }
+.studio-grid.recording-stage-grid { grid-template-columns: minmax(0, 820px) 272px; justify-content: center; align-items: start; gap: 20px; }
 .room-card,
 .studio-panel,
 .lobby-scene-preview,
@@ -4892,7 +4893,8 @@ audio {
 
 @keyframes replik-live { 50% { opacity: .4; } }
 @media (max-width: 960px) {
-  .studio-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-grid,
+  .studio-grid.recording-stage-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   .bbank-topbar { padding: 12px 14px; gap: 8px; }
