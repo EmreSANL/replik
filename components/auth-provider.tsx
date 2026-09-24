@@ -48,12 +48,36 @@ function LoopingGifTile({
   offsetSeed: number;
   onReady?: () => void;
 }) {
+  const tileRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const visibleRef = useRef(true);
   const readyFiredRef = useRef(false);
   const loopRangeRef = useRef<{ start: number; end: number }>({
     start: 1,
     end: 4.2,
   });
+
+  useEffect(() => {
+    const el = tileRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        visibleRef.current = entry.isIntersecting;
+        const v = videoRef.current;
+        if (!v) return;
+        if (entry.isIntersecting) {
+          if (v.paused) void v.play().catch(() => {});
+        } else if (!v.paused) {
+          v.pause();
+        }
+      },
+      { rootMargin: '80px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -71,7 +95,6 @@ function LoopingGifTile({
 
     const onLoaded = () => {
       const dur = Number.isFinite(v.duration) && v.duration > 2 ? v.duration : 15;
-      // Her karede videonun farklı bir anı dönsün
       const frac = ((offsetSeed * 0.29) % 0.72) + 0.1;
       const start = Math.max(0.2, Math.min(dur - 3.2, dur * frac));
       const end = Math.min(dur - 0.1, start + 3.0);
@@ -79,12 +102,13 @@ function LoopingGifTile({
       try {
         v.currentTime = start;
       } catch {}
-      void v.play().catch(() => {});
+      if (visibleRef.current) void v.play().catch(() => {});
       markReady();
     };
 
     const onTimeUpdate = () => {
       markReady();
+      if (!visibleRef.current) return;
       const { start, end } = loopRangeRef.current;
       if (v.currentTime >= end || v.currentTime < start - 0.3) {
         try {
@@ -94,13 +118,13 @@ function LoopingGifTile({
       }
     };
 
-    v.addEventListener('loadeddata', onLoaded);
+    v.addEventListener('loadedmetadata', onLoaded);
     v.addEventListener('canplay', markReady);
     v.addEventListener('timeupdate', onTimeUpdate);
-    if (v.readyState >= 2) onLoaded();
+    if (v.readyState >= 1) onLoaded();
 
     return () => {
-      v.removeEventListener('loadeddata', onLoaded);
+      v.removeEventListener('loadedmetadata', onLoaded);
       v.removeEventListener('canplay', markReady);
       v.removeEventListener('timeupdate', onTimeUpdate);
     };
@@ -108,6 +132,7 @@ function LoopingGifTile({
 
   return (
     <div
+      ref={tileRef}
       style={{
         position: 'relative',
         width: '100%',
@@ -125,14 +150,15 @@ function LoopingGifTile({
         playsInline
         autoPlay
         loop
-        preload="auto"
+        preload="metadata"
+        disablePictureInPicture
+        disableRemotePlayback
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
           display: 'block',
           pointerEvents: 'none',
-          filter: 'saturate(1.08) contrast(1.04)',
         }}
       />
     </div>
@@ -371,10 +397,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Ekranı üstten alta, soldan sağa boşluksuz dolduracak 56 adet kare GIF kutusu üret
+  // Ekranı üstten alta, soldan sağa boşluksuz dolduracak 32 adet optimize kare GIF kutusu üret
   const mosaicTiles = useMemo(() => {
     if (bgScenes.length === 0) return [];
-    const count = 56;
+    const count = 32;
     return Array.from({ length: count }, (_, idx) => {
       const sc = bgScenes[idx % bgScenes.length]!;
       return {
@@ -442,7 +468,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               left: '-48px',
               right: '-48px',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(215px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
               gridAutoRows: 'max-content',
               gap: '10px',
               padding: '0',

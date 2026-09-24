@@ -179,44 +179,68 @@ export async function saveSceneToSupabase(scene: Scene): Promise<void> {
   if (error) {
     throw new Error(`Sahne Supabase'e kaydedilemedi: ${error.message}`);
   }
+  scenesMemoryCache = null;
 }
 
-/**
- * Supabase'den tüm sahneleri çeker (Sadece giriş yapmış üyeler okuyabilir)
- */
-export async function getScenesFromSupabase(): Promise<Scene[]> {
-  const { data, error } = await supabase
-    .from('custom_scenes')
-    .select('*')
-    .order('created_at', { ascending: false });
+let scenesMemoryCache: { data: Scene[]; expiresAt: number } | null = null;
+let scenesInFlightPromise: Promise<Scene[]> | null = null;
 
-  if (error) {
-    console.error('Supabase sahneleri çekilemedi:', error);
-    return [];
+/**
+ * Supabase'den tüm sahneleri çeker (Bellek önbelleği ve eşzamanlı istek birleştirme ile optimize edilmiştir)
+ */
+export async function getScenesFromSupabase(forceRefresh = false): Promise<Scene[]> {
+  const now = Date.now();
+  if (!forceRefresh && scenesMemoryCache && scenesMemoryCache.expiresAt > now) {
+    return scenesMemoryCache.data;
+  }
+  if (!forceRefresh && scenesInFlightPromise) {
+    return scenesInFlightPromise;
   }
 
-  if (!data) return [];
+  scenesInFlightPromise = (async () => {
+    const { data, error } = await supabase
+      .from('custom_scenes')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  return data.map((item: DbCustomScene) => ({
-    id: item.id,
-    title: item.title,
-    category: item.category,
-    mood: item.mood || '',
-    start: 0,
-    duration: Number(item.duration),
-    poster: item.poster_url || '',
-    video: item.video_url,
-    roles: (item.roles || []).map((r) => (typeof r === 'string' ? r : r.name)),
-    roleDetails: (item.roles || []).map((r, i) =>
-      typeof r === 'string'
-        ? { id: i, name: r, color: '#ef4444', description: '' }
-        : r,
-    ),
-    prompts: (item.cues || []).map((c) => c.text),
-    cues: item.cues || [],
-    instrumental: item.instrumental_url || undefined,
-    isCustom: true,
-  }));
+    if (error || !data) {
+      if (error) console.error('Supabase sahneleri çekilemedi:', error);
+      return scenesMemoryCache?.data || [];
+    }
+
+    const mapped: Scene[] = data.map((item: DbCustomScene) => ({
+      id: item.id,
+      title: item.title,
+      category: item.category,
+      mood: item.mood || '',
+      start: 0,
+      duration: Number(item.duration),
+      poster: item.poster_url || '',
+      video: item.video_url,
+      roles: (item.roles || []).map((r) => (typeof r === 'string' ? r : r.name)),
+      roleDetails: (item.roles || []).map((r, i) =>
+        typeof r === 'string'
+          ? { id: i, name: r, color: '#ef4444', description: '' }
+          : r,
+      ),
+      prompts: (item.cues || []).map((c) => c.text),
+      cues: item.cues || [],
+      instrumental: item.instrumental_url || undefined,
+      isCustom: true,
+    }));
+
+    scenesMemoryCache = {
+      data: mapped,
+      expiresAt: Date.now() + 30_000,
+    };
+    return mapped;
+  })();
+
+  try {
+    return await scenesInFlightPromise;
+  } finally {
+    scenesInFlightPromise = null;
+  }
 }
 
 /**
@@ -232,4 +256,5 @@ export async function deleteSceneFromSupabase(id: number): Promise<void> {
   if (error) {
     throw new Error(`Sahne silinemedi: ${error.message}`);
   }
+  scenesMemoryCache = null;
 }

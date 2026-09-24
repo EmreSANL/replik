@@ -124,17 +124,23 @@ export default function Home() {
 
       const fallbackTimer = setTimeout(() => {
         finishLoading();
-      }, 3200);
+      }, 2200);
 
       videoUrls.forEach((url) => {
         const vid = document.createElement('video');
-        vid.preload = 'auto';
+        vid.preload = 'metadata';
         vid.muted = true;
         vid.playsInline = true;
         let done = false;
         const markOne = () => {
           if (done || cancelled) return;
           done = true;
+          // Arka planda bellek ve bant genişliği sızıntısını önlemek için geçici video nesnesini temizle
+          try {
+            vid.pause();
+            vid.removeAttribute('src');
+            vid.load();
+          } catch {}
           loadedCount += 1;
           const pct = 35 + Math.round((loadedCount / total) * 65);
           setLoadingProgress(pct);
@@ -146,15 +152,13 @@ export default function Home() {
             finishLoading();
           }
         };
+        vid.addEventListener('loadedmetadata', markOne, { once: true });
         vid.addEventListener('loadeddata', markOne, { once: true });
-        vid.addEventListener('canplay', markOne, { once: true });
         vid.addEventListener('error', markOne, { once: true });
         vid.src = url;
-        vid.load();
       });
     });
 
-    void refreshPublishedFeed();
     void cleanupStaleUnpublishedRooms();
 
     return () => {
