@@ -178,6 +178,7 @@ export default function EditorPage() {
   // Zaman Çizelgesi Mouse ile Sürükleme, Ses Dalgası ve Yakınlaştırma Durumu
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const multitrackScrollRef = useRef<HTMLDivElement>(null);
   const [timelineZoom, setTimelineZoom] = useState<number>(2);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const videoJobRef = useRef(0);
@@ -208,10 +209,25 @@ export default function EditorPage() {
     if (!scrollEl || !boxEl) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // Shift tuşu basılıysa yatay kaydırmaya izin ver
-      if (e.shiftKey) return;
+      const tracks = multitrackScrollRef.current;
+      const overTracks = tracks && e.target instanceof Node && tracks.contains(e.target);
+      if (!e.ctrlKey && !e.metaKey) {
+        if (!overTracks) return;
+        const distance = e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? tracks.clientHeight : 1;
+        const horizontal = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+        const target = horizontal ? scrollEl : tracks;
+        const delta = horizontal && e.shiftKey ? e.deltaY : horizontal ? e.deltaX : e.deltaY;
+        const before = horizontal ? target.scrollLeft : target.scrollTop;
+        if (horizontal) target.scrollLeft += delta * distance;
+        else target.scrollTop += delta * distance;
+        if ((horizontal ? target.scrollLeft : target.scrollTop) !== before) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
 
-      // Sayfanın aşağı-yukarı kaymasını engelleyip çizelgeyi zoomla
+      // Ctrl/⌘ + tekerlek çizelgeyi imlecin altındaki saniyeye göre yakınlaştırır.
       e.preventDefault();
       e.stopPropagation();
 
@@ -229,7 +245,7 @@ export default function EditorPage() {
         e.deltaMode === 1
           ? rawDelta * 32
           : Math.max(-120, Math.min(120, rawDelta));
-      const zoomSensitivity = e.ctrlKey ? 0.012 : 0.0038;
+      const zoomSensitivity = 0.012;
       const factor = Math.exp(-normalizedDelta * zoomSensitivity);
 
       setTimelineZoom((prevZoom) => {
@@ -1552,10 +1568,10 @@ export default function EditorPage() {
       )}
 
       {/* ANA İÇERİK: SOLDA VİDEO, SAĞDA 3 BASİT ADIM */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* SOL SÜTUN: VİDEO ÖNİZLEME (6 SÜTUN) */}
-        <div className="lg:col-span-7 flex flex-col gap-4 lg:sticky lg:top-20">
-          <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3.5 shadow-xl">
+      <div className="editor-workspace flex-1 w-full mx-auto p-4 sm:p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        {/* SOL SÜTUN: VİDEO ÖNİZLEME VE ZAMAN ÇİZELGESİ */}
+        <div className="editor-video-column xl:col-span-8 flex flex-col gap-4 xl:self-stretch">
+          <div className="editor-video-panel bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-3.5">
             {/* Otomatik İşlem Durum Bildirimleri (Varsa gösterilir) */}
             {(isUploadingToSupabase ||
               isRemovingVocals ||
@@ -1593,7 +1609,7 @@ export default function EditorPage() {
             )}
 
             {/* VİDEO KUTUSU */}
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-[#383832] flex items-center justify-center">
+            <div className={`editor-video-stage relative bg-black rounded-xl overflow-hidden border border-[#383832] flex items-center justify-center ${roles.length >= 7 ? 'editor-video-stage-compact' : ''}`}>
               {!videoUrl ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -1720,10 +1736,11 @@ export default function EditorPage() {
                 </>
               )}
             </div>
+          </div>
 
             {/* ETKİLEŞİMLİ ZAMAN ÇİZELGESİ (MOUSE İLE BAŞLANGIÇ & BİTİŞ AYARLAMA) */}
             {videoUrl && (
-              <div className="flex flex-col gap-3">
+              <div className="editor-timeline-workspace flex flex-col gap-3">
                 {/* Üst Kontroller: Oynat, Süre, Ses Modu */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -1852,7 +1869,7 @@ export default function EditorPage() {
                       </button>
 
                       {/* Yakınlaştırma (Zoom) Butonları & Göstergesi */}
-                      <div className="flex items-center gap-1 bg-[#141412] border border-[#383832] rounded-lg p-0.5" title="Fare tekerleği (Scroll) ile yakınlaştır / uzaklaştır">
+                      <div className="flex items-center gap-1 bg-[#141412] border border-[#383832] rounded-lg p-0.5" title="Ctrl/⌘ + fare tekerleği ile yakınlaştır / uzaklaştır">
                         <button
                           type="button"
                           onClick={() => setTimelineZoom((z) => Math.max(0.75, Number((z - 0.5).toFixed(1))))}
@@ -1904,7 +1921,8 @@ export default function EditorPage() {
                   </div>
 
                   <div className="editor-shortcut-strip" aria-label="Zaman çizelgesi kısayolları">
-                    <span><kbd>Scroll</kbd> Yakınlaştır / Uzaklaştır</span>
+                    <span><kbd>Scroll</kbd> Katmanları kaydır</span>
+                    <span><kbd>Ctrl/⌘ + Scroll</kbd> Yakınlaştır / Uzaklaştır</span>
                     <span><kbd>Çift Tık</kbd> Katmana replik ekle</span>
                     <span><kbd>Boşluk</kbd> oynat</span>
                     <span><kbd>[</kbd> başlangıç</span>
@@ -1916,9 +1934,9 @@ export default function EditorPage() {
                   </div>
 
                   {/* Multi-Track Container: Sol Sabit Sidebar + Sağ Kaydırılabilir Grid */}
-                  <div className="editor-multitrack-box flex rounded-xl border border-[#383832] bg-[#11110F] overflow-hidden">
+                  <div ref={multitrackScrollRef} className="editor-multitrack-box flex items-start rounded-xl border border-[#383832] bg-[#11110F]">
                     {/* Sol Sabit Katman Başlıkları (Track Headers Sidebar) */}
-                    <div className="w-36 sm:w-44 shrink-0 bg-[#161613] border-r border-[#383832] flex flex-col z-20 select-none">
+                    <div className="editor-track-labels w-36 sm:w-44 shrink-0 bg-[#161613] border-r border-[#383832] flex flex-col z-20 select-none">
                       {/* Ruler Yüksekliğiyle Eşleşen Başlık (h-7) */}
                       <div className="h-7 bg-[#1A1A17] border-b border-[#383832] px-2.5 flex items-center justify-between text-[10px] font-extrabold text-[#B8B8AE] uppercase tracking-wider">
                         <span>Katmanlar</span>
@@ -1966,7 +1984,7 @@ export default function EditorPage() {
                     {/* Sağ Kaydırılabilir & Zoomlanabilir Çok Katmanlı Grid */}
                     <div
                       ref={timelineScrollRef}
-                      className="flex-1 overflow-x-auto pb-0.5 select-none relative"
+                      className="editor-track-viewport flex-1 min-w-0 pb-0.5 select-none relative"
                     >
                       <div
                         ref={timelineRef}
@@ -1989,7 +2007,7 @@ export default function EditorPage() {
                         }`}
                       >
                         {/* Saniye Cetveli (Ruler - h-7) */}
-                        <div className="h-7 bg-[#1A1A17] border-b border-[#383832] sticky top-0 flex items-center pointer-events-none z-10">
+                        <div className="h-7 bg-[#1A1A17] border-b border-[#383832] flex items-center pointer-events-none z-10">
                           {Array.from({
                             length: Math.max(
                               2,
@@ -2296,11 +2314,10 @@ export default function EditorPage() {
                 </div>
               </div>
             )}
-          </div>
         </div>
 
-        {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME (5 SÜTUN) */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
+        {/* SAĞ SÜTUN: 3 BASİT ADIMDA DÜZENLEME */}
+        <div className="xl:col-span-4 flex flex-col gap-4 min-w-0">
           {/* ADIM 1: SAHNE ADI */}
           <div className="bg-[#1A1A17] border border-[#383832] rounded-2xl p-4 flex flex-col gap-2.5 shadow-lg">
             <div className="flex items-center gap-2">

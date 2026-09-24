@@ -5165,7 +5165,32 @@ audio {
   .trim-progress-track > div { transition: none; }
 }
 
-/* Editor timeline: one quiet audio lane, readable cue lane, and precise controls. */
+/* Editor workspace and timeline. */
+.editor-workspace { max-width: 2200px; }
+.editor-video-column,
+.editor-video-panel { min-width: 0; }
+.editor-video-stage { aspect-ratio: 16 / 9; }
+@media (min-width: 1280px) {
+  .editor-video-column {
+    position: sticky;
+    top: 76px;
+    height: calc(100dvh - 88px);
+    overflow: hidden;
+  }
+  .editor-video-panel { flex: none; }
+  .editor-video-stage { aspect-ratio: auto; height: clamp(240px, 42dvh, 620px); }
+  .editor-video-stage-compact { height: clamp(200px, 31dvh, 450px); }
+  .editor-timeline-workspace { flex: 1; min-height: 0; overflow-y: auto; }
+  .editor-timeline-panel:not(.editor-timeline-expanded) {
+    flex: 1;
+    min-height: 0;
+  }
+  .editor-timeline-panel:not(.editor-timeline-expanded) .editor-multitrack-box {
+    flex: 1;
+    min-height: 110px;
+    max-height: none;
+  }
+}
 .editor-timeline-panel { min-width: 0; }
 .editor-timeline-expanded {
   position: fixed;
@@ -5177,17 +5202,24 @@ audio {
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .82), 0 22px 70px rgba(0, 0, 0, .7);
 }
 .editor-multitrack-box {
-  max-height: 440px;
+  max-height: min(58dvh, 720px);
+  overflow-x: hidden;
   overflow-y: auto;
 }
-.editor-timeline-expanded .editor-multitrack-box {
-  max-height: calc(75vh - 120px);
+.editor-track-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
-.editor-multitrack-box::-webkit-scrollbar {
+.editor-timeline-expanded .editor-multitrack-box {
+  max-height: min(72dvh, 900px);
+}
+.editor-multitrack-box::-webkit-scrollbar,
+.editor-track-viewport::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-.editor-multitrack-box::-webkit-scrollbar-thumb {
+.editor-multitrack-box::-webkit-scrollbar-thumb,
+.editor-track-viewport::-webkit-scrollbar-thumb {
   background: #383832;
   border-radius: 999px;
 }
@@ -5262,7 +5294,6 @@ audio {
 .editor-time-field input:focus { border-color: var(--primary); }
 @media (max-width: 640px) {
   .editor-timeline-expanded { inset: 8px 8px auto; max-height: calc(100vh - 16px); }
-  .editor-timeline-expanded > div:nth-child(3) > div { height: 36vh; }
 }
 .final-ctrl-btn.subtitles-on { color: var(--primary); border-color: var(--primary); }
 
