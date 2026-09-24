@@ -443,7 +443,8 @@ export default function Studio({
 
       const audio = ctx.current;
 
-      // Master Gain Setup
+      // Keep recorded voices at their set level even when cues overlap.
+      // A compressor after the shared master gain ducks every voice together.
       if (audio) {
         if (!masterGain.current) {
           masterGain.current = audio.createGain();
@@ -469,13 +470,39 @@ export default function Studio({
       if (audio && masterGain.current) {
         // 1. Orijinal arka plan müziği & ses efektleri (İnsan sesleri temizlenmiş M&E track)
         const instBuffer = buffers.current.get(`__scene_instrumental__:${scene.id}`);
+        const allCues = sceneCues(room.scene, customScenes);
         let instGain: GainNode | null = null;
         if (instBuffer) {
           const instSource = audio.createBufferSource();
           instSource.buffer = instBuffer;
           instGain = audio.createGain();
-          // Silah sesleri, çevre sesleri ve efektler net duyulsun diye baz ses 1.0
-          instGain.gain.setValueAtTime(1.0, now);
+          // Baz seviye: vokaller yokken çevre sesleri ve efektler net duyulsun
+          const instBaseGain = 0.55;
+          // Vokaller varken arka planı kıs (ducking) ki sesler üst üste gelince kırpılmasın
+          const instDuckGain = 0.25;
+          instGain.gain.setValueAtTime(instBaseGain, now);
+
+          // Vokal bölgelerinde otomatik ducking uygula
+          const duckRegions: { start: number; end: number }[] = [];
+          allCues.forEach((c) => {
+            const cStart = Math.max(0, c.start - late);
+            const cEnd = Math.max(0, c.end - late);
+            if (cEnd <= 0) return;
+            // Mevcut bölgelerle birleştir (overlap varsa genişlet)
+            const last = duckRegions[duckRegions.length - 1];
+            if (last && cStart <= last.end + 0.05) {
+              last.end = Math.max(last.end, cEnd);
+            } else {
+              duckRegions.push({ start: cStart, end: cEnd });
+            }
+          });
+          for (const region of duckRegions) {
+            const fadeIn = Math.max(0.01, region.start);
+            instGain.gain.linearRampToValueAtTime(instDuckGain, now + fadeIn);
+            instGain.gain.setValueAtTime(instDuckGain, now + region.end - 0.01);
+            instGain.gain.linearRampToValueAtTime(instBaseGain, now + region.end + 0.15);
+          }
+
           instSource.connect(instGain);
           instGain.connect(masterGain.current);
           const instDuration = Math.max(0, Math.min(instBuffer.duration - late, scene.duration - late));
@@ -486,7 +513,6 @@ export default function Studio({
         }
 
         // 2. Odadaki tüm oyuncuların kaydettiği dublaj parçaları (tam senkronize)
-        const allCues = sceneCues(room.scene, customScenes);
         const scheduledCues = new Set<number>();
 
         allCues.forEach((c) => {

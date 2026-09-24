@@ -507,7 +507,11 @@ export default function SegmentRecorder({
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder)
         throw new Error('Kayıt için güncel Chrome veya Safari kullan.');
       const media = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+        },
       });
       stream.current = media;
       if (!mounted.current) {
