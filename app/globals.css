@@ -4809,15 +4809,17 @@ audio {
 .cue-wave-legend { background: var(--surface); border-color: var(--border); border-radius: var(--radius-control); color: #c6c6bd; }
 .cue-wave-dot.original { background: var(--secondary-accent); box-shadow: none; }
 .cue-wave-dot.user { background: var(--primary); box-shadow: none; }
-.cue-track { height: 92px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); }
-.cue-region { background: #9E8CA922; border-left-color: #9E8CA9; color: var(--foreground); }
-.cue-region.own { background: #AEA93233; border-left-color: var(--auxiliary); }
-.cue-region.selected { background: #F5E63655; box-shadow: inset 2px 0 var(--primary), inset -2px 0 var(--primary); color: var(--foreground); }
-.cue-region.done { background: #CDE2CD55; border-left-color: var(--complete); }
-.cue-region.own:hover { background: #F5E63644; }
-.cue-region-check { color: var(--complete); }
+.cue-track { height: 96px; background: #11110e; border: 1.5px solid #2c2c25; border-radius: var(--radius-control); }
+.cue-track svg { z-index: 2; pointer-events: none; }
+.cue-region { z-index: 1; background: rgba(158, 140, 169, 0.08); border-left-color: #383830; color: var(--foreground); }
+.cue-region.own { background: rgba(174, 169, 50, 0.12); border-left-color: rgba(245, 230, 54, 0.45); }
+.cue-region.selected { background: rgba(245, 230, 54, 0.18); box-shadow: inset 2px 0 var(--primary), inset -2px 0 var(--primary); color: var(--foreground); }
+.cue-region.done { background: rgba(123, 241, 168, 0.14); border-left-color: #7BF1A8; }
+.cue-region.own:hover { background: rgba(245, 230, 54, 0.22); }
+.cue-region > .cue-region-num { z-index: 4; text-shadow: 0 1px 3px #090909, 0 0 6px #090909; }
+.cue-region-check { color: #7BF1A8; }
 .cue-playhead { background: var(--live); box-shadow: none; z-index: 7; }
-.cue-track-play-btn { min-height: 26px; background: var(--surface-raised); border-color: var(--border); color: var(--foreground); backdrop-filter: none; box-shadow: none; }
+.cue-track-play-btn { z-index: 5; min-height: 26px; background: var(--surface-raised); border-color: var(--border); color: var(--foreground); backdrop-filter: none; box-shadow: none; }
 .cue-track-play-btn:hover { background: var(--primary); color: var(--ink); border-color: var(--primary); box-shadow: none; }
 .cue-track-play-btn.playing { background: var(--live); color: var(--ink); border-color: var(--live); box-shadow: none; animation: none; }
 .cue-ruler { margin-top: -2px; font-size: 10px; color: #bdbdb4; }

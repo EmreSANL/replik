@@ -60,19 +60,73 @@ async function seekBackingAudio(audio: HTMLAudioElement, time: number, end: numb
   });
 }
 
-function peaksOf(buffer: AudioBuffer, bars = 80) {
+function syntheticVoicePeaks(seed = 1, bars = 64): number[] {
+  return Array.from({ length: bars }, (_, i) => {
+    const rel = (i + 0.5) / bars;
+    const env = Math.sin(rel * Math.PI);
+    const mod =
+      0.48 +
+      0.52 *
+        Math.abs(
+          Math.sin(i * 1.65 + seed * 2.1) * Math.cos(i * 0.85 + seed * 0.7),
+        );
+    return Math.max(0.24, Math.min(0.94, env * mod * 0.82 + 0.18));
+  });
+}
+
+function buildCueWaveformEnvelope(
+  cues: Cue[],
+  duration: number,
+  bars = 220,
+): number[] {
+  const dur = Math.max(1, duration);
+  return Array.from({ length: bars }, (_, i) => {
+    const t = ((i + 0.5) / bars) * dur;
+    const activeCue = cues.find((c) => t >= c.start && t <= c.end);
+    if (activeCue) {
+      const rel =
+        (t - activeCue.start) / Math.max(0.1, activeCue.end - activeCue.start);
+      const env = Math.sin(rel * Math.PI);
+      const mod =
+        0.5 +
+        0.5 *
+          Math.abs(
+            Math.sin(i * 1.7 + activeCue.id * 1.9) *
+              Math.cos(i * 0.9 + activeCue.id),
+          );
+      return Math.max(0.26, Math.min(0.92, env * mod * 0.82 + 0.18));
+    }
+    return 0.08 + 0.06 * Math.abs(Math.sin(i * 1.3));
+  });
+}
+
+function peaksOf(buffer: AudioBuffer, bars = 64, seed = 1) {
   const data = buffer.getChannelData(0);
   const step = Math.max(1, Math.floor(data.length / bars));
   const raw = Array.from({ length: bars }, (_, i) => {
+    let sumSq = 0;
     let max = 0;
-    for (let j = i * step; j < Math.min(data.length, (i + 1) * step); j++) {
+    const s = i * step;
+    const e = Math.min(data.length, (i + 1) * step);
+    const count = Math.max(1, e - s);
+    for (let j = s; j < e; j++) {
       const v = Math.abs(data[j]);
       if (v > max) max = v;
+      sumSq += v * v;
     }
-    return max;
+    const rms = Math.sqrt(sumSq / count);
+    return max * 0.65 + rms * 0.35;
   });
-  const peak = Math.max(0.02, ...raw);
-  return raw.map((n) => Math.max(0.08, Math.min(1, n / peak)));
+  const sorted = [...raw].filter((n) => n > 0.002).sort((a, b) => a - b);
+  const refPeak =
+    sorted.length > 0
+      ? Math.max(0.015, sorted[Math.floor(sorted.length * 0.8)] ?? sorted[sorted.length - 1])
+      : 0.02;
+  const fallback = syntheticVoicePeaks(seed, bars);
+  return raw.map((n, idx) => {
+    const norm = Math.pow(Math.min(1, n / refPeak), 0.52);
+    return Math.max(fallback[idx] * 0.45, Math.min(0.96, norm));
+  });
 }
 export default function SegmentRecorder({
   room,
@@ -99,21 +153,9 @@ export default function SegmentRecorder({
   const [takes, setTakes] = useState<Record<number, Take>>({});
   const [savedUrls, setSavedUrls] = useState<Record<number, string>>({});
   const [waves, setWaves] = useState<Record<number, number[]>>({});
-  const [originalPeaks, setOriginalPeaks] = useState<number[]>(() => {
-    const bars = 200;
-    const dur = Math.max(1, scene.duration);
-    return Array.from({ length: bars }, (_, i) => {
-      const t = ((i + 0.5) / bars) * dur;
-      const activeCue = cues.find((c) => t >= c.start && t <= c.end);
-      if (activeCue) {
-        const rel = (t - activeCue.start) / Math.max(0.1, activeCue.end - activeCue.start);
-        const env = Math.sin(rel * Math.PI);
-        const mod = 0.55 + 0.45 * Math.abs(Math.sin(i * 1.7 + activeCue.id) * Math.cos(i * 0.9));
-        return Math.max(0.16, Math.min(0.92, env * mod * 0.88 + 0.12));
-      }
-      return 0.08 + 0.08 * Math.abs(Math.sin(i * 1.3));
-    });
-  });
+  const [originalPeaks, setOriginalPeaks] = useState<number[]>(() =>
+    buildCueWaveformEnvelope(cues, scene.duration, 220),
+  );
   const [recording, setRecording] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [playingSegment, setPlayingSegment] = useState<number | null>(null);
@@ -273,9 +315,12 @@ export default function SegmentRecorder({
     };
   }, [video]);
 
-  // Videonun gerçek orijinal ses dalgasını (waveform) çıkart
+  // Videonun gerçek orijinal ses dalgasını (waveform) çıkart ve replik zarflarıyla birleştir
   useEffect(() => {
     let active = true;
+    const bars = 220;
+    const envelope = buildCueWaveformEnvelope(cues, scene.duration, bars);
+    setOriginalPeaks(envelope);
     if (!scene.video) return;
     void (async () => {
       try {
@@ -297,36 +342,60 @@ export default function SegmentRecorder({
             1,
             Math.min(decoded.length - startIdx, Math.floor(scene.duration * sr)),
           );
-          const bars = 200;
           const step = Math.max(1, Math.floor(totalSamples / bars));
           const raw = Array.from({ length: bars }, (_, i) => {
             let max = 0;
+            let sumSq = 0;
             const s = startIdx + i * step;
             const e = Math.min(decoded.length, s + step);
+            const count = Math.max(1, e - s);
             for (let j = s; j < e; j++) {
               const v = (Math.abs(ch0[j]) + Math.abs(ch1[j])) * 0.5;
               if (v > max) max = v;
+              sumSq += v * v;
             }
-            return max;
+            const rms = Math.sqrt(sumSq / count);
+            return max * 0.65 + rms * 0.35;
           });
-          const maxPeak = Math.max(0.02, ...raw);
-          const normalized = raw.map((n) => Math.max(0.06, Math.min(1, n / maxPeak)));
+          const sorted = [...raw].filter((n) => n > 0.002).sort((a, b) => a - b);
+          const refPeak =
+            sorted.length > 0
+              ? Math.max(0.015, sorted[Math.floor(sorted.length * 0.8)] ?? sorted[sorted.length - 1])
+              : 0.02;
+          const normalized = raw.map((n, i) => {
+            const norm = Math.pow(Math.min(1, n / refPeak), 0.52);
+            return Math.max(envelope[i] * 0.78, Math.min(0.95, norm));
+          });
           if (active) setOriginalPeaks(normalized);
         } finally {
           void tempCtx.close().catch(() => {});
         }
       } catch {
-        // Fallback waveform remains active
+        // Fallback envelope waveform remains active
       }
     })();
     return () => {
       active = false;
     };
-  }, [scene.video, scene.start, scene.duration]);
+  }, [scene.video, scene.start, scene.duration, cues.length]);
   const segmentKey = me.segments.join(',');
   useEffect(() => {
     let cancelled = false;
-    for (const id of segmentKey.split(',').filter(Boolean).map(Number)) {
+    const ids = segmentKey.split(',').filter(Boolean).map(Number);
+    if (ids.length > 0) {
+      setWaves((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const id of ids) {
+          if (!next[id] || next[id].length === 0) {
+            next[id] = syntheticVoicePeaks(id, 64);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+    for (const id of ids) {
       if (loaded.current.has(id)) continue;
       loaded.current.add(id);
       void (async () => {
@@ -348,7 +417,7 @@ export default function SegmentRecorder({
             const url = URL.createObjectURL(blob);
             urls.current.push(url);
             setSavedUrls((u) => ({ ...u, [id]: url }));
-            setWaves((w) => ({ ...w, [id]: peaksOf(data) }));
+            setWaves((w) => ({ ...w, [id]: peaksOf(data, 64, id) }));
           } else {
             loaded.current.delete(id);
           }
@@ -582,26 +651,59 @@ export default function SegmentRecorder({
         parts: BlobPart[] = [];
       const id = selected;
       const end = current.end;
+
+      // Canlı mikrofon ses dalgası (live waveform) yakalayıcı
+      const liveBars = new Array<number>(64).fill(0);
+      let micSource: MediaStreamAudioSourceNode | null = null;
+      let analyser: AnalyserNode | null = null;
+      let timeDomain: Uint8Array<ArrayBuffer> | null = null;
+      try {
+        const ctx = audioContext.current ?? (audioContext.current = new AudioContext());
+        micSource = ctx.createMediaStreamSource(media);
+        analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        micSource.connect(analyser);
+        timeDomain = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+      } catch {
+        // ignore analyser errors
+      }
+
       r.ondataavailable = (e) => {
         if (e.data.size) parts.push(e.data);
       };
       r.onstop = () => {
+        try {
+          micSource?.disconnect();
+        } catch {
+          // ignore
+        }
         media.getTracks().forEach((t) => t.stop());
         if (!mounted.current) return;
+        const fallbackWave = syntheticVoicePeaks(id, 64);
+        const completedLiveWave = liveBars.map((val, idx) =>
+          val > 0.08 ? Math.max(val, fallbackWave[idx] * 0.55) : fallbackWave[idx],
+        );
+        setWaves((w) => ({ ...w, [id]: completedLiveWave }));
         if (!parts.length) return;
         const blob = new Blob(parts, { type: r.mimeType || 'audio/webm' }),
           url = URL.createObjectURL(blob);
         urls.current.push(url);
         setReviewedTakeId(id);
         setSavedUrls((u) => ({ ...u, [id]: url }));
-        setTakes((t) => ({ ...t, [id]: { blob, url, peaks: [] } }));
+        setTakes((t) => ({ ...t, [id]: { blob, url, peaks: completedLiveWave } }));
         void blob
           .arrayBuffer()
-          .then((data) => audioContext.current!.decodeAudioData(data))
+          .then((data) => {
+            const ctx = audioContext.current ?? (audioContext.current = new AudioContext());
+            return ctx.decodeAudioData(data);
+          })
           .then((buffer) => {
             if (mounted.current) {
-              const peaks = peaksOf(buffer);
-              setWaves((w) => ({ ...w, [id]: peaks }));
+              const decodedPeaks = peaksOf(buffer, 64, id);
+              const merged = decodedPeaks.map((p, idx) =>
+                Math.max(p, completedLiveWave[idx] * 0.65),
+              );
+              setWaves((w) => ({ ...w, [id]: merged }));
             }
           })
           .catch(() => {});
@@ -627,6 +729,23 @@ export default function SegmentRecorder({
       timer.current = setInterval(() => {
         const elapsed = (Date.now() - recStartedAt) / 1000;
         setPosition(Math.min(end, v.currentTime - scene.start));
+        if (analyser && timeDomain) {
+          analyser.getByteTimeDomainData(timeDomain);
+          let maxDev = 0;
+          for (let i = 0; i < timeDomain.length; i++) {
+            const dev = Math.abs(timeDomain[i] - 128) / 128;
+            if (dev > maxDev) maxDev = dev;
+          }
+          const barIdx = Math.min(63, Math.max(0, Math.floor((elapsed / clipDuration) * 64)));
+          const boosted = Math.max(0.28, Math.min(0.96, Math.pow(maxDev * 4.2, 0.52)));
+          for (let k = 0; k <= barIdx; k++) {
+            if (liveBars[k] === 0) {
+              liveBars[k] = syntheticVoicePeaks(id, 64)[k] * 0.75;
+            }
+          }
+          liveBars[barIdx] = Math.max(liveBars[barIdx], boosted);
+          setWaves((w) => ({ ...w, [id]: [...liveBars] }));
+        }
         if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
           backing.currentTime = v.currentTime;
         }
@@ -776,7 +895,7 @@ export default function SegmentRecorder({
         style={{ display: 'none' }}
       />
 
-      {/* Başlık ve Canlı Hazır Durumu */}
+      {/* Sade Başlık ve İlerleme Durumu (Kapsülsüz) */}
       {(() => {
         const preferredRoles = room.players.map((p) => p.role);
         const readyPlayersCount = room.players.filter((p, pIdx) => {
@@ -786,33 +905,68 @@ export default function SegmentRecorder({
         }).length;
 
         return (
-          <div className="cue-stage-heading">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span className="eyebrow">KAYIT STÜDYOSU / BÖLÜM {String(selectedNumber).padStart(2, '0')}</span>
+          <div
+            className="cue-stage-heading"
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: '12px',
+              marginBottom: '10px',
+              paddingBottom: '8px',
+              borderBottom: '1px solid #23231e',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
               <span
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  padding: '3px 8px',
-                  borderRadius: '6px',
-                  background: completed >= mine.length ? 'rgba(74, 222, 128, 0.15)' : 'rgba(245, 230, 54, 0.15)',
-                  color: completed >= mine.length ? '#4ade80' : '#F5E636',
-                  border: `1px solid ${completed >= mine.length ? 'rgba(74, 222, 128, 0.35)' : 'rgba(245, 230, 54, 0.35)'}`,
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  letterSpacing: '0.06em',
+                  color: '#F5E636',
+                  fontFamily: 'var(--font-technical)',
                 }}
               >
-                <span
-                  className="pulse-dot"
-                  style={{ background: completed >= mine.length ? '#4ade80' : '#F5E636' }}
-                />
-                {completed >= mine.length
-                  ? `HAZIRSIN (${readyPlayersCount}/${room.players.length} OYUNCU HAZIR)`
-                  : `${readyPlayersCount}/${room.players.length} OYUNCU HAZIR`}
+                BÖLÜM {String(selectedNumber).padStart(2, '0')}
+              </span>
+              <span style={{ color: '#4a4a42', fontWeight: 700 }}>/</span>
+              <span
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#d8d8cf',
+                }}
+              >
+                {scene.title}
               </span>
             </div>
-            <strong>{completed} / {mine.length} replik tamamlandı</strong>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: '10px',
+                fontSize: '12px',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                color: '#9e9e93',
+                fontFamily: 'var(--font-technical)',
+              }}
+            >
+              <span>
+                <b style={{ color: completed >= mine.length ? '#7BF1A8' : '#F5E636', fontWeight: 900 }}>
+                  {completed}
+                </b>
+                /{mine.length} REPLİK
+              </span>
+              {room.players.length > 1 && (
+                <>
+                  <span style={{ color: '#4a4a42' }}>·</span>
+                  <span style={{ color: readyPlayersCount === room.players.length ? '#7BF1A8' : '#9e9e93' }}>
+                    {readyPlayersCount}/{room.players.length} OYUNCU HAZIR
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         );
       })()}
@@ -1080,14 +1234,46 @@ export default function SegmentRecorder({
         ) : (
           <>
             <div className="cue-timebar">
-              <div className="cue-timebar-left">
-                <span>SAHNE ZAMAN ÇİZELGESİ</span>
-                <div className="cue-wave-legend">
-                  <span className="cue-wave-legend-item">
-                    <i className="cue-wave-dot original" /> Orijinal ses
+              <div
+                className="cue-timebar-left"
+                style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}
+              >
+                <span style={{ fontWeight: 800, letterSpacing: '0.06em', fontSize: '11px', color: '#A0A096' }}>
+                  SAHNE ZAMAN ÇİZELGESİ
+                </span>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: '#d4d4cb',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <i
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '2px',
+                        background: '#C8B6FF',
+                        display: 'inline-block',
+                      }}
+                    />
+                    Orijinal ses
                   </span>
-                  <span className="cue-wave-legend-item">
-                    <i className="cue-wave-dot user" /> Senin kaydın
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <i
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '2px',
+                        background: '#F5E636',
+                        display: 'inline-block',
+                      }}
+                    />
+                    Senin kaydın
                   </span>
                 </div>
               </div>
@@ -1100,69 +1286,100 @@ export default function SegmentRecorder({
                 viewBox="0 0 1000 100"
                 preserveAspectRatio="none"
                 aria-label="Orijinal video ve kayıtların ses dalgası"
+                style={{ zIndex: 2, pointerEvents: 'none' }}
               >
                 <line
                   x1="0"
                   y1="50"
                   x2="1000"
                   y2="50"
-                  stroke="#44443c"
+                  stroke="#34342d"
                   strokeWidth="1"
                 />
-                {/* 1. Katman: Videonun Orijinal Ses Dalgası */}
+                {/* 1. Katman: Orijinal Ses (#C8B6FF) ve Kaydedilen Kullanıcı Sesi (#F5E636) */}
                 <g className="original-waveform-layer">
                   {originalPeaks.map((peak, i) => {
                     const x = ((i + 0.5) / originalPeaks.length) * 1000;
-                    const t = ((i + 0.5) / originalPeaks.length) * Math.max(1, scene.duration);
-                    const coveredByUserWave = cues.some(
-                      (c) => t >= c.start && t <= c.end && (waves[c.id]?.length ?? 0) > 0,
-                    );
+                    const t =
+                      ((i + 0.5) / originalPeaks.length) *
+                      Math.max(1, scene.duration);
+                    const matchedCue = cues.find((c) => t >= c.start && t <= c.end);
+                    const userWave = matchedCue
+                      ? waves[matchedCue.id] ??
+                        takes[matchedCue.id]?.peaks ??
+                        (me.segments?.includes(matchedCue.id)
+                          ? syntheticVoicePeaks(matchedCue.id, 64)
+                          : undefined)
+                      : undefined;
+                    const hasUserWave = Boolean(userWave && userWave.length > 0 && matchedCue);
+                    let displayPeak = peak;
+                    if (hasUserWave && matchedCue && userWave) {
+                      const rel = Math.min(
+                        0.999,
+                        Math.max(
+                          0,
+                          (t - matchedCue.start) /
+                            Math.max(0.05, matchedCue.end - matchedCue.start),
+                        ),
+                      );
+                      const uIdx = Math.floor(rel * userWave.length);
+                      displayPeak = Math.max(0.28, userWave[uIdx] ?? peak);
+                    }
                     return (
                       <line
-                        key={`orig-${i}`}
+                        key={`wave-${i}`}
                         x1={x}
                         x2={x}
-                        y1={50 - peak * 36}
-                        y2={50 + peak * 36}
-                        stroke={coveredByUserWave ? 'rgba(158, 140, 169, 0.3)' : 'rgba(158, 140, 169, 0.76)'}
-                        strokeWidth="2.2"
+                        y1={50 - displayPeak * (hasUserWave ? 42 : 36)}
+                        y2={50 + displayPeak * (hasUserWave ? 42 : 36)}
+                        stroke={hasUserWave ? '#F5E636' : '#C8B6FF'}
+                        strokeOpacity={hasUserWave ? 1 : 0.85}
+                        strokeWidth={hasUserWave ? '3.1' : '2.4'}
                         strokeLinecap="round"
                       />
                     );
                   })}
                 </g>
 
-                {/* 2. Katman: Kullanıcının Kaydettiği Ses Dalgası */}
-                {cues.map((c) => (
-                  <g key={c.id} className="user-waveform-layer">
-                    {(waves[c.id] ?? []).map((peak, i) => (
-                      <line
-                        key={i}
-                        x1={
-                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                            Math.max(1, scene.duration)) *
-                          1000
-                        }
-                        x2={
-                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
-                            Math.max(1, scene.duration)) *
-                          1000
-                        }
-                        y1={50 - peak * 43}
-                        y2={50 + peak * 43}
-                        stroke={
-                          Number(c.id) === Number(selected)
-                            ? '#F5E636'
-                            : mine.some((m) => Number(m.id) === Number(c.id))
-                              ? '#CDE2CD'
-                              : '#9E8CA9'
-                        }
-                        strokeWidth="2.8"
-                        strokeLinecap="round"
-                      />
-                    ))}
-                  </g>
-                ))}
+                {/* 2. Katman: Kısa replikler için ek yüksek çözünürlüklü Kullanıcı Ses Dalgası (#F5E636) */}
+                {cues.map((c) => {
+                  const userWave =
+                    waves[c.id] ??
+                    takes[c.id]?.peaks ??
+                    (me.segments?.includes(c.id)
+                      ? syntheticVoicePeaks(c.id, 64)
+                      : undefined);
+                  if (!userWave || userWave.length === 0) return null;
+                  const cueDur = Math.max(0.08, c.end - c.start);
+                  const barCount = Math.max(8, Math.min(36, Math.round((cueDur / Math.max(1, scene.duration)) * 220)));
+                  return (
+                    <g key={`user-cue-${c.id}`} className="user-waveform-layer">
+                      {Array.from({ length: barCount }, (_, idx) => {
+                        const rel = (idx + 0.5) / barCount;
+                        const sampleIdx = Math.min(
+                          userWave.length - 1,
+                          Math.floor(rel * userWave.length),
+                        );
+                        const peak = Math.max(0.26, userWave[sampleIdx] ?? 0.4);
+                        const x =
+                          ((c.start + rel * cueDur) / Math.max(1, scene.duration)) *
+                          1000;
+                        return (
+                          <line
+                            key={idx}
+                            x1={x}
+                            x2={x}
+                            y1={50 - peak * 42}
+                            y2={50 + peak * 42}
+                            stroke="#F5E636"
+                            strokeWidth="2.8"
+                            strokeLinecap="round"
+                          />
+                        );
+                      })}
+                    </g>
+                  );
+                })}
               </svg>
               {cues.map((c, cIndex) => {
                 const own = mine.some((m) => Number(m.id) === Number(c.id));
