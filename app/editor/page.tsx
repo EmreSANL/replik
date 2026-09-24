@@ -1162,6 +1162,34 @@ export default function EditorPage() {
   }, [showToast]);
 
   const handleRemoveVideo = useCallback(() => {
+    // Eğer mevcut bir sahne düzenleniyorsa Supabase'den de sil
+    if (isEditingExisting) {
+      if (
+        typeof window !== 'undefined' &&
+        !window.confirm(
+          `"${title || 'Bu sahne'}" Supabase'den ve ana sayfadan kalıcı olarak silinecek. Devam etmek istiyor musunuz?`,
+        )
+      ) {
+        return;
+      }
+      const currentSceneId = sceneId;
+      const currentTitle = title;
+      void (async () => {
+        try {
+          await deleteSceneFromSupabase(currentSceneId);
+          deleteCustomScene(currentSceneId);
+          setSupabaseScenes((prev) => prev.filter((s) => s.id !== currentSceneId));
+          showToast(`"${currentTitle}" Supabase'den ve ana sayfadan silindi.`);
+        } catch {
+          deleteCustomScene(currentSceneId);
+          setSupabaseScenes((prev) => prev.filter((s) => s.id !== currentSceneId));
+          showToast(`"${currentTitle}" silindi.`);
+        }
+      })();
+    } else {
+      showToast('Video düzenleyiciden kaldırıldı. Yeni video ekleyebilirsiniz.');
+    }
+
     videoJobRef.current += 1;
     hasLoadedUrlScene.current = true;
     audioPreparationRef.current?.controller.abort();
@@ -1196,10 +1224,11 @@ export default function EditorPage() {
         window.history.replaceState(window.history.state, '', url);
       }
     }
-    showToast(isEditingExisting
-      ? 'Video bu düzenlemeden kaldırıldı. Kayıtlı sahne değişmedi; yeni video seçip kaydedin.'
-      : 'Video düzenleyiciden kaldırıldı. Yeni video ekleyebilirsiniz.');
-  }, [isEditingExisting, showToast]);
+    setIsEditingExisting(false);
+    setEditingSceneTitle('');
+    setSceneId(Date.now());
+    setTitle('');
+  }, [showToast, isEditingExisting, sceneId, title]);
 
   // URL query parametresinden sceneId oku ve ilgili sahneyi otomatik yükle
   useEffect(() => {

@@ -247,15 +247,15 @@ export async function getScenesFromSupabase(forceRefresh = false): Promise<Scene
 }
 
 /**
- * Sahneyi Supabase'den siler (Sadece sahneyi oluşturan üye silebilir)
+ * Sahneyi Supabase'den siler (Sahneyi oluşturan üye veya sahipsiz sahneler silinebilir)
  */
 export async function deleteSceneFromSupabase(id: number): Promise<void> {
-  const user = await requireAuthenticatedUser();
+  await requireAuthenticatedUser();
   const { error } = await supabase
     .from('custom_scenes')
     .delete()
     .eq('id', id)
-    .eq('created_by', user.id);
+    .or('created_by.is.null,created_by.eq.' + (await supabase.auth.getUser()).data.user?.id);
   if (error) {
     throw new Error(`Sahne silinemedi: ${error.message}`);
   }
