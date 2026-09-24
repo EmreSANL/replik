@@ -430,15 +430,7 @@ export default function DublajlarPage() {
                             onDoubleClick={() => toggleLike(dub)}
                             aria-label={`${dub.sceneTitle} dublaj videosu`}
                           />
-                          <div className="dub-video-top">
-                            <span className="dub-live-badge">
-                              <span /> TOPLULUK DUBLAJI
-                            </span>
-                            <span className="dub-video-number">
-                              {String(index + 1).padStart(2, '0')} /{' '}
-                              {String(visibleDubs.length).padStart(2, '0')}
-                            </span>
-                          </div>
+
                           {isActive && pausedId === dub.id && (
                             <button
                               type="button"
