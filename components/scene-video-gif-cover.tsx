@@ -145,6 +145,7 @@ export function SceneVideoGifCover({
 
     const handleTimeUpdate = () => {
       if (!isVisibleRef.current) return;
+      if (typeof window !== 'undefined' && window.__replikActiveScrolling) return;
       const { start, end } = loopBoundsRef.current;
       const t = video.currentTime;
       if (t >= end || t < start - 0.35) {

@@ -5257,3 +5257,33 @@ audio {
   .editor-timeline-expanded > div:nth-child(3) > div { height: 36vh; }
 }
 .final-ctrl-btn.subtitles-on { color: var(--primary); border-color: var(--primary); }
+
+/* ==========================================================================
+   120FPS SMOOTH SCROLL & GPU COMPOSITOR OPTIMIZATIONS
+   ========================================================================== */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
+}
+
+.bbank-scene-tile,
+.bbank-pub-card {
+  contain: layout style paint;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.scene-gif-cover-wrap,
+.scene-gif-cover-wrap video {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+/* Aktif kaydırma sırasında kartların gereksiz hover repaint yapmasını engeller */
+html[data-scrolling='true'] .bbank-scene-tile {
+  transition: none !important;
+}
+
