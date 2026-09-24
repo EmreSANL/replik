@@ -4799,7 +4799,7 @@ audio {
 .active-recording-pill .recording-dot { background: var(--ink); animation: replik-live 1.4s ease-in-out infinite; }
 .recording-countdown-overlay { background: #090909dd; }
 .countdown-number { color: var(--primary); font-family: var(--font-technical); }
-.cue-editor { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.cue-editor { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
 .cue-timebar { margin: 0; color: var(--foreground); }
 .cue-timebar strong,
 .cue-ruler,
@@ -4809,7 +4809,7 @@ audio {
 .cue-wave-legend { background: var(--surface); border-color: var(--border); border-radius: var(--radius-control); color: #c6c6bd; }
 .cue-wave-dot.original { background: var(--secondary-accent); box-shadow: none; }
 .cue-wave-dot.user { background: var(--primary); box-shadow: none; }
-.cue-track { height: 112px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); }
+.cue-track { height: 92px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); }
 .cue-region { background: #9E8CA922; border-left-color: #9E8CA9; color: var(--foreground); }
 .cue-region.own { background: #AEA93233; border-left-color: var(--auxiliary); }
 .cue-region.selected { background: #F5E63655; box-shadow: inset 2px 0 var(--primary), inset -2px 0 var(--primary); color: var(--foreground); }

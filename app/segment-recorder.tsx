@@ -1264,16 +1264,16 @@ export default function SegmentRecorder({
             ) : (
               <div
                 style={{
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) auto',
                   gap: '10px',
                   alignItems: 'stretch',
-                  flexWrap: 'wrap',
-                  marginTop: '6px',
+                  marginTop: '4px',
                 }}
               >
                 <button
                   className="primary cue-record"
-                  style={{ flex: 1, margin: 0 }}
+                  style={{ order: 0, width: '100%', minHeight: '52px', margin: 0 }}
                   onClick={() => {
                     if (take) {
                       void save();
@@ -1294,9 +1294,12 @@ export default function SegmentRecorder({
                   type="button"
                   className="secondary"
                   style={{
-                    padding: '0 18px',
+                    order: 0,
+                    width: 'auto',
+                    padding: '0 22px',
                     minHeight: '52px',
                     whiteSpace: 'nowrap',
+                    margin: 0,
                   }}
                   onClick={previewing ? stop : preview}
                   disabled={locked}

@@ -12,9 +12,11 @@ import {
 } from './supabase';
 import {
   getSceneById,
+  getCustomScenes,
   sceneCues,
   playerCues,
   getPlayerCharacterMap,
+  type Scene,
   type Room,
   type Player,
   type ActivityItem,

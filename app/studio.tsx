@@ -814,33 +814,43 @@ export default function Studio({
         </div>
       </div>
 
-      <div className="section-heading">
-        <div>
-          <div className="eyebrow">
-            {room.status === 'lobby'
-              ? 'EKİP TOPLANIYOR'
-              : room.status === 'recording'
-                ? 'KAYITTAYIZ'
+      {room.status !== 'recording' && (
+        <div className="section-heading">
+          <div>
+            <div className="eyebrow">
+              {room.status === 'lobby'
+                ? 'EKİP TOPLANIYOR'
                 : 'BÜYÜK FİNAL'}
+            </div>
+            <h1 className="studio-title">{scene.title}</h1>
           </div>
-          <h1 className="studio-title">{scene.title}</h1>
+          <div className="studio-header-meta">
+            {room.status === 'lobby' && me.host === 1 && (
+              <button
+                className="change-scene-btn"
+                onClick={() => setScenePickerOpen(true)}
+              >
+                <Film size={15} /> Sahneyi Değiştir
+              </button>
+            )}
+            <span>
+              <Users size={17} /> {room.players.length}/{room.maxPlayers || 4} oyuncu
+            </span>
+          </div>
         </div>
-        <div className="studio-header-meta">
-          {room.status === 'lobby' && me.host === 1 && (
-            <button
-              className="change-scene-btn"
-              onClick={() => setScenePickerOpen(true)}
-            >
-              <Film size={15} /> Sahneyi Değiştir
-            </button>
-          )}
-          <span>
-            <Users size={17} /> {room.players.length}/{room.maxPlayers || 4} oyuncu
-          </span>
-        </div>
-      </div>
+      )}
 
-      <div className="studio-grid">
+      <div
+        className="studio-grid"
+        style={
+          room.status === 'recording'
+            ? {
+                gridTemplateColumns: 'minmax(0, 880px)',
+                justifyContent: 'center',
+              }
+            : undefined
+        }
+      >
         <div>
           {room.status !== 'recording' && (
             <>
@@ -1144,6 +1154,7 @@ export default function Studio({
           )}
         </div>
 
+        {room.status !== 'recording' && (
         <aside className="room-card studio-panel">
           {room.status === 'lobby' ? (
             <>
@@ -1426,119 +1437,6 @@ export default function Studio({
                 )}
               </div>
             </>
-          ) : room.status === 'recording' ? (
-            (() => {
-              const myIdx = Math.max(
-                0,
-                room.players.findIndex((p) => p.id === me.id),
-              );
-              const preferredRoles = room.players.map((p) => p.role);
-              const myAssignedCues = playerCues(
-                room.scene,
-                myIdx,
-                room.players.length,
-                customScenes,
-                preferredRoles,
-              );
-              const myRoleNames = Array.from(
-                new Set(myAssignedCues.map((c) => c.roleName).filter(Boolean)),
-              );
-              const displayRoleName =
-                myRoleNames.join(' + ') ||
-                scene.roles?.[me.role >= 0 ? me.role : 0] ||
-                'Karakter';
-              return (
-                <>
-                  <div className="eyebrow">
-                    {myRoleNames.length > 1 ? 'SENİN KARAKTERLERİN' : 'SENİN KARAKTERİN'}
-                  </div>
-                  <h2 className="role-name" style={{ marginBottom: '12px' }}>
-                    {displayRoleName}
-                  </h2>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ width: '100%', marginBottom: 14 }}
-                    onClick={() => setRoleRevealOpen(true)}
-                  >
-                    <Users size={15} /> Rol dağılımını gör
-                  </button>
-
-                  <div style={{ paddingTop: 14, borderTop: '1px solid #2d3423' }}>
-                    <div className="eyebrow" style={{ marginBottom: 8 }}>ODADAKİ OYUNCULAR</div>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                        gap: '8px',
-                      }}
-                    >
-                      {room.players.map((p, pIdx) => {
-                        const pAssigned = playerCues(room.scene, pIdx, room.players.length, customScenes, preferredRoles);
-                        const pDone = pAssigned.length > 0 ? pAssigned.every((c) => p.segments?.includes(c.id)) : p.audio;
-                        const isReady = p.ready === 1 && pDone;
-                        const tileColors = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
-                        const bg = tileColors[pIdx % tileColors.length];
-                        return (
-                          <div
-                            key={p.id}
-                            style={{
-                              aspectRatio: '1 / 1',
-                              minHeight: '104px',
-                              borderRadius: '14px',
-                              border: '2px solid #090909',
-                              background: bg,
-                              color: '#090909',
-                              boxShadow: '0 3px 0 #090909',
-                              padding: '10px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent: 'space-between',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span
-                                style={{
-                                  width: '28px',
-                                  height: '28px',
-                                  borderRadius: '8px',
-                                  background: '#090909',
-                                  color: bg,
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  fontSize: '13px',
-                                  fontWeight: 950,
-                                }}
-                              >
-                                {p.name[0]?.toLocaleUpperCase('tr') || '?'}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  fontWeight: 900,
-                                  padding: '3px 7px',
-                                  borderRadius: '999px',
-                                  background: isReady ? '#090909' : 'rgba(9,9,9,0.14)',
-                                  color: isReady ? '#B8E6C1' : '#090909',
-                                  border: '1.5px solid #090909',
-                                }}
-                              >
-                                {isReady ? 'HAZIR ✓' : `${p.segments?.length || 0}/${pAssigned.length}`}
-                              </span>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '15px', fontWeight: 950, letterSpacing: '-0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.name}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
-              );
-            })()
           ) : (
             <>
               <div className="small-icon">
@@ -1747,6 +1645,7 @@ export default function Studio({
           )}
           {notice && <output className="notice">{notice}</output>}
         </aside>
+        )}
       </div>
 
       {/* Diyaloglar */}
