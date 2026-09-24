@@ -19,23 +19,23 @@ async function prerender() {
   });
 
   const routes = [
-    { url: '/', file: path.join(clientDir, 'index.html') },
-    { url: '/editor', file: path.join(clientDir, 'editor', 'index.html') },
-    { url: '/editor', file: path.join(clientDir, 'editor.html') },
+    { url: '/', files: ['index.html'] },
+    { url: '/editor', files: ['editor/index.html', 'editor.html'] },
+    { url: '/dublajlar', files: ['dublajlar/index.html', 'dublajlar.html'] },
+    { url: '/nasil-oynanir', files: ['nasil-oynanir/index.html', 'nasil-oynanir.html'] },
   ];
 
   for (const route of routes) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}${route.url}`);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} on ${route.url}`);
-      }
-      const html = await res.text();
-      fs.mkdirSync(path.dirname(route.file), { recursive: true });
-      fs.writeFileSync(route.file, html, 'utf-8');
-      console.log(`✓ Generated ${path.relative(root, route.file)} (${(html.length / 1024).toFixed(1)} KB)`);
-    } catch (err) {
-      console.error(`✗ Failed to prerender ${route.url}:`, err);
+    const res = await fetch(`http://127.0.0.1:${port}${route.url}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} on ${route.url}`);
+    }
+    const html = await res.text();
+    for (const file of route.files) {
+      const output = path.join(clientDir, file);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, html, 'utf-8');
+      console.log(`✓ Generated ${path.relative(root, output)} (${(html.length / 1024).toFixed(1)} KB)`);
     }
   }
 
