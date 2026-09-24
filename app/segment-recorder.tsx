@@ -1079,6 +1079,168 @@ export default function SegmentRecorder({
           })()
         ) : (
           <>
+            <div className="cue-timebar">
+              <div className="cue-timebar-left">
+                <span>SAHNE ZAMAN ÇİZELGESİ</span>
+                <div className="cue-wave-legend">
+                  <span className="cue-wave-legend-item">
+                    <i className="cue-wave-dot original" /> Orijinal ses
+                  </span>
+                  <span className="cue-wave-legend-item">
+                    <i className="cue-wave-dot user" /> Senin kaydın
+                  </span>
+                </div>
+              </div>
+              <strong>
+                {formatTimecode(position)} <span>/ {formatTimecode(scene.duration)}</span>
+              </strong>
+            </div>
+            <div className="cue-track">
+              <svg
+                viewBox="0 0 1000 100"
+                preserveAspectRatio="none"
+                aria-label="Orijinal video ve kayıtların ses dalgası"
+              >
+                <line
+                  x1="0"
+                  y1="50"
+                  x2="1000"
+                  y2="50"
+                  stroke="#44443c"
+                  strokeWidth="1"
+                />
+                {/* 1. Katman: Videonun Orijinal Ses Dalgası */}
+                <g className="original-waveform-layer">
+                  {originalPeaks.map((peak, i) => {
+                    const x = ((i + 0.5) / originalPeaks.length) * 1000;
+                    const t = ((i + 0.5) / originalPeaks.length) * Math.max(1, scene.duration);
+                    const coveredByUserWave = cues.some(
+                      (c) => t >= c.start && t <= c.end && (waves[c.id]?.length ?? 0) > 0,
+                    );
+                    return (
+                      <line
+                        key={`orig-${i}`}
+                        x1={x}
+                        x2={x}
+                        y1={50 - peak * 36}
+                        y2={50 + peak * 36}
+                        stroke={coveredByUserWave ? 'rgba(158, 140, 169, 0.3)' : 'rgba(158, 140, 169, 0.76)'}
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      />
+                    );
+                  })}
+                </g>
+
+                {/* 2. Katman: Kullanıcının Kaydettiği Ses Dalgası */}
+                {cues.map((c) => (
+                  <g key={c.id} className="user-waveform-layer">
+                    {(waves[c.id] ?? []).map((peak, i) => (
+                      <line
+                        key={i}
+                        x1={
+                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
+                            Math.max(1, scene.duration)) *
+                          1000
+                        }
+                        x2={
+                          ((c.start + ((i + 0.5) / 80) * (c.end - c.start)) /
+                            Math.max(1, scene.duration)) *
+                          1000
+                        }
+                        y1={50 - peak * 43}
+                        y2={50 + peak * 43}
+                        stroke={
+                          Number(c.id) === Number(selected)
+                            ? '#F5E636'
+                            : mine.some((m) => Number(m.id) === Number(c.id))
+                              ? '#CDE2CD'
+                              : '#9E8CA9'
+                        }
+                        strokeWidth="2.8"
+                        strokeLinecap="round"
+                      />
+                    ))}
+                  </g>
+                ))}
+              </svg>
+              {cues.map((c, cIndex) => {
+                const own = mine.some((m) => Number(m.id) === Number(c.id));
+                const hasRecorded =
+                  Boolean(takes[c.id]) ||
+                  Boolean(savedUrls[c.id]) ||
+                  Boolean(me.segments?.includes(c.id));
+                const isPlayingThis = Number(playingSegment) === Number(c.id);
+
+                return (
+                  <div
+                    role="button"
+                    tabIndex={own && !locked ? 0 : -1}
+                    key={c.id}
+                    className={`cue-region ${own ? 'own' : ''} ${Number(c.id) === Number(selected) ? 'selected' : ''} ${me.segments?.includes(c.id) ? 'done' : ''} ${isPlayingThis ? 'playing-segment' : ''}`}
+                    style={{
+                      left: `${(c.start / Math.max(1, scene.duration)) * 100}%`,
+                      width: `${((c.end - c.start) / Math.max(1, scene.duration)) * 100}%`,
+                    }}
+                    onClick={() => {
+                      if (own && !locked) select(c.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (own && !locked && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault();
+                        select(c.id);
+                      }
+                    }}
+                    aria-label={`Replik ${cIndex + 1}: ${formatTimecode(c.start)}–${formatTimecode(c.end)}${own ? ', senin repliğin' : ', diğer oyuncu'}`}
+                    aria-pressed={Number(c.id) === Number(selected)}
+                  >
+                    <span className="cue-region-num">
+                      {String(cIndex + 1).padStart(2, '0')}
+                      {hasRecorded && <span className="cue-region-check">✓</span>}
+                    </span>
+
+                    {hasRecorded && (
+                      <button
+                        type="button"
+                        className={`cue-track-play-btn ${isPlayingThis ? 'playing' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void playSegment(c.id);
+                        }}
+                        disabled={locked && !isPlayingThis}
+                        title={
+                          isPlayingThis
+                            ? 'Durdur'
+                            : `Replik ${cIndex + 1} kaydını dinle`
+                        }
+                        aria-label={`Replik ${cIndex + 1} kaydını ${isPlayingThis ? 'durdur' : 'dinle'}`}
+                      >
+                        {isPlayingThis ? (
+                          <Square size={11} fill="currentColor" />
+                        ) : (
+                          <Play size={11} fill="currentColor" />
+                        )}
+                        <span className="cue-track-play-text">
+                          {isPlayingThis ? 'Durdur' : 'Dinle'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <div
+                className="cue-playhead"
+                style={{
+                  left: `${Math.min(100, (position / Math.max(1, scene.duration)) * 100)}%`,
+                }}
+              />
+            </div>
+            <div className="cue-ruler">
+              {[0, 0.25, 0.5, 0.75, 1].map((n) => (
+                <span key={n}>{formatTimecode(scene.duration * n)}</span>
+              ))}
+            </div>
+
             {/* Ana Kayıt Aksiyon Çubuğu */}
             {listeningOriginal ? (
               <div className="cue-countdown">
@@ -1106,6 +1268,7 @@ export default function SegmentRecorder({
                   gap: '10px',
                   alignItems: 'stretch',
                   flexWrap: 'wrap',
+                  marginTop: '6px',
                 }}
               >
                 <button
@@ -1143,90 +1306,6 @@ export default function SegmentRecorder({
                 </button>
               </div>
             )}
-
-            {/* Kompakt Replik Numarası Seçici (Yalnızca oyuncunun kendi replikleri) */}
-            {mine.length > 1 && (
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '8px',
-                  flexWrap: 'wrap',
-                  marginTop: '12px',
-                }}
-                aria-label="Repliklerin"
-              >
-                {mine.map((cue, idx) => {
-                  const done =
-                    Boolean(me.segments?.includes(cue.id)) ||
-                    Boolean(takes[cue.id]);
-                  const isCurrent = Number(selected) === Number(cue.id);
-                  return (
-                    <button
-                      key={cue.id}
-                      type="button"
-                      disabled={locked}
-                      onClick={() => select(cue.id)}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '8px 14px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: 900,
-                        border: '2px solid',
-                        borderColor: isCurrent
-                          ? '#F5E636'
-                          : done
-                            ? '#7BF1A8'
-                            : '#2a2a24',
-                        backgroundColor: isCurrent
-                          ? '#F5E636'
-                          : done
-                            ? '#14241b'
-                            : '#141412',
-                        color: isCurrent
-                          ? '#090909'
-                          : done
-                            ? '#7BF1A8'
-                            : '#b8b8ae',
-                        cursor: locked ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.18s ease',
-                      }}
-                    >
-                      <span>#{String(idx + 1).padStart(2, '0')}</span>
-                      <span style={{ opacity: 0.85, fontWeight: 700 }}>
-                        {cue.roleName}
-                      </span>
-                      {done && <Check size={13} strokeWidth={3} />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Kaydedilen Sesi Dinleme Kutusu */}
-            {(take || savedUrls[selected]) &&
-              !recording &&
-              !countdown &&
-              !listeningOriginal && (
-                <div className="cue-review" style={{ marginTop: '10px' }}>
-                  <span>Kaydını dinle ({current.roleName})</span>
-                  {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                  <audio
-                    controls
-                    ref={savedAudio}
-                    src={take?.url ?? savedUrls[selected]}
-                    aria-label="Kaydını dinle"
-                    onPlay={() => {
-                      if (playingSegment !== null) stop();
-                      video.current?.pause();
-                      instrumentalAudio.current?.pause();
-                    }}
-                    onEnded={() => setReviewedTakeId(selected)}
-                  />
-                </div>
-              )}
           </>
         )}
         {error && (
