@@ -5384,8 +5384,12 @@ audio {
 .dub-feed-scroller { height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; scroll-behavior: smooth; scrollbar-width: none; }
 .dub-feed-scroller::-webkit-scrollbar { display: none; }
 .dub-slide { height: 100%; scroll-snap-align: start; scroll-snap-stop: always; display: flex; align-items: center; justify-content: center; position: relative; gap: 20px; }
-.dub-slide-center { display: flex; flex-direction: column; align-items: center; max-height: calc(100vh - 140px); }
-.dub-video-shell { position: relative; aspect-ratio: 9/16; width: auto; height: calc(100vh - 230px); max-height: 680px; border-radius: 16px; overflow: hidden; background: #141414; box-shadow: 0 0 0 1px #2a2a2a; }
+.dub-slide-info { display: flex; flex-direction: column; justify-content: flex-end; align-self: flex-end; margin-bottom: 40px; max-width: 200px; min-width: 160px; text-align: left; }
+.dub-slide-info .dub-video-category { display: inline-block; margin-bottom: 8px; color: var(--dub-accent); font: 900 10px var(--font-technical); letter-spacing: .08em; }
+.dub-slide-info h2 { margin: 0; font-size: clamp(18px, 1.8vw, 24px); line-height: 1.1; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.dub-slide-info p { margin: 8px 0 0; color: #aaa; font-size: 12px; font-weight: 700; line-height: 1.4; }
+.dub-slide-time { margin-top: 6px; color: #666; font-size: 11px; font-weight: 600; }
+.dub-video-shell { position: relative; aspect-ratio: 9/16; width: auto; height: calc(100vh - 200px); max-height: 700px; border-radius: 16px; overflow: hidden; background: #141414; box-shadow: 0 0 0 1px #2a2a2a; }
 .dub-video-backdrop { position: absolute; inset: 0; background-position: center; background-size: cover; filter: blur(28px) brightness(.27); transform: scale(1.15); }
 .dub-video-shell video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
 .dub-video-shell::after { display: none; }
@@ -5487,11 +5491,10 @@ audio {
   .guide-tip-list { grid-template-columns: 1fr 1fr; }
   .guide-tip-list > div { padding: 14px; }
   .dub-slide { flex-direction: column; gap: 0; }
-  .dub-slide-center { flex-direction: column; }
+  .dub-slide-info { display: none; }
   .dub-video-shell { height: calc(100vh - 300px); max-height: 500px; border-radius: 12px; }
   .dub-action-rail { flex-direction: row; gap: 16px; align-self: center; margin-bottom: 0; padding: 8px 0; }
   .dub-action-rail button span { position: static; }
-  .dub-slide-info h2 { font-size: 16px; }
   .dub-feed-navigation { display: none; }
   .dub-footer-strip { flex-direction: column; align-items: flex-start; font-size: 11px; }
 }

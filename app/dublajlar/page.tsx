@@ -395,96 +395,96 @@ export default function DublajlarPage() {
                       data-dub-index={index}
                       style={{ '--dub-accent': accent } as React.CSSProperties}
                     >
-                      <div className="dub-slide-center">
-                        <div className="dub-video-shell">
-                          {dub.posterUrl && (
-                            <div
-                              className="dub-video-backdrop"
-                              style={{
-                                backgroundImage: `url("${dub.posterUrl}")`,
-                              }}
-                              aria-hidden="true"
-                            />
-                          )}
-                          {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                          <video
-                            ref={(element) => {
-                              if (element)
-                                videoRefs.current.set(dub.id, element);
-                              else videoRefs.current.delete(dub.id);
+                      <div className="dub-slide-info">
+                        <span className="dub-video-category">
+                          {dub.category || 'SAHNE'}
+                        </span>
+                        <h2>{dub.sceneTitle}</h2>
+                        <p>
+                          {dub.players?.length
+                            ? dub.players
+                                .map((player) => `@${player.name}`)
+                                .join('  ×  ')
+                            : '@Oyuncu'}
+                        </p>
+                        <span className="dub-slide-time">
+                          {relativeTime(dub.createdAt)}
+                        </span>
+                      </div>
+                      <div className="dub-video-shell">
+                        {dub.posterUrl && (
+                          <div
+                            className="dub-video-backdrop"
+                            style={{
+                              backgroundImage: `url("${dub.posterUrl}")`,
                             }}
-                            src={dub.videoUrl}
-                            poster={dub.posterUrl || undefined}
-                            muted={muted}
-                            playsInline
-                            loop
-                            preload={
-                              index <= activeIndex + 1 ? 'metadata' : 'none'
-                            }
-                            onClick={() => {
-                              if (isActive)
-                                setPausedId((current) =>
-                                  current === dub.id ? null : dub.id,
-                                );
-                            }}
-                            onDoubleClick={() => toggleLike(dub)}
-                            aria-label={`${dub.sceneTitle} dublaj videosu`}
+                            aria-hidden="true"
                           />
+                        )}
+                        {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
+                        <video
+                          ref={(element) => {
+                            if (element)
+                              videoRefs.current.set(dub.id, element);
+                            else videoRefs.current.delete(dub.id);
+                          }}
+                          src={dub.videoUrl}
+                          poster={dub.posterUrl || undefined}
+                          muted={muted}
+                          playsInline
+                          loop
+                          preload={
+                            index <= activeIndex + 1 ? 'metadata' : 'none'
+                          }
+                          onClick={() => {
+                            if (isActive)
+                              setPausedId((current) =>
+                                current === dub.id ? null : dub.id,
+                              );
+                          }}
+                          onDoubleClick={() => toggleLike(dub)}
+                          aria-label={`${dub.sceneTitle} dublaj videosu`}
+                        />
 
-                          {isActive && pausedId === dub.id && (
-                            <button
-                              type="button"
-                              className="dub-big-play"
-                              aria-label="Videoyu oynat"
-                              onClick={() => setPausedId(null)}
-                            >
-                              <Play size={31} fill="currentColor" />
-                            </button>
-                          )}
-                          <div className="dub-video-controls">
-                            <button
-                              type="button"
-                              aria-label={
-                                pausedId === dub.id ? 'Oynat' : 'Duraklat'
-                              }
-                              onClick={() =>
-                                setPausedId((current) =>
-                                  current === dub.id ? null : dub.id,
-                                )
-                              }
-                            >
-                              {pausedId === dub.id ? (
-                                <Play size={18} fill="currentColor" />
-                              ) : (
-                                <Pause size={18} fill="currentColor" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-                              onClick={() => setMuted((current) => !current)}
-                            >
-                              {muted ? (
-                                <VolumeX size={20} />
-                              ) : (
-                                <Volume2 size={20} />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="dub-slide-info">
-                          <span className="dub-video-category">
-                            {dub.category || 'SAHNE'}
-                          </span>
-                          <h2>{dub.sceneTitle}</h2>
-                          <p>
-                            {dub.players?.length
-                              ? dub.players
-                                  .map((player) => `@${player.name}`)
-                                  .join('  ×  ')
-                              : '@Oyuncu'}{' '}
-                            <span>· {relativeTime(dub.createdAt)}</span>
-                          </p>
+                        {isActive && pausedId === dub.id && (
+                          <button
+                            type="button"
+                            className="dub-big-play"
+                            aria-label="Videoyu oynat"
+                            onClick={() => setPausedId(null)}
+                          >
+                            <Play size={31} fill="currentColor" />
+                          </button>
+                        )}
+                        <div className="dub-video-controls">
+                          <button
+                            type="button"
+                            aria-label={
+                              pausedId === dub.id ? 'Oynat' : 'Duraklat'
+                            }
+                            onClick={() =>
+                              setPausedId((current) =>
+                                current === dub.id ? null : dub.id,
+                              )
+                            }
+                          >
+                            {pausedId === dub.id ? (
+                              <Play size={18} fill="currentColor" />
+                            ) : (
+                              <Pause size={18} fill="currentColor" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+                            onClick={() => setMuted((current) => !current)}
+                          >
+                            {muted ? (
+                              <VolumeX size={20} />
+                            ) : (
+                              <Volume2 size={20} />
+                            )}
+                          </button>
                         </div>
                       </div>
                       <div className="dub-action-rail">
