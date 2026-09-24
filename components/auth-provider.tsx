@@ -539,7 +539,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 color: accentInk,
                 padding: '26px 28px 22px',
                 borderBottom: '2px solid #2a2a2a',
-                transition: 'background 0.15s ease',
+                transition: 'background-color 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             >
               <div
@@ -570,9 +570,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             {/* Alt Form Gövdesi (Mat Siyah Bento İçeriği) */}
             <div style={{ padding: '24px 28px 28px' }}>
-              {/* Giriş Yap / Üye Ol Sekmeleri (Düz Solid Bloklar, Glow Yok) */}
+              {/* Giriş Yap / Üye Ol Kayar Animasyonlu Sekmeler (Solid Blok, Glow Yok) */}
               <div
                 style={{
+                  position: 'relative',
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr',
                   gap: '8px',
@@ -581,8 +582,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   borderRadius: '14px',
                   marginBottom: '20px',
                   border: '1.5px solid #2e2e2e',
+                  overflow: 'hidden',
                 }}
               >
+                {/* Kayar Aktif Sekme Bloğu (Sliding Solid Indicator) */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: '6px',
+                    bottom: '6px',
+                    left: '6px',
+                    width: 'calc(50% - 10px)',
+                    borderRadius: '10px',
+                    background: accentColor,
+                    transform:
+                      mode === 'login'
+                        ? 'translate3d(0%, 0, 0)'
+                        : 'translate3d(calc(100% + 8px), 0, 0)',
+                    transition:
+                      'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
+                    pointerEvents: 'none',
+                  }}
+                />
+
                 <button
                   type="button"
                   onClick={() => {
@@ -590,14 +613,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setError('');
                   }}
                   style={{
+                    position: 'relative',
+                    zIndex: 1,
                     padding: '11px 14px',
                     borderRadius: '10px',
                     fontWeight: 900,
                     fontSize: '13px',
                     border: 'none',
                     cursor: 'pointer',
-                    background: mode === 'login' ? '#F5E636' : 'transparent',
+                    background: 'transparent',
                     color: mode === 'login' ? '#090909' : '#888888',
+                    transition: 'color 0.25s ease',
                   }}
                 >
                   Giriş Yap
@@ -609,14 +635,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setError('');
                   }}
                   style={{
+                    position: 'relative',
+                    zIndex: 1,
                     padding: '11px 14px',
                     borderRadius: '10px',
                     fontWeight: 900,
                     fontSize: '13px',
                     border: 'none',
                     cursor: 'pointer',
-                    background: mode === 'register' ? '#FF6B4A' : 'transparent',
+                    background: 'transparent',
                     color: mode === 'register' ? '#090909' : '#888888',
+                    transition: 'color 0.25s ease',
                   }}
                 >
                   Üye Ol
@@ -625,26 +654,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
               <form
                 onSubmit={handleAuthSubmit}
-                style={{ display: 'grid', gap: '14px' }}
+                style={{ display: 'grid', gap: '0px' }}
               >
-                {mode === 'register' && (
-                  <div className="bbank-form-field">
-                    <label htmlFor="mosaic-player-name">OYUNCU ADIN</label>
-                    <input
-                      id="mosaic-player-name"
-                      type="text"
-                      required
-                      minLength={2}
-                      maxLength={24}
-                      value={playerName}
-                      onChange={(e) => setPlayerName(e.target.value)}
-                      placeholder="Sahnede görünecek adın"
-                      className="bbank-input"
-                    />
+                {/* OYUNCU ADIN Alanı: Sekme Değişiminde Yumuşak Yükseklik & Kayma Animasyonu */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateRows: mode === 'register' ? '1fr' : '0fr',
+                    opacity: mode === 'register' ? 1 : 0,
+                    marginBottom: mode === 'register' ? '14px' : '0px',
+                    transform:
+                      mode === 'register'
+                        ? 'translate3d(0, 0, 0)'
+                        : 'translate3d(0, -8px, 0)',
+                    transition:
+                      'grid-template-rows 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease, margin-bottom 0.34s cubic-bezier(0.22, 1, 0.36, 1), transform 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
+                    pointerEvents: mode === 'register' ? 'auto' : 'none',
+                  }}
+                >
+                  <div style={{ overflow: 'hidden' }}>
+                    <div className="bbank-form-field" style={{ paddingTop: '2px' }}>
+                      <label htmlFor="mosaic-player-name">OYUNCU ADIN</label>
+                      <input
+                        id="mosaic-player-name"
+                        type="text"
+                        required={mode === 'register'}
+                        tabIndex={mode === 'register' ? 0 : -1}
+                        minLength={2}
+                        maxLength={24}
+                        value={playerName}
+                        onChange={(e) => setPlayerName(e.target.value)}
+                        placeholder="Sahnede görünecek adın"
+                        className="bbank-input"
+                      />
+                    </div>
                   </div>
-                )}
+                </div>
 
-                <div className="bbank-form-field">
+                <div className="bbank-form-field" style={{ marginBottom: '14px' }}>
                   <label htmlFor="mosaic-auth-email">E-POSTA ADRESİ</label>
                   <input
                     id="mosaic-auth-email"
@@ -658,7 +705,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   />
                 </div>
 
-                <div className="bbank-form-field">
+                <div className="bbank-form-field" style={{ marginBottom: '14px' }}>
                   <label htmlFor="mosaic-auth-password">ŞİFRE</label>
                   <input
                     id="mosaic-auth-password"
@@ -685,6 +732,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       color: '#ff8881',
                       fontSize: '13px',
                       fontWeight: 700,
+                      marginBottom: '14px',
                     }}
                   >
                     {error}
@@ -703,6 +751,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     padding: '15px 18px',
                     fontSize: '15px',
                     fontWeight: 900,
+                    transition:
+                      'background-color 0.34s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s ease',
                   }}
                 >
                   {submitting
