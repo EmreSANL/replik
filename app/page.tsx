@@ -453,11 +453,26 @@ export default function Home() {
                 onClick={() => {
                   if (hasScenes) setPreview(selected);
                 }}
-                style={{ cursor: hasScenes ? 'pointer' : 'default' }}
+                style={{
+                  cursor: hasScenes ? 'pointer' : 'default',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  minHeight: '500px',
+                  maxHeight: '500px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}
               >
                 <div
-                  className="replik-hero-feature-art"
-                  style={{ overflow: 'hidden', position: 'relative' }}
+                  style={{
+                    flex: 1,
+                    position: 'relative',
+                    width: '100%',
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    backgroundColor: '#090909',
+                  }}
                   aria-hidden="true"
                 >
                   {activeScene.video ? (
@@ -472,8 +487,47 @@ export default function Home() {
                   )}
                 </div>
                 {hasScenes && (
-                  <div className="replik-hero-feature-bottom">
-                    <h2>{activeScene.title}</h2>
+                  <div
+                    style={{
+                      padding: '16px 24px',
+                      backgroundColor: '#121212',
+                      borderTop: '2px solid #2a2a2a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 'clamp(18px, 2vw, 24px)',
+                        fontWeight: 950,
+                        letterSpacing: '-0.04em',
+                        lineHeight: 1.15,
+                        color: '#F4F4E9',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {activeScene.title}
+                    </h2>
+                    <span
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        backgroundColor: '#F5E636',
+                        color: '#090909',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Play size={16} fill="currentColor" />
+                    </span>
                   </div>
                 )}
               </div>

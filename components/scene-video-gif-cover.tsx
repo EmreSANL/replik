@@ -194,7 +194,8 @@ export function SceneVideoGifCover({
       ref={containerRef}
       className={`scene-gif-cover-wrap ${className}`}
       style={{
-        position: 'relative',
+        position: 'absolute',
+        inset: 0,
         width: '100%',
         height: '100%',
         overflow: 'hidden',
@@ -222,9 +223,13 @@ export function SceneVideoGifCover({
           disablePictureInPicture
           disableRemotePlayback
           style={{
+            position: 'absolute',
+            inset: 0,
             width: '100%',
             height: '100%',
             objectFit: 'cover',
+            objectPosition: 'center center',
+            transform: 'scale(1.14)',
             display: 'block',
             pointerEvents: 'none',
           }}

@@ -5497,12 +5497,12 @@ audio {
 }
 
 /* Home stage and discovery */
-.replik-home-hero { min-height: 610px; margin-bottom: 14px; }
-.replik-home-hero .replik-hero-copy { position: relative; min-height: 610px; padding: clamp(26px, 3.6vw, 54px); }
+.replik-home-hero { height: 500px; min-height: 500px; margin-bottom: 24px; }
+.replik-home-hero .replik-hero-copy { position: relative; height: 500px; min-height: 500px; padding: clamp(26px, 3.6vw, 54px); }
 .home-hero-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
 .home-hero-kicker, .home-hero-issue { display: inline-flex; align-items: center; gap: 11px; color: var(--bbank-sage); font: 900 10px/1.4 var(--font-technical); letter-spacing: .13em; white-space: nowrap; }
 .home-hero-issue { color: #85857b; }
-.home-hero-core { margin: auto 0; padding: 35px 0; }
+.home-hero-core { margin: auto 0; padding: 20px 0; }
 .replik-home-hero h1 { margin: 0 0 20px; font-size: clamp(58px, 5.65vw, 90px); font-weight: 950; line-height: .89; letter-spacing: -.085em; text-transform: uppercase; }
 .replik-home-hero h1 span { color: var(--bbank-yellow); }
 .replik-home-hero .replik-hero-copy > p { max-width: none; }
@@ -5512,8 +5512,8 @@ audio {
 .home-hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 22px; width: 100%; padding-top: 19px; border-top: 1px solid #3d3d34; }
 .home-hero-foot span { display: inline-flex; align-items: center; gap: 7px; color: #b5b5aa; font: 800 10px/1.3 var(--font-technical); letter-spacing: .05em; }
 .home-hero-foot svg { color: var(--bbank-yellow); }
-.replik-home-hero .replik-hero-feature { min-height: 610px; }
-.replik-home-hero .replik-hero-feature-art { inset: 0 0 62px; }
+.replik-home-hero .replik-hero-feature { height: 500px; min-height: 500px; }
+.replik-home-hero .replik-hero-feature-art { inset: 0; }
 .replik-home-hero .replik-hero-feature-art::after { background: linear-gradient(180deg, #05050599 0%, transparent 35%, #05050535 55%, #050505ee 100%); }
 .replik-home-hero .replik-hero-feature-head { left: 24px; right: 24px; }
 .replik-home-hero .replik-hero-feature-head > span { display: inline-flex; align-items: center; gap: 8px; border-color: #ffffff70; background: #090909d6; font-size: 10px; }
