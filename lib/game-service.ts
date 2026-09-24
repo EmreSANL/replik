@@ -375,10 +375,17 @@ export async function executeGameRoomAction(
     if (!player.host) throw new Error('Oyunu oda kurucusu başlatabilir.');
     if (row.status !== 'lobby') throw new Error('Oyun zaten başlamış.');
 
+    const requiredPlayers = Math.max(1, Number(row.max_players) || 1);
+    if (row.players.length < requiredPlayers) {
+      throw new Error(
+        `Oda ${requiredPlayers} kişilik kuruldu. Oyunun başlaması için ${requiredPlayers - row.players.length} oyuncunun daha katılması gerekiyor.`,
+      );
+    }
+
     // Herkes hazır mı kontrol et
-    const notReady = row.players.filter((p) => !p.ready && p.id !== player.id);
+    const notReady = row.players.filter((p) => !p.ready);
     if (notReady.length > 0) {
-      throw new Error('Başlamadan önce tüm oyuncular hazır olmalı.');
+      throw new Error('Başlamadan önce odadaki tüm oyuncular hazır olmalı.');
     }
 
     // 1 Karakter = 1 Oyuncu kuralına göre her oyuncuya ana karakterini ata

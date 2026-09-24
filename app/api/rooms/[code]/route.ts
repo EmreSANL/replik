@@ -97,6 +97,13 @@ export async function POST(req: Request, { params }: C) {
   } else if (b.action === 'start') {
     if (!me.host) return fail('Oyunu oda kurucusu başlatabilir.', 403);
     if (room.status !== 'lobby') return fail('Oyun zaten başlamış.', 409);
+    const requiredPlayers = Math.max(1, Number(room.maxPlayers) || 1);
+    if (room.players.length < requiredPlayers) {
+      return fail(
+        `Oda ${requiredPlayers} kişilik kuruldu. Başlamak için ${requiredPlayers - room.players.length} oyuncu daha bekleniyor.`,
+        409,
+      );
+    }
     const lock = await db()
       .prepare(
         "UPDATE rooms SET status = 'recording' WHERE code = ? AND status = 'lobby' AND NOT EXISTS (SELECT 1 FROM players WHERE room = ? AND ready = 0)",

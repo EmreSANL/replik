@@ -1421,20 +1421,50 @@ export default function Studio({
                   {me.ready ? 'Hazırım (İptal)' : 'Hazırım'} <Check size={17} />
                 </button>
 
-                {me.host === 1 ? (
-                  <button
-                    className="primary"
-                    disabled={busy || !room.players.every((p) => p.ready)}
-                    onClick={() => act('start')}
-                  >
-                    {room.maxPlayers === 1
-                      ? 'Başlat'
-                      : 'Rolleri dağıt ve başlat'}{' '}
-                    <Play size={17} />
-                  </button>
-                ) : (
-                  <p className="microcopy">Kurucu oyunu başlatacak.</p>
-                )}
+                {(() => {
+                  const requiredPlayers = Math.max(1, room.maxPlayers || 1);
+                  const missingPlayers = Math.max(0, requiredPlayers - room.players.length);
+                  const allPlayersPresent = room.players.length >= requiredPlayers;
+                  const allPlayersReady =
+                    allPlayersPresent && room.players.every((p) => p.ready);
+
+                  if (me.host === 1) {
+                    return (
+                      <button
+                        className="primary"
+                        disabled={busy || !allPlayersReady}
+                        onClick={() => act('start')}
+                        style={
+                          !allPlayersReady
+                            ? {
+                                background: '#1c1c18',
+                                color: '#8a8a7e',
+                                borderColor: '#2e2e27',
+                                cursor: 'not-allowed',
+                                opacity: 1,
+                              }
+                            : undefined
+                        }
+                      >
+                        {missingPlayers > 0
+                          ? `${missingPlayers} oyuncu daha bekleniyor (${room.players.length}/${requiredPlayers})`
+                          : !allPlayersReady
+                            ? 'Herkesin hazır olması bekleniyor'
+                            : requiredPlayers === 1
+                              ? 'Başlat'
+                              : 'Rolleri dağıt ve başlat'}{' '}
+                        {allPlayersReady && <Play size={17} />}
+                      </button>
+                    );
+                  }
+                  return (
+                    <p className="microcopy">
+                      {missingPlayers > 0
+                        ? `${missingPlayers} oyuncu daha bekleniyor (${room.players.length}/${requiredPlayers})`
+                        : 'Kurucu oyunu başlatacak.'}
+                    </p>
+                  );
+                })()}
               </div>
             </>
           ) : (
