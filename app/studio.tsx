@@ -1177,7 +1177,7 @@ export default function Studio({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                  gap: '10px',
+                  gap: '12px',
                   marginBottom: '16px',
                 }}
               >
@@ -1185,8 +1185,20 @@ export default function Studio({
                   length: Math.max(room.players.length, room.maxPlayers || 1),
                 }).map((_, slotIdx) => {
                   const p = room.players[slotIdx];
-                  const tileColors = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
-                  const bg = tileColors[slotIdx % tileColors.length];
+                  const waitingColors = ['#F5E636', '#D4C2FC', '#FFD166', '#A8DADC'];
+                  const readyColors = ['#7BF1A8', '#FF6B4A', '#7BF1A8', '#FF6B4A'];
+                  const waitingQuips = [
+                    '🎤 Boğaz temizliyor...',
+                    '☕ Çayını yudumluyor...',
+                    '👀 Replik ezberliyor...',
+                    '🎧 Kulaklık takıyor...',
+                  ];
+                  const readyQuips = [
+                    '🔥 MİKROFON ALEV ALDI!',
+                    '⚡ DUBLAJ CANAVARI!',
+                    '🏆 OSCAR’A HAZIR!',
+                    '🎬 TAM GAZ HAZIR!',
+                  ];
 
                   if (!p) {
                     return (
@@ -1194,71 +1206,143 @@ export default function Studio({
                         key={`empty-slot-${slotIdx}`}
                         style={{
                           aspectRatio: '1 / 1',
-                          minHeight: '118px',
-                          borderRadius: '16px',
-                          border: '2px dashed #2e2e28',
+                          minHeight: '136px',
+                          borderRadius: '18px',
+                          border: '2.5px dashed #32322b',
                           background: '#141412',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '6px',
-                          padding: '12px',
+                          gap: '8px',
+                          padding: '14px',
                           color: '#6e6e66',
+                          position: 'relative',
+                          overflow: 'hidden',
                         }}
                       >
-                        <Users size={20} />
+                        <span
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            bottom: '-8px',
+                            fontSize: '54px',
+                            fontWeight: 950,
+                            color: 'rgba(255,255,255,0.04)',
+                            lineHeight: 1,
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          0{slotIdx + 1}
+                        </span>
+                        <Users size={22} />
                         <span
                           style={{
                             fontSize: '11px',
                             fontWeight: 900,
                             letterSpacing: '0.06em',
                             textTransform: 'uppercase',
+                            textAlign: 'center',
                           }}
                         >
-                          BEKLENİYOR
+                          KOLTUK BOŞ
                         </span>
                       </div>
                     );
                   }
 
+                  const isMe = p.id === me.id;
+                  const isReady = Boolean(p.ready);
+                  const bg = isReady
+                    ? readyColors[slotIdx % readyColors.length]
+                    : waitingColors[slotIdx % waitingColors.length];
+                  const quip = isReady
+                    ? readyQuips[slotIdx % readyQuips.length]
+                    : waitingQuips[slotIdx % waitingQuips.length];
+
                   return (
                     <div
                       key={p.id}
+                      role={isMe ? 'button' : undefined}
+                      tabIndex={isMe ? 0 : undefined}
+                      onClick={() => {
+                        if (isMe && !busy) {
+                          act('ready', { ready: !me.ready });
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (isMe && !busy && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          act('ready', { ready: !me.ready });
+                        }
+                      }}
+                      title={isMe ? 'Hazır durumunu değiştirmek için tıkla' : undefined}
                       style={{
                         aspectRatio: '1 / 1',
-                        minHeight: '118px',
-                        borderRadius: '16px',
-                        border: '2px solid #090909',
+                        minHeight: '136px',
+                        borderRadius: '18px',
+                        border: '2.5px solid #090909',
                         background: bg,
                         color: '#090909',
-                        boxShadow: '0 4px 0 #090909',
-                        padding: '12px',
+                        boxShadow: isReady ? '6px 6px 0 #090909' : '3px 3px 0 #090909',
+                        transform: isReady
+                          ? 'translateY(-4px) rotate(-1.5deg)'
+                          : 'translateY(0) rotate(0deg)',
+                        transition:
+                          'background-color 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.28s ease',
+                        padding: '13px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        cursor: isMe ? 'pointer' : 'default',
+                        userSelect: 'none',
                       }}
                     >
+                      {/* Arka plan dev sıra numarası */}
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: 'absolute',
+                          right: '6px',
+                          bottom: '16px',
+                          fontSize: '64px',
+                          fontWeight: 950,
+                          letterSpacing: '-0.08em',
+                          lineHeight: 0.85,
+                          color: 'rgba(9, 9, 9, 0.08)',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        { isReady ? '★' : `0${slotIdx + 1}` }
+                      </span>
+
+                      {/* Üst Satır: Harf Avatarı + Hazır/Bekliyor Rozeti */}
                       <div
                         style={{
                           display: 'flex',
                           alignItems: 'flex-start',
                           justifyContent: 'space-between',
                           gap: '6px',
+                          position: 'relative',
+                          zIndex: 1,
                         }}
                       >
                         <span
                           style={{
-                            width: '34px',
-                            height: '34px',
-                            borderRadius: '10px',
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '11px',
                             background: '#090909',
                             color: bg,
                             display: 'grid',
                             placeItems: 'center',
-                            fontSize: '16px',
+                            fontSize: '17px',
                             fontWeight: 950,
                             flexShrink: 0,
+                            transform: isReady ? 'rotate(6deg) scale(1.06)' : 'none',
+                            transition: 'transform 0.25s ease, color 0.25s ease',
                           }}
                         >
                           {p.name[0]?.toLocaleUpperCase('tr') || '?'}
@@ -1268,20 +1352,22 @@ export default function Studio({
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '4px',
-                            padding: '4px 8px',
+                            padding: '5px 9px',
                             borderRadius: '999px',
                             fontSize: '10px',
-                            fontWeight: 900,
+                            fontWeight: 950,
                             letterSpacing: '0.04em',
                             textTransform: 'uppercase',
-                            background: p.ready ? '#090909' : 'rgba(9,9,9,0.12)',
-                            color: p.ready ? '#B8E6C1' : '#090909',
-                            border: '1.5px solid #090909',
+                            background: isReady ? '#090909' : '#141412',
+                            color: isReady ? '#7BF1A8' : '#F5E636',
+                            border: '2px solid #090909',
+                            transform: isReady ? 'scale(1.05)' : 'scale(1)',
+                            transition: 'all 0.25s ease',
                           }}
                         >
-                          {p.ready ? (
+                          {isReady ? (
                             <>
-                              <Check size={12} strokeWidth={3} /> HAZIR
+                              <Check size={12} strokeWidth={3.5} /> HAZIR!
                             </>
                           ) : (
                             'BEKLİYOR'
@@ -1289,25 +1375,51 @@ export default function Studio({
                         </span>
                       </div>
 
-                      <div style={{ minWidth: 0 }}>
+                      {/* Orta Matrak Durum Etiketi (Sticker) */}
+                      <div
+                        style={{
+                          position: 'relative',
+                          zIndex: 1,
+                          alignSelf: 'flex-start',
+                          background: isReady ? '#090909' : 'rgba(9, 9, 9, 0.11)',
+                          color: isReady ? '#FFFFFF' : '#090909',
+                          border: isReady ? '1.5px solid #090909' : '1.5px dashed rgba(9,9,9,0.45)',
+                          borderRadius: '8px',
+                          padding: '4px 8px',
+                          fontSize: '10.5px',
+                          fontWeight: 900,
+                          letterSpacing: '-0.01em',
+                          transform: isReady ? 'rotate(-2deg)' : 'rotate(1deg)',
+                          transition: 'all 0.25s ease',
+                          maxWidth: '100%',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {quip}
+                      </div>
+
+                      {/* Alt Satır: Oyuncu Rolü ve İsmi */}
+                      <div style={{ minWidth: 0, position: 'relative', zIndex: 1 }}>
                         <div
                           style={{
                             fontSize: '10px',
                             fontWeight: 900,
                             letterSpacing: '0.06em',
                             textTransform: 'uppercase',
-                            opacity: 0.72,
+                            opacity: 0.78,
                             marginBottom: '2px',
                           }}
                         >
-                          {p.host === 1 ? 'KURUCU' : 'OYUNCU'}
-                          {p.id === me.id ? ' · SEN' : ''}
+                          {p.host === 1 ? '👑 KURUCU' : '🎭 OYUNCU'}
+                          {isMe ? ' · SEN' : ''}
                         </div>
                         <div
                           style={{
-                            fontSize: '17px',
+                            fontSize: '19px',
                             fontWeight: 950,
-                            letterSpacing: '-0.04em',
+                            letterSpacing: '-0.045em',
                             lineHeight: 1.05,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
@@ -1327,8 +1439,15 @@ export default function Studio({
                   className="secondary"
                   disabled={busy}
                   onClick={() => act('ready', { ready: !me.ready })}
+                  style={{
+                    backgroundColor: me.ready ? '#7BF1A8' : '#1c1c18',
+                    color: me.ready ? '#090909' : '#F4F4E9',
+                    borderColor: me.ready ? '#090909' : '#383830',
+                    fontWeight: 900,
+                    transition: 'all 0.22s ease',
+                  }}
                 >
-                  {me.ready ? 'Hazır değilim' : 'Hazırım'} <Check size={17} />
+                  {me.ready ? '🔥 Hazırım! (İptal için bas)' : '⚡ Hazırım!'} <Check size={17} />
                 </button>
 
                 {me.host === 1 ? (
