@@ -1108,23 +1108,13 @@ export default function Studio({
             </div>
           )}
 
-          {room.status === 'recording' ? (
+          {room.status === 'recording' && (
             <SegmentRecorder
               room={room}
               session={session}
               onRoom={setRoom}
               customScenes={customScenes}
             />
-          ) : (
-            <div className="timeline">
-              {sceneCues(room.scene, customScenes).map((c) => (
-                <div key={c.id}>
-                  <span>{c.roleName}</span>
-                  <strong>{formatTimecode(c.start)}</strong>
-                  <span>Bitiş {formatTimecode(c.end)}</span>
-                </div>
-              ))}
-            </div>
           )}
 
           {/* Jenerik / Seslendirenler Kadrosu */}
@@ -1152,10 +1142,6 @@ export default function Studio({
               </div>
             </div>
           )}
-
-          <p className="credit">
-            Sahne: <strong>{scene.title}</strong> · {scene.category} · Orijinal ses kapalı; replikler oyuncuların doğaçlamasıdır.
-          </p>
         </div>
 
         <aside className="room-card studio-panel">
