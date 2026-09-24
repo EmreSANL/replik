@@ -42,7 +42,7 @@ class CinematicSeparator:
             # Only load publisher weights whose release checksum was verified above.
             package = torch.load(path, map_location='cpu', weights_only=False)
             model = load_model(package).eval()
-            if list(model.sources) != ['music', 'effect', 'dialog']:
+            if list(model.sources) != ['music', 'sfx', 'speech']:
                 raise RuntimeError('Unexpected cinematic model sources: ' + str(model.sources))
             self.models.append(model)
         print(f'Cinematic separator ready: 3 checkpoints, device={self.device}', flush=True)

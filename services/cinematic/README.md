@@ -9,7 +9,7 @@ and subtitle edits do not affect the prepared background.
 
 The default worker uses the three CDX23/DnR cinematic checkpoints from
 [MVSEP-CDX23](https://github.com/ZFTurbo/MVSEP-CDX23-Cinematic-Sound-Demixing).
-These predict `music`, `effect`, and `dialog`. The worker averages all three
+These predict `music`, `sfx`, and `speech`. The worker averages all three
 checkpoints and saves music + effects as stereo 44.1 kHz PCM WAV. CUDA is preferred,
 then Apple MPS, then CPU. The first run downloads approximately 162 MB of weights;
 release checksum prefixes are verified before loading them. Separation is not
