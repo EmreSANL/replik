@@ -10,8 +10,12 @@ import {
   Check,
   Plus,
   Edit3,
-  Flame,
-  Volume2,
+  Clapperboard,
+  Hash,
+  CircleHelp,
+  ArrowUpRight,
+  Users,
+  Film,
 } from 'lucide-react';
 import {
   Dialog,
@@ -29,12 +33,7 @@ import {
 } from '@/lib/scenes';
 import { getScenesFromSupabase } from '@/lib/supabase';
 import { SceneVideoGifCover } from '@/components/scene-video-gif-cover';
-import {
-  getPublishedDubsFromSupabase,
-  likePublishedDubInSupabase,
-  cleanupStaleUnpublishedRooms,
-  type PublishedDub,
-} from '@/lib/game-service';
+import { cleanupStaleUnpublishedRooms } from '@/lib/game-service';
 import { useAuth, MemberTopbarBadge } from '@/components/auth-provider';
 import {
   ReplikLoadingScreen,
@@ -56,10 +55,8 @@ export default function Home() {
   const [loadingStatus, setLoadingStatus] = useState(
     'Sahne kataloğu bağlanıyor...',
   );
-  const [publishedDubs, setPublishedDubs] = useState<PublishedDub[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('TÜMÜ');
   const [parked, setParked] = useState<{ session: Session; room: Room } | null>(null);
-  const [help, setHelp] = useState(false);
   const [modal, setModal] = useState<'create' | 'join' | null>(null);
   const [selected, setSelected] = useState(0);
   const [maxPlayers, setMaxPlayers] = useState(4);
@@ -76,11 +73,6 @@ export default function Home() {
       setName(displayName);
     }
   }, [displayName, name]);
-
-  async function refreshPublishedFeed() {
-    const dubs = await getPublishedDubsFromSupabase().catch(() => []);
-    setPublishedDubs(dubs);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -285,10 +277,9 @@ export default function Home() {
     sessionStorage.removeItem('replik-session');
     setParked(null);
     setGame(null);
-    void refreshPublishedFeed();
   }
 
-  const categories = ['TÜMÜ', 'MEME & MİZAH', 'DİZİ & FİLM', 'ANİME', 'YEŞİLÇAM'];
+  const categories = ['TÜMÜ', ...Array.from(new Set(allScenes.map((scene) => scene.category).filter(Boolean)))];
   const filteredScenes =
     selectedCategory === 'TÜMÜ'
       ? allScenes
@@ -342,7 +333,7 @@ export default function Home() {
             >
               Sahneler
             </button>
-            <a
+            <Link
               href="/dublajlar"
               onClick={(e) => {
                 e.preventDefault();
@@ -357,25 +348,26 @@ export default function Home() {
                   },
                 );
               }}
-              className="bbank-pill-btn bbank-pill-dark"
+              className="bbank-pill-btn bbank-pill-feed"
             >
-              Dublaj Akışı
-            </a>
-            <button
-              type="button"
-              className="bbank-pill-btn bbank-pill-dark"
-              onClick={() => {
+              <Clapperboard size={17} strokeWidth={2.5} /> Dublaj Akışı <span className="bbank-feed-live-dot" aria-hidden="true" />
+            </Link>
+            <Link
+              href="/nasil-oynanir"
+              className="bbank-pill-btn bbank-pill-dark bbank-pill-guide"
+              onClick={(e) => {
+                e.preventDefault();
                 triggerReplikCurtain(
                   'Nasıl Oynanır?',
                   () => {
-                    setHelp(true);
+                    router.push('/nasil-oynanir');
                   },
                   { sublabel: 'Oyun rehberi açılıyor...', accent: '#B8E6C1' },
                 );
               }}
             >
-              Nasıl Oynanır?
-            </button>
+              <CircleHelp size={16} /> Nasıl Oynanır?
+            </Link>
             <a
               href="/editor"
               onClick={(e) => {
@@ -391,7 +383,7 @@ export default function Home() {
               className="bbank-pill-btn bbank-pill-coral"
               onClick={() => openJoin()}
             >
-              # ODA KODUYLA GİR
+              <Hash size={16} strokeWidth={2.7} /> ODA KODUYLA GİR
             </button>
             {!game && parked && (
               <button
@@ -418,14 +410,19 @@ export default function Home() {
           <Studio session={game.session} initial={game.room} onExit={leave} />
         ) : (
           <>
-            <section className="replik-hero" aria-labelledby="replik-hero-title">
+            <section className="replik-hero replik-home-hero" aria-labelledby="replik-hero-title">
               <div className="replik-hero-copy">
+                <div className="home-hero-topline">
+                  <span className="home-hero-kicker"><span className="replik-hero-status-dot" /> REPLİK / DUBLAJ OYUNU</span>
+                  <span className="home-hero-issue">OYNA · KAYDET · PAYLAŞ</span>
+                </div>
+                <div className="home-hero-core">
                 <h1 id="replik-hero-title">
                   Sahne senin.<br />
                   <span>Sesini duyur.</span>
                 </h1>
                 <p>
-                  Bir sahne seç, arkadaşlarınla rolleri paylaş ve kendi seslerinizle dublaj yapın.
+                  Sevdiğin sahneyi seç. Arkadaşlarınla rolleri paylaş. Bu kez hikâyeyi sizin sesiniz anlatsın.
                 </p>
                 <div className="replik-hero-actions">
                   {hasScenes ? (
@@ -452,6 +449,15 @@ export default function Home() {
                   >
                     Oda kodum var
                   </button>
+                  <Link href="/dublajlar" className="replik-hero-feed-link">
+                    <Clapperboard size={18} /> Dublajları izle <ArrowRight size={18} />
+                  </Link>
+                </div>
+                </div>
+                <div className="home-hero-foot" aria-label="Oyun özellikleri">
+                  <span><Users size={16} /> 1–4 OYUNCU</span>
+                  <span><Mic size={16} /> KENDİ SESİN</span>
+                  <span><Clapperboard size={16} /> ORTAK FİNAL</span>
                 </div>
               </div>
 
@@ -476,21 +482,41 @@ export default function Home() {
                     !activeScene.poster && <span>R.</span>
                   )}
                 </div>
-                <div className="replik-hero-feature-bottom">
-                  <h2>{hasScenes ? activeScene.title : 'İlk sahneni oluştur.'}</h2>
+                <div className="replik-hero-feature-head">
+                  <span><span className="home-feature-pulse" /> {hasScenes ? 'ÖNE ÇIKAN SAHNE' : 'SAHNE SENİ BEKLİYOR'}</span>
+                  {hasScenes && <button type="button" onClick={() => setPreview(selected)}><Play size={14} fill="currentColor" /> Önizle</button>}
                 </div>
+                <div className="replik-hero-feature-bottom">
+                  <span className="replik-hero-feature-category">{hasScenes ? activeScene.category : 'REPLİK STÜDYO'}</span>
+                  <h2>{hasScenes ? activeScene.title : 'İlk sahneni oluştur.'}</h2>
+                  {hasScenes && <div className="replik-hero-feature-meta"><span>{activeScene.roles.length} KARAKTER</span><span aria-hidden="true">✳</span><span>{activeCuesCount} REPLİK</span><span aria-hidden="true">✳</span><span>{activeScene.duration} SN</span></div>}
+                </div>
+                <button
+                  type="button"
+                  className="replik-hero-change-scene"
+                  onClick={() => setSelected((current) => allScenes.length ? (current + 1) % allScenes.length : 0)}
+                  disabled={allScenes.length < 2}
+                >
+                  <span>BAŞKA BİR SAHNE GÖSTER</span><ArrowRight size={19} />
+                </button>
               </div>
             </section>
+
+            <div className="home-play-strip" aria-label="Oyunun adımları">
+              <Link href="/nasil-oynanir" className="home-play-strip-link">NASIL OYNANIR? <ArrowUpRight size={18} /></Link>
+              <div className="home-play-strip-steps"><span>SAHNE SEÇ</span><b>✳</b><span>EKİBİ TOPLA</span><b>✳</b><span>SESİNİ KAYDET</span><b>✳</b><span>YAYINLA</span></div>
+            </div>
 
             {/* ============================================================
                 SCENE CATALOG (SOLID COLOR BENTO TILES)
                 ============================================================ */}
             <section id="sahneler" className="bbank-catalog-section">
+              <div className="home-catalog-overline"><span>SAHNE ARŞİVİ / {String(allScenes.length).padStart(2, '0')} SAHNE</span><Link href="/editor" onClick={(event) => { event.preventDefault(); openEditor('/editor'); }}>KENDİ SAHNENİ EKLE <ArrowUpRight size={17} /></Link></div>
               <div className="bbank-section-heading">
                 <div>
-                  <h2 className="bbank-section-title">Sahne Kataloğu</h2>
+                  <h2 className="bbank-section-title">ŞİMDİ <em>SAHNE SEÇ.</em></h2>
                   <p className="bbank-section-desc">
-                    Tüm sahnelerde 1 karakter = 1 oyuncu kuralı geçerlidir.
+                    Her sahnenin başka bir hikâyesi var. Hangisine ses vereceksin?
                   </p>
                 </div>
 
@@ -542,9 +568,9 @@ export default function Home() {
                     >
                       <div
                         className="bbank-scene-tile-top"
-                        style={{ justifyContent: 'flex-end' }}
                       >
-                        <span className="bbank-scene-dur">00:{s.duration} sn</span>
+                        <span className="bbank-scene-badge">SAHNE {String(i + 1).padStart(2, '0')}</span>
+                        <span className="bbank-scene-dur">{s.duration} SN</span>
                       </div>
 
                       {/* Poster & Animated GIF Mid-Video Loop Frame */}
@@ -602,6 +628,7 @@ export default function Home() {
                           <button
                             type="button"
                             className="bbank-scene-listen-btn"
+                            aria-label={`${s.title} sahnesini önizle`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setPreview(sceneIndex);
@@ -633,37 +660,23 @@ export default function Home() {
                 </a>
               </div>
             </section>
+
+            <section className="home-discover-grid" aria-label="Replik'i keşfet">
+              <Link href="/dublajlar" className="home-discover-feed">
+                <div className="home-discover-top"><span><span className="home-feature-pulse" /> TOPLULUK SAHNESİ</span><ArrowUpRight size={28} /></div>
+                <div className="home-discover-feed-art" aria-hidden="true"><span>R.</span><Clapperboard size={70} strokeWidth={1.5} /></div>
+                <div className="home-discover-bottom"><span>DUBLAJ AKIŞI / İZLE & YORUMLA</span><h2>HER SAHNEYE<br />BAŞKA BİR <em>SES.</em></h2><p>Oyuncuların dublajlarını dikey akışta izle. Favorini beğen, yorumunu bırak, kendi yorumunu paylaş.</p><strong>AKIŞA GİT <ArrowRight size={19} /></strong></div>
+              </Link>
+              <Link href="/nasil-oynanir" className="home-discover-guide">
+                <div className="home-discover-top"><span>REPLİK REHBERİ / 01—04</span><ArrowUpRight size={28} /></div>
+                <div className="home-discover-guide-icon" aria-hidden="true"><Film size={64} strokeWidth={1.4} /><span>✳</span></div>
+                <div className="home-discover-bottom"><h2>İLK KEZ<br />Mİ OYNUYORSUN?</h2><p>Sahne seçmekten dublajı yayınlamaya kadar her şey dört adımda.</p><strong>NASIL OYNANIR? <ArrowRight size={19} /></strong></div>
+              </Link>
+            </section>
+            <footer className="home-footer"><span>REPLİK<span className="home-footer-dot">.</span></span><span>SES SENDE, SAHNE SİZDE.</span><Link href="#sahneler">YUKARI DÖN ↑</Link></footer>
           </>
         )}
       </main>
-
-      {/* ============================================================
-          HELP DIALOG (SOLID BENTO STYLE)
-          ============================================================ */}
-      <Dialog open={help} onOpenChange={setHelp}>
-        <DialogContent className="bbank-dialog">
-          <DialogTitle className="bbank-dialog-title">
-            Her Ses Başka Bir Hikâye
-          </DialogTitle>
-          <DialogDescription className="bbank-dialog-desc">
-            1–4 kişiyle, dört adımda kendi dublajınız.
-          </DialogDescription>
-          <ol className="bbank-help-list">
-            <li>
-              <strong>1. Odanı Kur:</strong> Sahneni seç, oyuncu adını yaz. Oda kodunu arkadaşlarınla paylaş.
-            </li>
-            <li>
-              <strong>2. Rolünü Keşfet:</strong> 1 Karakter = 1 Oyuncu kuralıyla karakterler bölünmeden adil dağıtılır.
-            </li>
-            <li>
-              <strong>3. Bölümünü Kaydet:</strong> Önce orijinal sahne sesi çalar, ardından mikrofona kendi doğaçlamanı kaydet.
-            </li>
-            <li>
-              <strong>4. Finali Birlikte İzle:</strong> Herkes bitirdiğinde odadakilerle aynı anda izle, reaksiyon ver ve MP4 indir!
-            </li>
-          </ol>
-        </DialogContent>
-      </Dialog>
 
       {/* ============================================================
           CREATE & JOIN ROOM MODAL (SOLID COLOR TILES)

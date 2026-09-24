@@ -175,6 +175,23 @@ export default function DublajlarPage() {
     0,
     visibleDubs.findIndex((dub) => dub.id === currentActiveId),
   );
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowDown' || e.key === ' ') {
+        e.preventDefault();
+        if (activeIndex < visibleDubs.length - 1) scrollTo(activeIndex + 1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (activeIndex > 0) scrollTo(activeIndex - 1);
+      } else if (e.key === 'm' || e.key === 'M') {
+        setMuted((current) => !current);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeIndex, visibleDubs.length]);
   const commentsDub = dubs.find((dub) => dub.id === commentsId);
   const totalLikes = dubs.reduce((sum, dub) => sum + (dub.likes || 0), 0);
 
@@ -378,7 +395,7 @@ export default function DublajlarPage() {
                       data-dub-index={index}
                       style={{ '--dub-accent': accent } as React.CSSProperties}
                     >
-                      <div className="dub-stage">
+                      
                         <div className="dub-video-shell">
                           {dub.posterUrl && (
                             <div
@@ -515,70 +532,7 @@ export default function DublajlarPage() {
                             </span>
                           </button>
                         </div>
-                      </div>
-                      <aside className="dub-story-panel">
-                        <div className="dub-story-top">
-                          <span className="dub-story-label">
-                            <Sparkles size={15} /> REPLİK ORIGINAL
-                          </span>
-                          <span className="dub-story-index">
-                            #{String(index + 1).padStart(2, '0')}
-                          </span>
-                        </div>
-                        <div className="dub-story-main">
-                          <span className="dub-story-category">
-                            {dub.category || 'SAHNE'}
-                          </span>
-                          <h3>
-                            {dub.sceneTitle}
-                            <span>.</span>
-                          </h3>
-                          <p>Bu sahneye kendi sesini verenler:</p>
-                          <div className="dub-cast">
-                            {dub.players?.length ? (
-                              dub.players.map((player, playerIndex) => (
-                                <div key={`${player.name}-${playerIndex}`}>
-                                  <span
-                                    className="dub-avatar"
-                                    style={{
-                                      background: player.roleColor || accent,
-                                    }}
-                                  >
-                                    {player.name.slice(0, 1).toUpperCase()}
-                                  </span>
-                                  <div>
-                                    <strong>@{player.name}</strong>
-                                    <small>{player.roleName}</small>
-                                  </div>
-                                </div>
-                              ))
-                            ) : (
-                              <span className="dub-anon">
-                                Replik oyuncuları
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="dub-story-bottom">
-                          <div className="dub-story-stats">
-                            <span>
-                              <Heart size={17} /> {dub.likes || 0} beğeni
-                            </span>
-                            <span>
-                              <MessageCircle size={17} />{' '}
-                              {dub.comments?.length || 0} yorum
-                            </span>
-                          </div>
-                          <Link href="/#sahneler" className="dub-make-cta">
-                            <Mic2 size={19} /> Sen de dublaj yap{' '}
-                            <ArrowRight size={19} />
-                          </Link>
-                          <span className="dub-swipe-hint">
-                            SONRAKİ DUBLAJ İÇİN KAYDIR <ChevronDown size={17} />
-                          </span>
-                        </div>
-                      </aside>
-                    </article>
+                      </article>
                   );
                 })}
               </div>

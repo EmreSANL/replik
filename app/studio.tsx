@@ -39,7 +39,7 @@ import {
   type Room,
   type Scene,
 } from '@/lib/scenes';
-import { getScenesFromSupabase } from '@/lib/supabase';
+import { getScenesFromSupabase, supabase } from '@/lib/supabase';
 import {
   createGameRoom,
   joinGameRoom,
