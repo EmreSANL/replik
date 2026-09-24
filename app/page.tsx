@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
   Mic,
@@ -35,9 +36,13 @@ import {
   type PublishedDub,
 } from '@/lib/game-service';
 import { useAuth, MemberTopbarBadge } from '@/components/auth-provider';
-import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
+import {
+  ReplikLoadingScreen,
+  triggerReplikCurtain,
+} from '@/components/replik-loading-screen';
 
 export default function Home() {
+  const router = useRouter();
   const { displayName, requireAuth } = useAuth();
   const [allScenes, setAllScenes] = useState<Scene[]>(() => {
     if (typeof window !== 'undefined') {
@@ -212,22 +217,40 @@ export default function Home() {
         setError('Önce editörden bir sahne ekle.');
         return;
       }
-      setSelected(id);
-      setError('');
-      setModal('create');
+      triggerReplikCurtain(
+        'Oda Kur.',
+        () => {
+          setSelected(id);
+          setError('');
+          setModal('create');
+        },
+        { sublabel: 'Lobi ayarları açılıyor...', accent: '#F5E636' },
+      );
     });
   }
 
   function openJoin() {
     requireAuth(() => {
-      setError('');
-      setModal('join');
+      triggerReplikCurtain(
+        'Oda Koduyla Gir.',
+        () => {
+          setError('');
+          setModal('join');
+        },
+        { sublabel: 'Oda katılım ekranı açılıyor...', accent: '#FF6B4A' },
+      );
     });
   }
 
   function openEditor(path = '/editor') {
     requireAuth(() => {
-      window.location.href = path;
+      triggerReplikCurtain(
+        'Sahne Editörü.',
+        () => {
+          router.push(path);
+        },
+        { sublabel: 'Video ve replik stüdyosu açılıyor...', accent: '#B8E6C1' },
+      );
     });
   }
 
@@ -304,25 +327,52 @@ export default function Home() {
               type="button"
               className="bbank-pill-btn bbank-pill-dark"
               onClick={() => {
-                if (game) leave();
-                else
-                  document
-                    .getElementById('sahneler')
-                    ?.scrollIntoView({ behavior: 'smooth' });
+                triggerReplikCurtain(
+                  'Sahne Kataloğu.',
+                  () => {
+                    if (game) leave();
+                    else
+                      document
+                        .getElementById('sahneler')
+                        ?.scrollIntoView({ behavior: 'auto' });
+                  },
+                  { sublabel: 'Sahneler listeleniyor...', accent: '#F5E636' },
+                );
               }}
             >
               Sahneler
             </button>
-            <Link
+            <a
               href="/dublajlar"
+              onClick={(e) => {
+                e.preventDefault();
+                triggerReplikCurtain(
+                  'Dublaj Akışı.',
+                  () => {
+                    router.push('/dublajlar');
+                  },
+                  {
+                    sublabel: 'Topluluk dublajları yükleniyor...',
+                    accent: '#D4C2FC',
+                  },
+                );
+              }}
               className="bbank-pill-btn bbank-pill-dark"
             >
               Dublaj Akışı
-            </Link>
+            </a>
             <button
               type="button"
               className="bbank-pill-btn bbank-pill-dark"
-              onClick={() => setHelp(true)}
+              onClick={() => {
+                triggerReplikCurtain(
+                  'Nasıl Oynanır?',
+                  () => {
+                    setHelp(true);
+                  },
+                  { sublabel: 'Oyun rehberi açılıyor...', accent: '#B8E6C1' },
+                );
+              }}
             >
               Nasıl Oynanır?
             </button>
@@ -347,7 +397,13 @@ export default function Home() {
               <button
                 type="button"
                 className="bbank-pill-btn bbank-pill-yellow"
-                onClick={() => setGame(parked)}
+                onClick={() =>
+                  triggerReplikCurtain(
+                    'Odana Dön.',
+                    () => setGame(parked),
+                    { sublabel: 'Aktif odaya bağlanılıyor...', accent: '#F5E636' },
+                  )
+                }
               >
                 Odana dön ↗
               </button>

@@ -57,7 +57,9 @@ import {
   getScenesFromSupabase,
   deleteSceneFromSupabase,
 } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 import { MemberTopbarBadge } from '@/components/auth-provider';
+import { triggerReplikCurtain } from '@/components/replik-loading-screen';
 
 function waveformFromAudio(channel: Float32Array): number[] {
   const barCount = 140;
@@ -76,6 +78,7 @@ function waveformFromAudio(channel: Float32Array): number[] {
 }
 
 export default function EditorPage() {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const instrumentalAudioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1524,7 +1527,9 @@ export default function EditorPage() {
             href="/"
             onClick={(e) => {
               e.preventDefault();
-              window.location.assign('/');
+              triggerReplikCurtain('OYUNA DÖNÜLÜYOR', () => {
+                router.push('/');
+              });
             }}
             className="px-4 py-2 rounded-xl text-xs font-extrabold bg-[#22221E] hover:bg-[#F5E636] text-[#F5E636] hover:text-[#090909] border border-[#383832] flex items-center gap-2 transition cursor-pointer no-underline"
           >

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getPublishedDubsFromSupabase,
@@ -10,7 +11,10 @@ import {
   type PublishedDub,
 } from '@/lib/game-service';
 import { useAuth, MemberTopbarBadge } from '@/components/auth-provider';
-import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
+import {
+  ReplikLoadingScreen,
+  triggerReplikCurtain,
+} from '@/components/replik-loading-screen';
 
 const AVATAR_COLORS = ['#F5E636', '#FF6B4A', '#B8E6C1', '#D4C2FC'];
 
@@ -27,6 +31,7 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 export default function DublajlarSocialFeedPage() {
+  const router = useRouter();
   const { user, displayName, requireAuth } = useAuth();
   const [dubs, setDubs] = useState<PublishedDub[]>([]);
   const [loading, setLoading] = useState(true);
@@ -211,7 +216,17 @@ export default function DublajlarSocialFeedPage() {
       {/* ÜST BAR (SİTENİN MAXIMALIST SOLID BENTO HEADER'I) */}
       <header className="bbank-topbar">
         <div className="bbank-topbar-left">
-          <Link href="/" className="bbank-brand" aria-label="Replik ana sayfa">
+          <Link
+            href="/"
+            className="bbank-brand"
+            aria-label="Replik ana sayfa"
+            onClick={(e) => {
+              e.preventDefault();
+              triggerReplikCurtain('ANA SAYFAYA GEÇİLİYOR', () => {
+                router.push('/');
+              });
+            }}
+          >
             <span className="bbank-brand-title">Replik</span>
           </Link>
           <span className="bbank-date-label">
@@ -220,16 +235,40 @@ export default function DublajlarSocialFeedPage() {
         </div>
 
         <div className="bbank-topbar-right">
-          <Link href="/" className="bbank-pill-btn bbank-pill-dark">
+          <Link
+            href="/"
+            className="bbank-pill-btn bbank-pill-dark"
+            onClick={(e) => {
+              e.preventDefault();
+              triggerReplikCurtain('SAHNELER AÇILIYOR', () => {
+                router.push('/');
+              });
+            }}
+          >
             Sahneler &amp; Oyun
           </Link>
           <Link
             href="/dublajlar"
             className="bbank-pill-btn bbank-pill-yellow"
+            onClick={(e) => {
+              e.preventDefault();
+              triggerReplikCurtain('DUBLAJ AKIŞI YENİLENİYOR', () => {
+                window.scrollTo({ top: 0, behavior: 'auto' });
+              });
+            }}
           >
             Dublaj Akışı
           </Link>
-          <Link href="/editor" className="bbank-pill-btn bbank-pill-coral">
+          <Link
+            href="/editor"
+            className="bbank-pill-btn bbank-pill-coral"
+            onClick={(e) => {
+              e.preventDefault();
+              triggerReplikCurtain('SAHNE EDİTÖRÜ AÇILIYOR', () => {
+                router.push('/editor');
+              });
+            }}
+          >
             + Sahne Yükle
           </Link>
           <MemberTopbarBadge />

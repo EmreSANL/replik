@@ -12,7 +12,11 @@ import React, {
 import type { User } from '@supabase/supabase-js';
 import { supabase, getScenesFromSupabase } from '@/lib/supabase';
 import { getCustomScenes, type Scene } from '@/lib/scenes';
-import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
+import {
+  ReplikLoadingScreen,
+  ReplikCurtainTransition,
+  triggerReplikCurtain,
+} from '@/components/replik-loading-screen';
 import { LogOut, LogIn } from 'lucide-react';
 
 type AuthContextValue = {
@@ -285,7 +289,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const openAuthModal = useCallback((onSuccess?: () => void) => {
     pendingCallbackRef.current = onSuccess || null;
     setError('');
-    setModalOpen(true);
+    triggerReplikCurtain(
+      'Giriş Yap / Üye Ol.',
+      () => {
+        setMosaicReady(true);
+        setModalOpen(true);
+      },
+      { sublabel: 'Üyelik ekranı açılıyor...', accent: '#F5E636' },
+    );
   }, []);
 
   const requireAuth = useCallback(
@@ -295,7 +306,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         pendingCallbackRef.current = onSuccess;
         setError('');
-        setModalOpen(true);
+        triggerReplikCurtain(
+          'Giriş Yap / Üye Ol.',
+          () => {
+            setMosaicReady(true);
+            setModalOpen(true);
+          },
+          { sublabel: 'Oynamak için giriş ekranı açılıyor...', accent: '#F5E636' },
+        );
       }
     },
     [user],
@@ -401,15 +419,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   function closeAuthPage() {
     if (submitting) return;
-    setModalOpen(false);
-    pendingCallbackRef.current = null;
-    if (
-      typeof window !== 'undefined' &&
-      !user &&
-      window.location.pathname.startsWith('/editor')
-    ) {
-      window.location.href = '/';
-    }
+    triggerReplikCurtain(
+      'Replik.',
+      () => {
+        setModalOpen(false);
+        pendingCallbackRef.current = null;
+        if (
+          typeof window !== 'undefined' &&
+          !user &&
+          window.location.pathname.startsWith('/editor')
+        ) {
+          window.location.href = '/';
+        }
+      },
+      { sublabel: 'Ana sayfaya dönülüyor...', accent: '#B8E6C1' },
+    );
   }
 
   // Ekranı üstten alta, soldan sağa boşluksuz dolduracak 32 adet optimize kare GIF kutusu üret
@@ -447,6 +471,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut: handleSignOut,
       }}
     >
+      <ReplikCurtainTransition />
       {children}
 
       {/* TAM EKRAN KARE KARE GIF DUVARLI GİRİŞ / ÜYE OL SAYFASI */}
