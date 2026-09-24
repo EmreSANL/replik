@@ -328,52 +328,19 @@ export default function DublajlarPage() {
           className="dub-feed-section"
           aria-label="Dublaj akışı"
         >
-          <div className="dub-feed-toolbar">
-            <div className="dub-toolbar-title">
-              <span className="dub-toolbar-icon">
-                <Clapperboard size={22} />
-              </span>
-              <div>
-                <span>ŞİMDİ OYNATILIYOR</span>
-                <strong>Topluluk akışı</strong>
-              </div>
-            </div>
-            <div className="dub-feed-tabs" aria-label="Akış sıralaması">
-              {sortTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={sortBy === tab.id ? 'is-active' : ''}
-                  aria-pressed={sortBy === tab.id}
-                  onClick={() => changeSort(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <span className="dub-count-label">
-              {dubs.length} DUBLAJ • {totalLikes} BEĞENİ
-            </span>
+          <div className="dub-feed-tabs" aria-label="Akış sıralaması">
+            {sortTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={sortBy === tab.id ? 'is-active' : ''}
+                aria-pressed={sortBy === tab.id}
+                onClick={() => changeSort(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-          {categories.length > 1 && (
-            <div className="dub-categories" aria-label="Kategori filtreleri">
-              {categories.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className={category === item ? 'is-active' : ''}
-                  aria-pressed={category === item}
-                  onClick={() => {
-                    setCategory(item);
-                    setActiveId(null);
-                    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-                  }}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          )}
           {visibleDubs.length ? (
             <div className="dub-feed-frame">
               <div

@@ -5368,18 +5368,9 @@ audio {
 .dub-page { height: 100vh; overflow-y: hidden; background: #090909; }
 .dub-main { max-width: none; padding: 0; height: 100vh; display: flex; flex-direction: column; }
 .dub-feed-section { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0; }
-.dub-feed-toolbar { display: flex; align-items: center; gap: 20px; justify-content: space-between; min-height: 70px; margin-bottom: 0; padding: 0 20px; }
-.dub-toolbar-title { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
-.dub-toolbar-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 11px; background: var(--bbank-coral); color: #15110f; }
-.dub-toolbar-title > div { display: flex; flex-direction: column; gap: 2px; }
-.dub-toolbar-title > div > span, .dub-count-label { color: #aaa99f; font: 900 10px var(--font-technical); letter-spacing: .09em; }
-.dub-toolbar-title strong { font-size: 19px; letter-spacing: -.04em; }
-.dub-feed-tabs, .dub-categories { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; }
-.dub-feed-tabs button, .dub-categories button { flex: none; min-height: 38px; padding: 0 15px; border: 1px solid #3a3a35; border-radius: 50px; background: #1a1a18; color: #c5c5ba; font-size: 12px; font-weight: 850; white-space: nowrap; }
+.dub-feed-tabs { display: flex; justify-content: center; gap: 6px; padding: 10px 16px; }
+.dub-feed-tabs button { flex: none; min-height: 34px; padding: 0 14px; border: 1px solid #2a2a2a; border-radius: 50px; background: transparent; color: #888; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .dub-feed-tabs button.is-active { border-color: var(--bbank-yellow); background: var(--bbank-yellow); color: #111; }
-.dub-categories { margin-bottom: 14px; padding: 0 20px; }
-.dub-categories button { min-height: 32px; padding: 0 13px; font-size: 10px; font-weight: 900; letter-spacing: .04em; }
-.dub-categories button.is-active { border-color: var(--bbank-lilac); background: var(--bbank-lilac); color: #140f1a; }
 .dub-feed-frame { border: none; border-radius: 0; overflow: hidden; background: #000; flex: 1; position: relative; }
 .dub-feed-scroller { height: 100%; overflow-y: auto; scroll-snap-type: y mandatory; scroll-behavior: smooth; scrollbar-width: none; }
 .dub-feed-scroller::-webkit-scrollbar { display: none; }
