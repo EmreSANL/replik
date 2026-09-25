@@ -1,5 +1,6 @@
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import type { Cue, Room, Scene } from './scenes';
+import { scheduleBackgroundDucking } from './dubbing-mix';
 
 export interface ExportMp4Options {
   room: Room;
@@ -33,7 +34,7 @@ async function renderMixedDubbingAudio(
     const instSource = offline.createBufferSource();
     instSource.buffer = instBuffer;
     const instGain = offline.createGain();
-    instGain.gain.setValueAtTime(1.0, 0);
+    scheduleBackgroundDucking(instGain.gain, cues, 0);
     instSource.connect(instGain);
     instGain.connect(offline.destination);
     const playLen = Math.min(instBuffer.duration, durationSec);
@@ -65,7 +66,7 @@ async function renderMixedDubbingAudio(
     const src = offline.createBufferSource();
     src.buffer = buf;
     const gain = offline.createGain();
-    gain.gain.setValueAtTime(1.2, 0);
+    gain.gain.setValueAtTime(1.15, 0);
     src.connect(gain);
     gain.connect(offline.destination);
     src.start(Math.max(0, c.start), 0, cueDur);
@@ -82,7 +83,7 @@ async function renderMixedDubbingAudio(
       const src = offline.createBufferSource();
       src.buffer = buf;
       const gain = offline.createGain();
-      gain.gain.setValueAtTime(1.2, 0);
+      gain.gain.setValueAtTime(1.15, 0);
       src.connect(gain);
       gain.connect(offline.destination);
       src.start(at, 0, dur);

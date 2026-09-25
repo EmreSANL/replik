@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
+import { scheduleBackgroundDucking } from '@/lib/dubbing-mix';
 import {
   decodeMediaAudioBuffer,
 } from '@/lib/vocal-remover';
@@ -476,32 +477,7 @@ export default function Studio({
           const instSource = audio.createBufferSource();
           instSource.buffer = instBuffer;
           instGain = audio.createGain();
-          // Baz seviye: vokaller yokken çevre sesleri ve efektler net duyulsun
-          const instBaseGain = 0.55;
-          // Vokaller varken arka planı kıs (ducking) ki sesler üst üste gelince kırpılmasın
-          const instDuckGain = 0.25;
-          instGain.gain.setValueAtTime(instBaseGain, now);
-
-          // Vokal bölgelerinde otomatik ducking uygula
-          const duckRegions: { start: number; end: number }[] = [];
-          allCues.forEach((c) => {
-            const cStart = Math.max(0, c.start - late);
-            const cEnd = Math.max(0, c.end - late);
-            if (cEnd <= 0) return;
-            // Mevcut bölgelerle birleştir (overlap varsa genişlet)
-            const last = duckRegions[duckRegions.length - 1];
-            if (last && cStart <= last.end + 0.05) {
-              last.end = Math.max(last.end, cEnd);
-            } else {
-              duckRegions.push({ start: cStart, end: cEnd });
-            }
-          });
-          for (const region of duckRegions) {
-            const fadeIn = Math.max(0.01, region.start);
-            instGain.gain.linearRampToValueAtTime(instDuckGain, now + fadeIn);
-            instGain.gain.setValueAtTime(instDuckGain, now + region.end - 0.01);
-            instGain.gain.linearRampToValueAtTime(instBaseGain, now + region.end + 0.15);
-          }
+          scheduleBackgroundDucking(instGain.gain, allCues, now, late);
 
           instSource.connect(instGain);
           instGain.connect(masterGain.current);

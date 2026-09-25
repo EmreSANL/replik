@@ -44,8 +44,8 @@ export default function MicTestDialog({
         setError('');
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
+            echoCancellation: false,
+            noiseSuppression: false,
             autoGainControl: false,
           },
         });
@@ -62,17 +62,17 @@ export default function MicTestDialog({
         analyser.fftSize = 64;
         source.connect(analyser);
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const dataArray = new Float32Array(analyser.fftSize);
 
         const checkVolume = () => {
           if (!isSubscribed) return;
-          analyser.getByteFrequencyData(dataArray);
-          let sum = 0;
+          analyser.getFloatTimeDomainData(dataArray);
+          let sumSquares = 0;
           for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
+            sumSquares += dataArray[i] * dataArray[i];
           }
-          const avg = sum / dataArray.length;
-          const normalized = Math.min(100, Math.round((avg / 128) * 100));
+          const rms = Math.sqrt(sumSquares / dataArray.length);
+          const normalized = Math.min(100, Math.round(rms * 2500));
           setLevel(normalized);
 
           if (normalized > 15) {

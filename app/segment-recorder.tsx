@@ -12,6 +12,7 @@ import {
 } from '@/lib/scenes';
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
+import { prepareVoiceRecording } from '@/lib/voice-recording';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 
@@ -508,8 +509,10 @@ export default function SegmentRecorder({
         throw new Error('Kayıt için güncel Chrome veya Safari kullan.');
       const media = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
+          // Record the microphone without WebRTC voice processing; its echo and
+          // noise filters can remove parts of the actor's voice with the backing track.
+          echoCancellation: false,
+          noiseSuppression: false,
           autoGainControl: false,
         },
       });
@@ -621,31 +624,34 @@ export default function SegmentRecorder({
         );
         setWaves((w) => ({ ...w, [id]: completedLiveWave }));
         if (!parts.length) return;
-        const blob = new Blob(parts, { type: r.mimeType || 'audio/webm' }),
-          url = URL.createObjectURL(blob);
-        urls.current.push(url);
-        setReviewedTakeId(id);
-        setSavedUrls((u) => ({ ...u, [id]: url }));
-        setTakes((t) => ({ ...t, [id]: { blob, url, peaks: completedLiveWave } }));
-        void blob
-          .arrayBuffer()
-          .then((data) => {
+        const rawBlob = new Blob(parts, { type: r.mimeType || 'audio/webm' });
+        setBusy(true);
+        void (async () => {
+          let blob = rawBlob;
+          try {
             const ctx = audioContext.current ?? (audioContext.current = new AudioContext());
-            return ctx.decodeAudioData(data);
-          })
-          .then((buffer) => {
+            const prepared = await prepareVoiceRecording(rawBlob, ctx);
+            blob = prepared.blob;
             if (mounted.current) {
-              const decodedPeaks = peaksOf(buffer, 64, id);
+              const decodedPeaks = peaksOf(prepared.buffer, 64, id);
               const merged = decodedPeaks.map((p, idx) =>
                 Math.max(p, completedLiveWave[idx] * 0.65),
               );
               setWaves((w) => ({ ...w, [id]: merged }));
             }
-          })
-          .catch(() => {});
-        setError('');
-        // Kayıt bittiği veya "Kaydı bitir"e basıldığı anda otomatik olarak kaydet ve sıradaki repliğe/finale geç!
-        void save(id, blob);
+          } catch (error) {
+            console.warn('Ses seviyesi hazırlanamadı, orijinal kayıt korunuyor:', error);
+          }
+          if (!mounted.current) return;
+          const url = URL.createObjectURL(blob);
+          urls.current.push(url);
+          setReviewedTakeId(id);
+          setSavedUrls((u) => ({ ...u, [id]: url }));
+          setTakes((t) => ({ ...t, [id]: { blob, url, peaks: completedLiveWave } }));
+          setError('');
+          // Kayıt bittiğinde hazırlanan dosyayı otomatik kaydet.
+          await save(id, blob);
+        })();
       };
       recorder.current = r;
       // Orijinal konuşma kapalıdır; yalnızca ayrıştırılmış müzik ve efektler duyulur.
