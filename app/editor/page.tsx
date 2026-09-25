@@ -139,14 +139,13 @@ export default function EditorPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const list = cueListRef.current;
-    if (!list) return;
-
     const handleCueTextWheel = (event: WheelEvent) => {
       const input = event.target;
       if (
         !(input instanceof HTMLInputElement) ||
-        !input.classList.contains('cue-text-input')
+        !input.classList.contains('cue-text-input') ||
+        event.ctrlKey ||
+        event.metaKey
       ) return;
 
       const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
@@ -154,7 +153,7 @@ export default function EditorPage() {
         : event.deltaY;
       if (!delta) return;
       const distance = delta * (
-        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? input.clientWidth : 1
+        event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? input.clientWidth : 1.5
       );
       const previous = input.scrollLeft;
       input.scrollLeft += distance;
@@ -164,9 +163,9 @@ export default function EditorPage() {
       }
     };
 
-    list.addEventListener('wheel', handleCueTextWheel, { passive: false });
-    return () => list.removeEventListener('wheel', handleCueTextWheel);
-  }, [cues.length]);
+    document.addEventListener('wheel', handleCueTextWheel, { passive: false, capture: true });
+    return () => document.removeEventListener('wheel', handleCueTextWheel, true);
+  }, []);
 
   // Mevcut Sahne Düzenleme Modu ve Sahne Seçici Modal Durumu
   const [isEditingExisting, setIsEditingExisting] = useState(false);
@@ -2494,6 +2493,7 @@ export default function EditorPage() {
               </div>
             ) : (
               <div ref={cueListRef} className="flex flex-col gap-2.5 max-h-[520px] overflow-y-auto pr-1">
+                <p className="text-[11px] font-medium text-[#B8B8AE]">Uzun replikleri okumak için metnin üzerinde fare tekerleğini çevir.</p>
                 {cues.map((cue, index) => {
                   const isSelected = cue.id === selectedCueId;
                   return (
@@ -2575,6 +2575,7 @@ export default function EditorPage() {
                         }
                         style={{ fontSize: '15px', color: '#FFFFFF' }}
                         placeholder="Karakterin söyleyeceği cümleyi buraya yaz..."
+                        title="Fare tekerleğiyle replik metninde sağa veya sola kaydır"
                         className="cue-text-input w-full bg-[#161613] border border-[#383832] rounded-lg px-3.5 py-2.5 text-sm sm:text-base font-semibold text-white focus:outline-none focus:border-[#F5E636] placeholder:text-[#8E8E84]"
                       />
                     </div>
