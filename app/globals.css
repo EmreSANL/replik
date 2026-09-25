@@ -5659,6 +5659,124 @@ audio {
 
 body:has(.dub-page) { overflow: hidden; }
 
+/* Editorial, solid-block navigation shared by the home and discovery pages. */
+.replik-topbar {
+  min-height: 112px;
+  padding: 16px clamp(18px, 3.8vw, 72px);
+  gap: 24px;
+  border-top: 4px solid var(--bbank-yellow);
+  border-bottom: 2px solid #35352f;
+}
+.replik-topbar .bbank-topbar-left { align-items: center; gap: 20px; flex-shrink: 0; }
+.replik-topbar .bbank-brand { display: inline-flex; align-items: center; min-height: 62px; }
+.replik-topbar .bbank-brand-title { font-size: clamp(34px, 2.6vw, 43px); line-height: 1; letter-spacing: -.075em; }
+.replik-topbar .bbank-brand:hover .bbank-brand-title { color: var(--bbank-yellow); }
+.replik-topbar .bbank-date-label {
+  display: block;
+  max-width: 225px;
+  padding-left: 18px;
+  border-left: 2px solid #42423b;
+  color: #b5b5ac;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.replik-topbar .replik-topbar-nav { justify-content: flex-end; gap: 7px; flex-wrap: nowrap; min-width: 0; }
+.replik-topbar .replik-nav-item {
+  --nav-accent: var(--bbank-yellow);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  min-height: 62px;
+  padding: 9px 14px;
+  border: 2px solid #3d3d36;
+  border-radius: 9px;
+  box-shadow: none;
+  white-space: nowrap;
+  line-height: 1.05;
+  opacity: 1;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.replik-topbar .replik-nav-item:hover {
+  transform: translateY(-3px);
+  border-color: var(--nav-accent);
+  opacity: 1;
+  box-shadow: none;
+}
+.replik-topbar .replik-nav-item:active { transform: translateY(1px) scale(.98); }
+.replik-topbar .replik-nav-item:focus-visible,
+.replik-topbar .replik-member-login:focus-visible,
+.replik-topbar .replik-member-signout:focus-visible { outline: 3px solid var(--bbank-yellow); outline-offset: 3px; }
+.replik-nav-number {
+  font: 800 9px/1 var(--font-technical);
+  letter-spacing: .1em;
+  opacity: .72;
+}
+.replik-nav-label { font-size: 14px; font-weight: 900; letter-spacing: -.035em; }
+.replik-topbar .replik-nav-scenes[aria-current="page"] { background: var(--bbank-yellow); border-color: var(--bbank-yellow); color: #121200; }
+.replik-topbar .replik-nav-feed { --nav-accent: var(--bbank-lilac); border-color: var(--bbank-lilac); box-shadow: none; }
+.replik-topbar .replik-nav-feed:hover { background: #b6a4c0; color: #140f1a; }
+.replik-topbar .replik-nav-guide { --nav-accent: var(--bbank-sage); }
+.replik-topbar .replik-nav-editor { --nav-accent: var(--bbank-sage); border-color: var(--bbank-sage); }
+.replik-topbar .replik-nav-editor:hover { background: #b8e6c1; color: #101c10; }
+.replik-topbar .replik-nav-join { --nav-accent: var(--bbank-coral); border-color: var(--bbank-coral); }
+.replik-topbar .replik-nav-join:hover { background: #ff7356; color: #1a0703; }
+.replik-topbar .replik-nav-return { border-color: var(--bbank-yellow); }
+.replik-topbar .replik-member-login,
+.replik-topbar .replik-member-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 62px;
+  border: 2px solid #45453f;
+  border-radius: 9px;
+  background: #1b1b18;
+  color: #f3f3e9;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.replik-topbar .replik-member-login { gap: 8px; padding: 0 14px; }
+.replik-topbar .replik-member-login:hover { transform: translateY(-3px); border-color: var(--bbank-yellow); background: #25251e; opacity: 1; }
+.replik-topbar .replik-member-login:active { transform: translateY(1px); }
+.replik-topbar .replik-member-badge { gap: 9px; padding: 5px 5px 5px 12px; }
+.replik-member-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #4cda8b; }
+.replik-member-name { max-width: 115px; overflow: hidden; text-overflow: ellipsis; }
+.replik-member-signout { display: inline-flex; align-items: center; gap: 5px; align-self: stretch; padding: 0 10px; border: 0; border-radius: 6px; background: #30302a; color: #ffad9a; font-size: 11px; font-weight: 800; }
+.replik-member-signout:hover { background: var(--bbank-coral); color: #1a0703; }
+.replik-member-signout:active { transform: translateY(1px); }
+
+@media (max-width: 1430px) {
+  .replik-topbar { flex-wrap: wrap; gap: 10px; }
+  .replik-topbar .replik-topbar-nav { justify-content: stretch; width: 100%; }
+  .replik-topbar .replik-topbar-nav > * { flex: 1 1 0; min-width: 0; }
+  .replik-topbar .replik-nav-item { white-space: normal; }
+  .replik-topbar .replik-member-login { white-space: normal; text-align: left; }
+}
+@media (max-width: 800px) {
+  .replik-topbar .bbank-date-label { display: none; }
+  .replik-topbar .replik-topbar-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .replik-topbar .replik-topbar-nav > * { width: 100%; }
+  .replik-topbar .replik-nav-item { min-height: 63px; }
+}
+@media (max-width: 600px) {
+  .replik-topbar { padding: 12px 14px; }
+  .replik-topbar .replik-topbar-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .replik-topbar.bbank-topbar .bbank-topbar-right.replik-topbar-nav > .bbank-pill-btn.replik-nav-item { display: inline-flex; align-items: flex-start; justify-content: center; padding: 10px 12px; font-size: 14px; }
+  .replik-topbar.bbank-topbar .bbank-topbar-right.replik-topbar-nav > .replik-member-badge { display: inline-flex; }
+  .replik-topbar .replik-topbar-nav > .replik-member-badge { grid-column: 1 / -1; }
+  .replik-topbar .replik-nav-label { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .replik-topbar .replik-nav-item,
+  .replik-topbar .replik-member-login { transition: none; }
+  .replik-topbar .replik-nav-item:hover,
+  .replik-topbar .replik-member-login:hover { transform: none; }
+}
+
 /* Keep the newer quiet home layout; let the stage reveal its video on small screens. */
 @media (min-width: 581px) {
   .bbank-catalog-section .bbank-scenes-grid > .bbank-scene-tile:first-child:not(.bbank-add-tile) { grid-column: span 2; }

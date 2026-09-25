@@ -2,13 +2,6 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  ArrowUpRight,
-  CircleHelp,
-  Clapperboard,
-  Film,
-  Sparkles,
-} from 'lucide-react';
 import { MemberTopbarBadge } from '@/components/auth-provider';
 import { triggerReplikCurtain } from '@/components/replik-loading-screen';
 
@@ -38,7 +31,7 @@ export function ReplikSiteHeader({
   }
 
   return (
-    <header className="bbank-topbar replik-page-topbar">
+    <header className="bbank-topbar replik-page-topbar replik-topbar">
       <div className="bbank-topbar-left">
         <Link
           href="/"
@@ -52,30 +45,32 @@ export function ReplikSiteHeader({
         </Link>
         <span className="bbank-date-label">{subtitle}</span>
       </div>
-      <nav className="bbank-topbar-right" aria-label="Ana menü">
+      <nav className="bbank-topbar-right replik-topbar-nav" aria-label="Ana menü">
         <Link
           href="/"
-          className={`bbank-pill-btn ${active === 'scenes' ? 'bbank-pill-yellow' : 'bbank-pill-dark'}`}
+          className={`bbank-pill-btn replik-nav-item replik-nav-scenes ${active === 'scenes' ? 'bbank-pill-yellow' : 'bbank-pill-dark'}`}
+          aria-current={active === 'scenes' ? 'page' : undefined}
           onClick={(event) =>
             navigate(event, '/', 'Sahneler Açılıyor', '#F5E636')
           }
         >
-          <Film size={16} /> Sahneler
+          <span className="replik-nav-number" aria-hidden="true">01 / KEŞFET</span>
+          <span className="replik-nav-label">Sahneler</span>
         </Link>
         <Link
           href="/dublajlar"
-          className="bbank-pill-btn bbank-pill-feed"
+          className="bbank-pill-btn bbank-pill-feed replik-nav-item replik-nav-feed"
           aria-current={active === 'feed' ? 'page' : undefined}
           onClick={(event) =>
             navigate(event, '/dublajlar', 'Dublaj Akışı Açılıyor', '#9E8CA9')
           }
         >
-          <Clapperboard size={17} /> Dublaj Akışı{' '}
-          <span className="bbank-feed-live-dot" aria-hidden="true" />
+          <span className="replik-nav-number" aria-hidden="true">02 / İZLE</span>
+          <span className="replik-nav-label">Dublaj Akışı</span>
         </Link>
         <Link
           href="/nasil-oynanir"
-          className={`bbank-pill-btn ${active === 'guide' ? 'bbank-pill-sage' : 'bbank-pill-dark'}`}
+          className={`bbank-pill-btn replik-nav-item replik-nav-guide ${active === 'guide' ? 'bbank-pill-sage' : 'bbank-pill-dark'}`}
           aria-current={active === 'guide' ? 'page' : undefined}
           onClick={(event) =>
             navigate(
@@ -86,25 +81,28 @@ export function ReplikSiteHeader({
             )
           }
         >
-          <CircleHelp size={16} /> Nasıl Oynanır?
+          <span className="replik-nav-number" aria-hidden="true">03 / ÖĞREN</span>
+          <span className="replik-nav-label">Nasıl Oynanır?</span>
         </Link>
         <Link
           href="/editor"
-          className="bbank-pill-btn bbank-pill-sage"
+          className="bbank-pill-btn bbank-pill-sage replik-nav-item replik-nav-editor"
           onClick={(event) =>
             navigate(event, '/editor', 'Sahne Editörü Açılıyor', '#CDE2CD')
           }
         >
-          <Sparkles size={16} /> Sahne Editörü
+          <span className="replik-nav-number" aria-hidden="true">04 / ÜRET</span>
+          <span className="replik-nav-label">Sahne Editörü</span>
         </Link>
         <Link
           href="/"
-          className="bbank-pill-btn bbank-pill-coral"
+          className="bbank-pill-btn bbank-pill-coral replik-nav-item replik-nav-join"
           onClick={(event) =>
             navigate(event, '/', 'Sahneye Geçiliyor', '#FA5636')
           }
         >
-          Oyun Kur <ArrowUpRight size={16} />
+          <span className="replik-nav-number" aria-hidden="true">ARKADAŞLARINLA OYNA</span>
+          <span className="replik-nav-label">Oyun Kur ↗</span>
         </Link>
         <MemberTopbarBadge />
       </nav>

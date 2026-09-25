@@ -6,16 +6,10 @@ import {
   Mic,
   ArrowRight,
   Play,
-  Sparkles,
   Check,
   Plus,
   Edit3,
-  Clapperboard,
-  Hash,
-  CircleHelp,
-  ArrowUpRight,
   Users,
-  Film,
 } from 'lucide-react';
 import {
   Dialog,
@@ -303,7 +297,7 @@ export default function Home() {
         statusText={loadingStatus}
       />
       {!game && (
-        <header className="bbank-topbar">
+        <header className="bbank-topbar replik-topbar">
           <div className="bbank-topbar-left">
             <Link href="/" className="bbank-brand" aria-label="Replik ana sayfa">
               <span className="bbank-brand-title">Replik</span>
@@ -313,10 +307,11 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="bbank-topbar-right">
+          <nav className="bbank-topbar-right replik-topbar-nav" aria-label="Ana menü">
             <button
               type="button"
-              className="bbank-pill-btn bbank-pill-dark"
+              className="bbank-pill-btn bbank-pill-dark replik-nav-item replik-nav-scenes"
+              aria-current="page"
               onClick={() => {
                 triggerReplikCurtain(
                   'Sahne Kataloğu.',
@@ -331,7 +326,8 @@ export default function Home() {
                 );
               }}
             >
-              Sahneler
+              <span className="replik-nav-number" aria-hidden="true">01 / KEŞFET</span>
+              <span className="replik-nav-label">Sahneler</span>
             </button>
             <Link
               href="/dublajlar"
@@ -348,13 +344,14 @@ export default function Home() {
                   },
                 );
               }}
-              className="bbank-pill-btn bbank-pill-feed"
+              className="bbank-pill-btn bbank-pill-feed replik-nav-item replik-nav-feed"
             >
-              <Clapperboard size={17} strokeWidth={2.5} /> Dublaj Akışı <span className="bbank-feed-live-dot" aria-hidden="true" />
+              <span className="replik-nav-number" aria-hidden="true">02 / İZLE</span>
+              <span className="replik-nav-label">Dublaj Akışı</span>
             </Link>
             <Link
               href="/nasil-oynanir"
-              className="bbank-pill-btn bbank-pill-dark bbank-pill-guide"
+              className="bbank-pill-btn bbank-pill-dark bbank-pill-guide replik-nav-item replik-nav-guide"
               onClick={(e) => {
                 e.preventDefault();
                 triggerReplikCurtain(
@@ -366,7 +363,8 @@ export default function Home() {
                 );
               }}
             >
-              <CircleHelp size={16} /> Nasıl Oynanır?
+              <span className="replik-nav-number" aria-hidden="true">03 / ÖĞREN</span>
+              <span className="replik-nav-label">Nasıl Oynanır?</span>
             </Link>
             <a
               href="/editor"
@@ -374,21 +372,23 @@ export default function Home() {
                 e.preventDefault();
                 openEditor('/editor');
               }}
-              className="bbank-pill-btn bbank-pill-sage"
+              className="bbank-pill-btn bbank-pill-sage replik-nav-item replik-nav-editor"
             >
-              <Sparkles size={13} /> Sahne Editörü
+              <span className="replik-nav-number" aria-hidden="true">04 / ÜRET</span>
+              <span className="replik-nav-label">Sahne Editörü</span>
             </a>
             <button
               type="button"
-              className="bbank-pill-btn bbank-pill-coral"
+              className="bbank-pill-btn bbank-pill-coral replik-nav-item replik-nav-join"
               onClick={() => openJoin()}
             >
-              <Hash size={16} strokeWidth={2.7} /> ODA KODUYLA GİR
+              <span className="replik-nav-number" aria-hidden="true">ARKADAŞLARINLA OYNA</span>
+              <span className="replik-nav-label"># Oda koduyla gir</span>
             </button>
             {!game && parked && (
               <button
                 type="button"
-                className="bbank-pill-btn bbank-pill-yellow"
+                className="bbank-pill-btn bbank-pill-yellow replik-nav-item replik-nav-return"
                 onClick={() =>
                   triggerReplikCurtain(
                     'Odana Dön.',
@@ -397,11 +397,12 @@ export default function Home() {
                   )
                 }
               >
-                Odana dön ↗
+                <span className="replik-nav-number" aria-hidden="true">DEVAM ET</span>
+                <span className="replik-nav-label">Odana dön ↗</span>
               </button>
             )}
             <MemberTopbarBadge />
-          </div>
+          </nav>
         </header>
       )}
 

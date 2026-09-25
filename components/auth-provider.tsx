@@ -823,63 +823,24 @@ export function MemberTopbarBadge() {
       <button
         type="button"
         onClick={() => openAuthModal()}
-        className="bbank-pill-btn bbank-pill-yellow"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          cursor: 'pointer',
-        }}
+        className="bbank-pill-btn bbank-pill-yellow replik-member-login"
       >
-        <LogIn size={13} /> Giriş Yap / Üye Ol
+        <LogIn size={16} /> Giriş / Üye ol
       </button>
     );
   }
 
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        background: '#18181b',
-        border: '1px solid #27272a',
-        borderRadius: '999px',
-        padding: '4px 6px 4px 12px',
-        fontSize: '12px',
-        fontWeight: 700,
-        color: '#f4f4f5',
-      }}
-    >
-      <span
-        style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '999px',
-          background: '#22c55e',
-          display: 'inline-block',
-        }}
-      />
-      <span>{displayName}</span>
+    <div className="replik-member-badge">
+      <span className="replik-member-dot" aria-hidden="true" />
+      <span className="replik-member-name">{displayName}</span>
       <button
         type="button"
         onClick={() => void signOut()}
         title="Oturumu Kapat"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '4px',
-          background: '#27272a',
-          color: '#fca5a5',
-          border: 'none',
-          borderRadius: '999px',
-          padding: '4px 10px',
-          fontSize: '11px',
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}
+        className="replik-member-signout"
       >
-        <LogOut size={12} /> Çıkış
+        <LogOut size={14} /> Çıkış
       </button>
     </div>
   );
