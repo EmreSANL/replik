@@ -56,7 +56,7 @@ class CinematicSeparator:
         if not np.isfinite(audio).all():
             raise ValueError('Invalid input audio')
         mixture = torch.from_numpy(audio.T.copy()).unsqueeze(0)
-        background = np.zeros_like(audio)
+        speech = np.zeros_like(audio)
         for index, model in enumerate(self.models):
             try:
                 with torch.inference_mode():
@@ -68,9 +68,11 @@ class CinematicSeparator:
                 model.cpu()
                 with torch.inference_mode():
                     stems = apply_model(model, mixture, device='cpu', shifts=1, overlap=0.8)[0].cpu().numpy()
-            # Keep the model's music and effects channels, excluding spoken dialogue.
-            background += (stems[0] + stems[1]).T / len(self.models)
+            # Subtract only the estimated speech from the original mix. Rebuilding
+            # the background from two estimated stems softens transients and highs.
+            speech += stems[2].T / len(self.models)
             print(f'Cinematic checkpoint {index + 1}/3 finished', flush=True)
+        background = audio - speech
         if len(background) != len(audio) or not np.isfinite(background).all():
             raise ValueError('Invalid separated audio')
         peak = float(np.max(np.abs(background)))

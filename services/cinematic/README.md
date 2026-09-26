@@ -9,8 +9,9 @@ and subtitle edits do not affect the prepared background.
 
 The default worker uses the three CDX23/DnR cinematic checkpoints from
 [MVSEP-CDX23](https://github.com/ZFTurbo/MVSEP-CDX23-Cinematic-Sound-Demixing).
-These predict `music`, `sfx`, and `speech`. The worker averages all three
-checkpoints and saves music + effects as stereo 44.1 kHz PCM WAV. CUDA is preferred,
+These predict `music`, `sfx`, and `speech`. The worker averages the speech
+estimates, subtracts them from the original soundtrack to preserve effect detail,
+and saves stereo 44.1 kHz PCM WAV. CUDA is preferred,
 then Apple MPS, then CPU. The first run downloads approximately 162 MB of weights;
 release checksum prefixes are verified before loading them. Separation is not
 lossless: listen for speech bleed and damaged effects before saving a scene.
@@ -63,8 +64,12 @@ copies the output into permanent Supabase Storage before marking it ready.
   click the preparation button to retrieve its result.
 - Changing/trimming the source uploads a new video and prepares a new background.
 - Saving subtitles, copying scenes, starting rooms and playing finals do not separate again.
-- Existing scenes with an instrumental URL retain it. Scenes without one must be
-  prepared in the editor before a game can start.
+- Existing scenes with an instrumental URL retain it. Scenes prepared with the
+  older v1 worker can be opened in the editor, refreshed with **Sesi Yeniden
+  Hazırla**, and saved to use the clearer background in rooms. Deploy the v2
+  worker before refreshing these scenes; the site checks its version first.
+- Scenes without an instrumental URL must be prepared in the editor before a
+  game can start.
 
 ## Deployment
 

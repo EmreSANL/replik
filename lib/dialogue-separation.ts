@@ -65,6 +65,13 @@ export async function prepareDialogueBackground({
     if (!apiKey) throw new Error('Ses ayırma servisi henüz yapılandırılmadı. Yönetici ses ayırma motorunun bağlantısını tamamlamalı.');
 
     if (!job) {
+      if (engine.startsWith('cinematic-')) {
+        const health = await fetcher(`${apiBase}/health`, { signal: AbortSignal.timeout(10000) });
+        const worker = health.ok ? await health.json() as { engine?: string } : null;
+        if (worker?.engine !== engine) {
+          throw new Error('Ses ayırma servisi güncellenmeli. Yönetici yeni ses motorunu yayınlamalı.');
+        }
+      }
       job = { status: 'starting', createdAt: now() };
       if (!(await store.create(path, job))) {
         // A different request owns this slot. Read it on the next poll.

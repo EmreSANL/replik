@@ -33,6 +33,7 @@ LOCK = threading.Lock()
 PENDING = set()
 SEPARATOR = None
 MAX_BYTES = 120 * 1024 * 1024
+ENGINE = 'cinematic-cdx23-ensemble-v2'
 
 
 def save_job(job):
@@ -110,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/health':
-            return self.reply(200, {'status': 'ok', 'engine': 'cinematic-cdx23', 'checkpoints': 3})
+            return self.reply(200, {'status': 'ok', 'engine': ENGINE, 'checkpoints': 3})
         if not self.authorized():
             return self.reply(401, {'error': 'Unauthorized'})
         match = re.fullmatch(r'/tasks/([a-f0-9]{64})', self.path)
@@ -146,7 +147,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Expected uploaded media from configured storage')
         except (ValueError, KeyError, TypeError):
             return self.reply(400, {'error': 'Invalid source'})
-        task_id = hashlib.sha256(('cinematic-cdx23-ensemble-v1:' + source).encode()).hexdigest()
+        task_id = hashlib.sha256((ENGINE + ':' + source).encode()).hexdigest()
         with LOCK:
             job = read_job(task_id)
             if job and job['targets'][0]['status'] != 'error':

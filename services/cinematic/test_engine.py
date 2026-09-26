@@ -12,7 +12,7 @@ from engine import CinematicSeparator
 
 
 class CinematicSeparatorTest(unittest.TestCase):
-    def test_keeps_music_and_effects_excludes_speech_and_preserves_timing(self):
+    def test_preserves_original_background_after_removing_speech(self):
         separator = CinematicSeparator.__new__(CinematicSeparator)
         separator.device = 'cpu'
         separator.models = [object(), object(), object()]
@@ -24,14 +24,16 @@ class CinematicSeparatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'input.wav'
             output = Path(directory) / 'output.wav'
-            sf.write(source, np.full((4410, 2), 0.9), 44100)
+            sf.write(source, np.full((4410, 2), 0.8), 44100)
             with patch('engine.apply_model', return_value=stems) as apply:
                 separator.separate(source, output)
             audio, rate = sf.read(output, always_2d=True)
             self.assertEqual(apply.call_count, 3)
             self.assertEqual(rate, 44100)
             self.assertEqual(audio.shape, (4410, 2))
-            np.testing.assert_allclose(audio, 0.3, atol=1e-6)
+            # The estimated music + effects would be 0.3; retaining the
+            # original mix after removing speech must instead yield 0.2.
+            np.testing.assert_allclose(audio, 0.2, atol=1e-6)
 
 
 if __name__ == '__main__':

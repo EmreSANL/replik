@@ -1112,7 +1112,13 @@ export default function EditorPage() {
       setIsUploadingToSupabase(false);
       setInstrumentalUrl(sc.instrumental || '');
       setAudioMode(sc.instrumental ? 'instrumental' : 'original');
-      if (!sc.instrumental) setVocalNotice('Bu sahnenin arka plan sesi henüz hazır değil. Ses hazırlamayı başlatın.');
+      setVocalNotice(
+        !sc.instrumental
+          ? 'Bu sahnenin arka plan sesi henüz hazır değil. Ses hazırlamayı başlatın.'
+          : sc.instrumental.includes('cinematic-cdx23-ensemble-v1_')
+            ? 'Bu sahne eski ses ayırma yöntemiyle hazırlanmış. Daha net ses için yeniden hazırlayıp sahneyi kaydedin.'
+            : '',
+      );
 
       setIsEditingExisting(true);
       setEditingSceneTitle(sc.title);
@@ -1764,7 +1770,8 @@ export default function EditorPage() {
                   {/* Ses Modu Seçimi (Vokalsiz Efektli vs Orijinal) */}
                   <div className="flex items-center gap-1.5">
                     {instrumentalUrl ? (
-                      <div className="flex items-center bg-[#1A1A17] border border-[#383832] rounded-xl p-1">
+                      <>
+                        <div className="flex items-center bg-[#1A1A17] border border-[#383832] rounded-xl p-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -1804,7 +1811,18 @@ export default function EditorPage() {
                         >
                           Orijinal Ses
                         </button>
-                      </div>
+                        </div>
+                        {instrumentalUrl.includes('cinematic-cdx23-ensemble-v1_') && (
+                        <button
+                          type="button"
+                          onClick={handleManualVocalRemoval}
+                          disabled={isRemovingVocals || isUploadingToSupabase}
+                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-[#F5E636] text-[#090909] disabled:opacity-50 cursor-pointer"
+                        >
+                          Sesi Yeniden Hazırla
+                        </button>
+                        )}
+                      </>
                     ) : (
                       <button
                         type="button"

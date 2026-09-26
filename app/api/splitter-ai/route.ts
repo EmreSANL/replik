@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       source, userId: user.id, store, retry: body.retry === true,
       apiKey: useAudioShake ? process.env.AUDIOSHAKE_API_KEY?.trim() : process.env.CINEMATIC_API_KEY?.trim(),
       apiBase: useAudioShake ? 'https://api.audioshake.ai' : process.env.CINEMATIC_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8011',
-      engine: useAudioShake ? 'audioshake-dme-v1' : 'cinematic-cdx23-ensemble-v1',
+      engine: useAudioShake ? 'audioshake-dme-v1' : 'cinematic-cdx23-ensemble-v2',
     });
     return Response.json(job, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
