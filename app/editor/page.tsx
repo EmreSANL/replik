@@ -116,6 +116,7 @@ export default function EditorPage() {
   // Supabase bulut depolama ve veritabanı durumu
   const [isUploadingToSupabase, setIsUploadingToSupabase] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isSavingScene, setIsSavingScene] = useState(false);
   const [supabaseScenes, setSupabaseScenes] = useState<Scene[]>([]);
 
   // Roller ve Replikler
@@ -181,6 +182,7 @@ export default function EditorPage() {
   const [timelineZoom, setTimelineZoom] = useState<number>(2);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const videoJobRef = useRef(0);
+  const pendingSceneSaveRef = useRef<{ job: number; asNewCopy: boolean } | null>(null);
   const audioPreparationRef = useRef<{ job: number; controller: AbortController } | null>(null);
   const sourceFileRef = useRef<File | null>(null);
   const originalFileRef = useRef<File | null>(null);
@@ -276,9 +278,13 @@ export default function EditorPage() {
     };
   }, [videoUrl, timelineExpanded, roles.length]);
 
+  const toastSequenceRef = useRef(0);
   const showToast = useCallback((msg: string) => {
+    const sequence = ++toastSequenceRef.current;
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => {
+      if (toastSequenceRef.current === sequence) setToastMessage(null);
+    }, 3500);
   }, []);
 
   useEffect(() => () => {
@@ -881,6 +887,7 @@ export default function EditorPage() {
   const processVideoFile = useCallback(
     (file: File, selectedDuration: number) => {
       const job = ++videoJobRef.current;
+      pendingSceneSaveRef.current = null;
       audioPreparationRef.current?.controller.abort();
       setIsRemovingVocals(false);
       setAudioMode('original');
@@ -957,6 +964,7 @@ export default function EditorPage() {
         })
         .catch((err) => {
           if (videoJobRef.current !== job) return;
+          pendingSceneSaveRef.current = null;
           setIsUploadingToSupabase(false);
           showToast(`Video yüklenemedi: ${(err as Error).message}`);
           console.warn('Supabase storage uyarısı:', err);
@@ -1052,6 +1060,7 @@ export default function EditorPage() {
   const loadScene = useCallback(
     (sc: Scene) => {
       videoJobRef.current += 1;
+      pendingSceneSaveRef.current = null;
       sourceFileRef.current = null;
       originalFileRef.current = null;
       setVocalError('');
@@ -1132,6 +1141,7 @@ export default function EditorPage() {
   // Sıfırdan Yeni Sahneye Geç
   const handleStartNewScene = useCallback(() => {
     videoJobRef.current += 1;
+    pendingSceneSaveRef.current = null;
     audioPreparationRef.current?.controller.abort();
     sourceFileRef.current = null;
     originalFileRef.current = null;
@@ -1206,6 +1216,7 @@ export default function EditorPage() {
     }
 
     videoJobRef.current += 1;
+    pendingSceneSaveRef.current = null;
     hasLoadedUrlScene.current = true;
     audioPreparationRef.current?.controller.abort();
     sourceFileRef.current = null;
@@ -1328,11 +1339,15 @@ export default function EditorPage() {
       return;
     }
     if (isUploadingToSupabase || videoUrl.startsWith('blob:')) {
-      showToast(
-        'Video henüz buluta yüklenmedi. Yükleme tamamlandığında sahneyi kaydedin.',
-      );
+      if (isUploadingToSupabase) {
+        pendingSceneSaveRef.current = { job: videoJobRef.current, asNewCopy };
+        showToast('Video yüklenince sahne otomatik kaydedilecek.');
+      } else {
+        showToast('Video yüklenemedi. Kaydetmek için videoyu yeniden yükleyin.');
+      }
       return;
     }
+    if (isSavingScene) return;
     const sortedCues = [...cues].sort((a, b) => a.start - b.start);
     const calculatedDuration = Math.max(
       duration,
@@ -1360,13 +1375,9 @@ export default function EditorPage() {
       } catch {}
     }
 
-    if (isRemovingVocals || !instrumentalUrl || !instrumentalUrl.startsWith('https://')) {
-      showToast(isRemovingVocals
-        ? 'Arka plan sesi hazırlanıyor. İşlem tamamlandıktan sonra kaydedin.'
-        : 'Sahneyi oyuna eklemeden önce arka plan sesini hazırlayın.');
-      return;
-    }
-    const finalInstrumentalUrl = instrumentalUrl;
+    const finalInstrumentalUrl = instrumentalUrl.startsWith('https://')
+      ? instrumentalUrl
+      : '';
 
     const newScene: Scene = {
       id: targetId,
@@ -1385,8 +1396,9 @@ export default function EditorPage() {
       isCustom: true,
     };
 
+    setIsSavingScene(true);
     try {
-      showToast('Sahne kaydediliyor ve oyuna ekleniyor...');
+      showToast('Sahne kaydediliyor...');
       await saveSceneToSupabase(newScene);
       saveCustomScene(newScene); // yerel yedek
       setSupabaseScenes((prev) => [
@@ -1398,9 +1410,11 @@ export default function EditorPage() {
       setIsEditingExisting(true);
       setEditingSceneTitle(targetTitle);
       showToast(
-        asNewCopy
-          ? `"${targetTitle}" yeni bir sahne olarak oyuna eklendi!`
-          : `"${targetTitle}" sahnesindeki değişiklikler başarıyla güncellendi!`,
+        finalInstrumentalUrl
+          ? asNewCopy
+            ? `"${targetTitle}" yeni bir sahne olarak oyuna eklendi!`
+            : `"${targetTitle}" sahnesindeki değişiklikler başarıyla güncellendi!`
+          : `"${targetTitle}" kaydedildi. Oynatmak için arka plan sesini hazırlayıp yeniden kaydedin.`,
       );
     } catch (err) {
       saveCustomScene(newScene);
@@ -1411,8 +1425,22 @@ export default function EditorPage() {
       showToast(
         `Supabase uyarısı: ${(err as Error).message}. Yerel olarak kaydedildi.`,
       );
+    } finally {
+      setIsSavingScene(false);
     }
   };
+
+  useEffect(() => {
+    const pendingSave = pendingSceneSaveRef.current;
+    if (!pendingSave || isUploadingToSupabase) return;
+    pendingSceneSaveRef.current = null;
+    if (pendingSave.job !== videoJobRef.current) return;
+    if (!videoUrl.startsWith('https://')) {
+      showToast('Video yüklenemediği için sahne kaydedilemedi.');
+      return;
+    }
+    void handleSaveScene(pendingSave.asNewCopy);
+  }, [videoUrl, isUploadingToSupabase, handleSaveScene, showToast]);
 
   // JSON İçe Aktar
   const handleJsonUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1546,12 +1574,13 @@ export default function EditorPage() {
           <button
             type="button"
             onClick={() => handleSaveScene(false)}
-            disabled={isUploadingToSupabase || isRemovingVocals || !instrumentalUrl}
-            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-lg shadow-[#F5E636]/15 transition cursor-pointer"
+            disabled={isSavingScene}
+            title={isUploadingToSupabase ? 'Tıklayın; video yüklendiğinde sahne kaydedilir.' : undefined}
+            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-lg shadow-[#F5E636]/15 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Check size={16} strokeWidth={2.5} />
             <span className="editor-save-label-full">
-              {isEditingExisting ? 'Değişiklikleri Kaydet' : 'Sahneyi Kaydet'}
+              {isSavingScene ? 'Kaydediliyor...' : isUploadingToSupabase ? 'Yüklenince Kaydet' : isEditingExisting ? 'Değişiklikleri Kaydet' : 'Sahneyi Kaydet'}
             </span>
             <span className="editor-save-label-short">Kaydet</span>
           </button>
@@ -2681,6 +2710,11 @@ export default function EditorPage() {
                       {sc.instrumental && (
                         <span className="absolute bottom-2 left-2 z-10 bg-[#9E8CA9]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
                           <Music size={10} /> M&amp;E Vokalsiz
+                        </span>
+                      )}
+                      {!sc.instrumental && (
+                        <span className="absolute bottom-2 left-2 z-10 bg-[#22221E] text-[#F5E636] text-[9px] font-bold px-1.5 py-0.5 rounded">
+                          Ses hazırlığı bekliyor
                         </span>
                       )}
                     </div>
