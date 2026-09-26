@@ -4757,33 +4757,16 @@ audio {
   min-height: 48px;
 }
 .studio .primary:hover:not(:disabled) { background: #e6d831; transform: translateY(-1px); }
-.studio-preview-controls {
+.studio-preview-button {
   position: absolute;
   right: 14px;
   bottom: 14px;
   z-index: 10;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  max-width: calc(100% - 28px);
-}
-.studio-preview-button,
-.studio-preview-mode {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
 }
-.studio-preview-mode {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  color: var(--foreground);
-  font-weight: 750;
-  min-height: 44px;
-}
-.studio-preview-mode:hover { background: #32322c; border-color: var(--secondary-accent); }
 .video-wrap { border-radius: var(--radius-card); border: 1px solid var(--border); }
 .players li { border-bottom-color: var(--border); min-width: 0; }
 .player-details,

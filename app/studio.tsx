@@ -140,7 +140,6 @@ export default function Studio({
     [roleRevealOpen, setRoleRevealOpen] = useState(false),
     [autoplayPrompt, setAutoplayPrompt] = useState(false),
     [lobbyPlaying, setLobbyPlaying] = useState(false),
-    [lobbyPreviewMode, setLobbyPreviewMode] = useState<'original' | 'background'>('original'),
     [playbackTime, setPlaybackTime] = useState(0),
     [activeSubtitle, setActiveSubtitle] = useState<{
       roleName: string;
@@ -150,7 +149,6 @@ export default function Studio({
     }[]>([]);
 
   const video = useRef<HTMLVideoElement>(null),
-    lobbyAudio = useRef<HTMLAudioElement | null>(null),
     ctx = useRef<AudioContext | null>(null),
     masterGain = useRef<GainNode | null>(null),
     buffers = useRef<Map<string, AudioBuffer>>(new Map()),
@@ -213,7 +211,6 @@ export default function Studio({
     }
     if (room.status !== 'lobby') {
       setLobbyPlaying(false);
-      lobbyAudio.current?.pause();
     }
     prevStatus.current = room.status;
   }, [room.status, room.code, room.scene, me?.segments?.length]);
@@ -870,20 +867,6 @@ export default function Studio({
                   }
                 }}
               >
-                {scene.instrumental && (
-                  /* oxlint-disable-next-line jsx-a11y/media-has-caption */
-                  <audio
-                    ref={lobbyAudio}
-                    src={scene.instrumental}
-                    preload="auto"
-                    playsInline
-                    onEnded={() => {
-                      video.current?.pause();
-                      setLobbyPlaying(false);
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                )}
                 <video
                   ref={video}
                   src={scene.video}
@@ -902,73 +885,41 @@ export default function Studio({
                   }
                   onPause={() => {
                     if (room.status === 'lobby') {
-                      lobbyAudio.current?.pause();
                       setLobbyPlaying(false);
                     }
                   }}
                   onTimeUpdate={() => {
-                    if (lobbyPlaying && lobbyPreviewMode === 'background' && scene.instrumental && video.current && lobbyAudio.current &&
-                        Math.abs(lobbyAudio.current.currentTime - video.current.currentTime) > 0.35) {
-                      lobbyAudio.current.currentTime = video.current.currentTime;
-                    }
                     if (
                       !playing &&
                       video.current &&
                       video.current.currentTime > scene.start + scene.duration
                     ) {
                       video.current.pause();
-                      lobbyAudio.current?.pause();
                       setLobbyPlaying(false);
                     }
                   }}
                 />
 
                 {room.status === 'lobby' && (
-                  <div className="studio-preview-controls">
-                  {scene.instrumental && !lobbyPlaying && (
-                    <button
-                      type="button"
-                      className="studio-preview-mode"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setLobbyPreviewMode((mode) => mode === 'original' ? 'background' : 'original');
-                      }}
-                    >
-                      {lobbyPreviewMode === 'original' ? 'Vokalsiz sesi seç' : 'Orijinal sesi seç'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={async (e) => {
                       e.stopPropagation();
                       const v = video.current;
                       if (!v) return;
-                      const backing = lobbyPreviewMode === 'background' && scene.instrumental
-                        ? lobbyAudio.current
-                        : null;
                       if (lobbyPlaying) {
                         v.pause();
-                        backing?.pause();
                         setLobbyPlaying(false);
                       } else {
                         try {
                           v.pause();
-                          backing?.pause();
                           v.currentTime = scene.start;
-                          // A previous original-audio preview may have unmuted
-                          // this same video element. Never play both tracks.
-                          v.muted = Boolean(backing);
-                          if (backing) {
-                            backing.currentTime = scene.start;
-                            backing.volume = 1;
-                          }
+                          v.muted = false;
                           await v.play();
-                          if (backing) await backing.play();
                           setError('');
                           setLobbyPlaying(true);
                         } catch {
                           v.pause();
-                          backing?.pause();
                           setLobbyPlaying(false);
                           setError('Sahne sesi oynatılamadı. Sayfayı yenileyip tekrar deneyin.');
                         }
@@ -979,11 +930,8 @@ export default function Studio({
                     {lobbyPlaying ? <Pause size={15} /> : <Volume2 size={15} />}
                     {lobbyPlaying
                       ? 'Önizlemeyi Durdur'
-                      : lobbyPreviewMode === 'background' && scene.instrumental
-                        ? 'Sahneyi Dinle (Vokalsiz Efektli)'
-                        : 'Sahneyi Dinle (Orijinal Ses)'}
+                      : 'Sahneyi Dinle (Orijinal Ses)'}
                   </button>
-                  </div>
                 )}
 
                 {/* Tarayıcı otomatik oynatmayı engellediğinde çıkan uyarı */}
