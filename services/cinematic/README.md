@@ -146,3 +146,34 @@ not needed. The first request downloads model weights; a CPU VM can take a
 long time to prepare audio. In Vercel, set `CINEMATIC_API_URL` to
 `https://<your-domain>` and copy the worker's shared key to
 `CINEMATIC_API_KEY`. Keep `worker.env` private.
+
+### Windows PC with Tailscale Funnel (no cloud VM)
+
+This option runs the same model on a Windows PC while it is on. Tailscale Funnel
+provides a stable public HTTPS `*.ts.net` address without a domain purchase,
+public IP, or router port forwarding. It is available on the free Personal plan,
+but its relay bandwidth is limited. The PC must remain awake and connected while
+users prepare audio. The worker listens only on `127.0.0.1`; Funnel exposes only
+that worker, and the shared secret protects its job and output endpoints.
+
+Install Python 3.11 (including the `py` launcher), FFmpeg on PATH, and Tailscale
+for Windows. Log in to Tailscale and enable Funnel when it prompts in the browser.
+On an NVIDIA PC, from the repository root in PowerShell:
+
+```powershell
+.\services\cinematic\setup-windows.ps1 -SupabaseUrl 'https://your-project.supabase.co'
+.\services\cinematic\start-windows.ps1
+```
+
+Setup creates an ignored `.venv-splitter` environment with PyTorch CUDA and a
+private `services/cinematic/worker.windows.env` containing a random shared key.
+The first start may download approximately 162 MB of model weights. The start
+script prints the public worker URL and then runs the worker in that terminal;
+leave the terminal open. Open `<printed-url>/health` to verify the public route.
+In Vercel, set `CINEMATIC_API_URL` to the printed HTTPS URL and
+`CINEMATIC_API_KEY` to the value in `worker.windows.env`, then redeploy. Do not
+paste the key into GitHub or a chat. If PowerShell blocks script execution, run
+it from a PowerShell terminal using `powershell -ExecutionPolicy Bypass -File
+services/cinematic/setup-windows.ps1 -SupabaseUrl ...` and likewise for start.
+After a reboot or sleep, run `start-windows.ps1` again. When the PC is off, new
+separations cannot start; already prepared scenes retain their Supabase audio.
