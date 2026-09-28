@@ -76,8 +76,45 @@ Set `CINEMATIC_PORT` separately when its internal port differs from the HTTPS UR
 For AudioShake, no model worker is needed.
 
 The web host must execute the `/api/splitter-ai` route. Publishing only
-`dist/client` as static files does not deploy that route. The current local
-vinext server and the Cloudflare server build support it; a static-only Vercel
-publication needs an API backend or server deployment before enabling uploads.
+`dist/client` as static files does not deploy that route. Vercel uses the
+Nitro server build configured in `vercel.json`; its output is
+`.vercel/output` and includes the API function. Keep the project's Vercel
+Framework Preset on Other and do not override its output directory with
+`dist/client`. Set either the server-only `AUDIOSHAKE_API_KEY` or both
+`CINEMATIC_API_URL` (a public HTTPS worker URL, never loopback) and
+`CINEMATIC_API_KEY` in Vercel before redeploying. A POST to
+`/api/splitter-ai` without a session should return JSON with HTTP 401;
+HTTP 404 indicates that the server build was not deployed.
 
 The older `services/demucs` music-only service is no longer called by the app.
+
+## Run without a third-party API key
+
+`CINEMATIC_API_KEY` is only a shared secret between your Vercel app and your
+own worker. Generate a long random value; it is not a purchased vendor key.
+The `services/cinematic/Dockerfile` packages the open-source model on a
+persistent CPU/GPU host. Build it from the repository root:
+
+```sh
+docker build -f services/cinematic/Dockerfile -t replik-cinematic .
+docker run --rm -p 8011:8011 -v cinematic-data:/data \
+  -e CINEMATIC_API_KEY=<your-shared-secret> \
+  -e NEXT_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co \
+  -e CINEMATIC_API_URL=https://<your-worker-host> \
+  replik-cinematic
+```
+
+The worker needs public HTTPS and a persistent `/data` volume so a restart
+does not lose jobs or cached model weights. A Render Docker web service can
+use this Dockerfile, a disk mounted at `/data`, and the two required secrets
+above. Render supplies `PORT` and `RENDER_EXTERNAL_URL` automatically; the
+worker uses them if `CINEMATIC_PORT` and `CINEMATIC_API_URL` are unset.
+First separation downloads the three model checkpoints. Keep the worker
+private behind host-level rate limits where possible; the shared secret
+protects its job and output endpoints.
+
+In Vercel, set `CINEMATIC_API_URL` to the worker's public HTTPS base URL and
+set `CINEMATIC_API_KEY` to the same random value. Remove any stale
+`AUDIOSHAKE_API_KEY` if you intend to use the self-hosted model. Redeploy
+the web app after setting these variables. Check the worker's `/health`
+endpoint and then try a short uploaded video from the editor.

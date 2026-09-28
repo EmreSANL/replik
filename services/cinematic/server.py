@@ -24,7 +24,8 @@ if (ROOT / '.env.local').exists():
                 os.environ.setdefault(key, value.strip().strip('"').strip("'"))
 
 KEY = os.environ.get('CINEMATIC_API_KEY', '')
-API_URL = os.environ.get('CINEMATIC_API_URL', 'http://127.0.0.1:8011').rstrip('/')
+API_URL = (os.environ.get('CINEMATIC_API_URL') or os.environ.get('RENDER_EXTERNAL_URL') or
+           'http://127.0.0.1:8011').rstrip('/')
 MEDIA_ORIGIN = urlparse(os.environ.get('NEXT_PUBLIC_SUPABASE_URL', '')).netloc
 JOBS = Path(os.environ.get('CINEMATIC_JOB_DIR', str(ROOT / 'work/cinematic-jobs')))
 JOBS.mkdir(parents=True, exist_ok=True)
@@ -170,6 +171,7 @@ if __name__ == '__main__':
             job['targets'][0]['status'] = 'error'
             save_job(job)
     host = os.environ.get('CINEMATIC_HOST', '127.0.0.1')
-    port = int(os.environ.get('CINEMATIC_PORT', str(urlparse(API_URL).port or 8011)))
+    port = int(os.environ.get('CINEMATIC_PORT') or os.environ.get('PORT') or
+               str(urlparse(API_URL).port or 8011))
     print(f'Cinematic worker listening on {host}:{port}', flush=True)
     ThreadingHTTPServer((host, port), Handler).serve_forever()

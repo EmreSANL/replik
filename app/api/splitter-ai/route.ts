@@ -10,9 +10,9 @@ export const maxDuration = 120;
 
 /** Editor-only preparation. Each request starts or checks one durable job. */
 export async function POST(req: Request) {
-  const { user, client } = await verifySupabaseAuthHeader(req);
-  if (!user) return Response.json({ error: 'Ses hazırlamak için giriş yapın.' }, { status: 401 });
   try {
+    const { user, client } = await verifySupabaseAuthHeader(req);
+    if (!user) return Response.json({ error: 'Ses hazırlamak için giriş yapın.' }, { status: 401 });
     const body = await req.json() as { videoUrl?: string; retry?: boolean };
     if (typeof body.videoUrl !== 'string') return Response.json({ error: 'Video adresi gerekli.' }, { status: 400 });
     const source = validateSeparationSource(body.videoUrl, process.env.NEXT_PUBLIC_SUPABASE_URL || '');

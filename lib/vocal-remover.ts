@@ -106,6 +106,14 @@ export async function prepareSceneBackground(
       body: JSON.stringify({ videoUrl, retry: options.retry === true }),
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120000)]) : AbortSignal.timeout(120000),
     });
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.toLowerCase().includes('application/json')) {
+      throw new Error(
+        response.status === 404
+          ? 'Ses hazırlama API yolu bulunamadı. Sunucu dağıtımını kontrol edin.'
+          : `Ses hazırlama sunucusundan geçersiz yanıt alındı (${response.status}). Sunucu kayıtlarını kontrol edin.`,
+      );
+    }
     const job = await response.json() as { status?: string; error?: string; instrumentalUrl?: string };
     if (!response.ok || job.status === 'failed') throw new Error(job.error || 'Arka plan sesi hazırlanamadı.');
     if (job.status === 'ready' && job.instrumentalUrl) {
