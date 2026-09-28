@@ -108,6 +108,11 @@ export async function prepareDialogueBackground({
     const response = await fetcher(`${apiBase}/tasks/${encodeURIComponent(job.taskId)}`, {
       headers: { 'x-api-key': apiKey }, signal: AbortSignal.timeout(30000),
     });
+    if (response.status === 404) {
+      const failed: SeparationJob = { ...job, status: 'failed', retryable: true, error: 'Ses ayırma servisi bu işi bulamadı. Yeniden deneyin.' };
+      await store.write(path, failed);
+      return failed;
+    }
     if (!response.ok) throw new Error(`Ses ayırma durumu alınamadı (${response.status}). Tekrar kontrol edin.`);
     const task = await response.json() as ProviderTask;
     const target = task.targets?.find((item) => item.model === 'music_fx');

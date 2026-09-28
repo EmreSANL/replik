@@ -1,0 +1,33 @@
+services:
+  worker:
+    build:
+      context: ../..
+      dockerfile: services/cinematic/Dockerfile
+    env_file: worker.env
+    environment:
+      CINEMATIC_HOST: 0.0.0.0
+      CINEMATIC_PORT: 8011
+      CINEMATIC_API_URL: https://${CINEMATIC_DOMAIN:?Set CINEMATIC_DOMAIN in worker.env}
+    volumes:
+      - cinematic_data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      CINEMATIC_DOMAIN: ${CINEMATIC_DOMAIN:?Set CINEMATIC_DOMAIN in worker.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - worker
+    restart: unless-stopped
+
+volumes:
+  cinematic_data:
+  caddy_data:
+  caddy_config:
