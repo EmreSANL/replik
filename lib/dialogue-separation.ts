@@ -3,6 +3,7 @@ export type SeparationJob = {
   status: 'starting' | 'processing' | 'ready' | 'failed';
   createdAt: number;
   taskId?: string;
+  remoteTaskId?: string;
   instrumentalUrl?: string;
   error?: string;
   retryable?: boolean;
