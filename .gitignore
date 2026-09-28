@@ -42,7 +42,6 @@ next-env.d.ts
 .venv-splitter/
 .venv/
 services/cinematic/worker.env
-services/cinematic/worker.windows.env
 
 # Python model-worker bytecode
 __pycache__/
