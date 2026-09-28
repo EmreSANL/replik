@@ -41,6 +41,7 @@ next-env.d.ts
 *.tsbuildinfo
 .venv-splitter/
 .venv/
+services/cinematic/worker.env
 
 # Python model-worker bytecode
 __pycache__/
