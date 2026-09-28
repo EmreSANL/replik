@@ -8,8 +8,25 @@ type MvsepFile = { download?: string; url?: string };
 type MvsepResult = {
   success?: boolean;
   status?: string;
+  message?: unknown;
+  errors?: unknown;
   data?: { hash?: string; message?: string; files?: MvsepFile[] };
 };
+
+function createError(result: MvsepResult, status: number, apiKey: string, source: string): string {
+  const details = result.errors;
+  const candidates: unknown[] = [result.data?.message, result.message];
+  if (Array.isArray(details)) candidates.push(...details);
+  else if (details && typeof details === 'object') candidates.push(...Object.values(details).flat());
+  else candidates.push(details);
+  const messages = candidates.filter((value): value is string =>
+    typeof value === 'string' && value.length > 0 && value.length <= 250 &&
+    !value.includes(apiKey) && !value.includes(source) && !/https?:\/\/|api[_ -]?token\s*[:=]/i.test(value),
+  );
+  return messages.length
+    ? `MVSEP: ${messages.slice(0, 2).join(' ')}`
+    : `MVSEP işlemi başlatılamadı (${status}).`;
+}
 
 function downloadUrl(file: MvsepFile): string {
   const url = new URL((file.url || '').replace(/\\\//g, '/'));
@@ -51,6 +68,22 @@ export async function prepareMvsepBackground({
     if (!job) {
       job = { status: 'starting', createdAt: now() };
       if (!(await store.create(path, job))) return job;
+      // The free MVSEP plan accepts at most 100 MB. The editor can still use
+      // larger videos, but submitting one to MVSEP would only fail with 400.
+      try {
+        const head = await fetcher(source, { method: 'HEAD', signal: AbortSignal.timeout(10000) });
+        const size = Number(head.headers.get('content-length'));
+        if (head.ok && Number.isFinite(size) && size > 100 * 1024 * 1024) {
+          const failed: SeparationJob = {
+            ...job, status: 'failed', retryable: false,
+            error: 'MVSEP ücretsiz hesapta en fazla 100 MB dosya kabul ediyor. Daha küçük bir video yükleyin.',
+          };
+          await store.write(path, failed);
+          return failed;
+        }
+      } catch {
+        // Some storage hosts omit or reject HEAD. Let MVSEP validate the URL.
+      }
       const form = new FormData();
       form.set('api_token', apiKey);
       form.set('url', source);
@@ -70,7 +103,7 @@ export async function prepareMvsepBackground({
       if (!response.ok || !result.success || !result.data?.hash) {
         const failed: SeparationJob = {
           ...job, status: 'failed', retryable: response.status !== 401,
-          error: result.data?.message || `MVSEP işlemi başlatılamadı (${response.status}).`,
+          error: createError(result, response.status, apiKey, source),
         };
         await store.write(path, failed);
         return failed;
