@@ -88,6 +88,25 @@ export async function decodeMediaAudioBuffer(
   }
 }
 
+/** Combine MVSep's music and effects stems without running a separation model locally. */
+export async function combineBackgroundStems(files: File[]): Promise<Blob> {
+  if (files.length < 1 || files.length > 2) throw new Error('Bir veya iki ses dosyası seçin.');
+  const buffers = await Promise.all(files.map((file) => decodeMediaAudioBuffer(file)));
+  if (buffers.length === 2 && Math.abs(buffers[0].duration - buffers[1].duration) > 1) {
+    throw new Error('Müzik ve efekt dosyalarının süreleri eşleşmiyor. Aynı videodan çıkan dosyaları seçin.');
+  }
+  const sampleRate = 44100;
+  const frames = Math.ceil(Math.max(...buffers.map((buffer) => buffer.duration)) * sampleRate);
+  const context = new OfflineAudioContext(2, frames, sampleRate);
+  for (const buffer of buffers) {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start();
+  }
+  return audioBufferToWav(await context.startRendering(), sampleRate);
+}
+
 /** Called only by the editor after the original video has been uploaded. */
 export async function prepareSceneBackground(
   videoUrl: string,

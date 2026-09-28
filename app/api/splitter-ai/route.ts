@@ -5,6 +5,7 @@ import {
   type SeparationJob,
   type SeparationStore,
 } from '@/lib/dialogue-separation';
+import { prepareMvsepBackground } from '@/lib/mvsep-separation';
 
 export const maxDuration = 120;
 
@@ -47,13 +48,16 @@ export async function POST(req: Request) {
         return bucket.getPublicUrl(path).data.publicUrl;
       },
     };
+    const mvsepKey = process.env.MVSEP_API_KEY?.trim();
     const useAudioShake = Boolean(process.env.AUDIOSHAKE_API_KEY?.trim());
-    const job = await prepareDialogueBackground({
-      source, userId: user.id, store, retry: body.retry === true,
-      apiKey: useAudioShake ? process.env.AUDIOSHAKE_API_KEY?.trim() : process.env.CINEMATIC_API_KEY?.trim(),
-      apiBase: useAudioShake ? 'https://api.audioshake.ai' : process.env.CINEMATIC_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8011',
-      engine: useAudioShake ? 'audioshake-dme-v1' : 'cinematic-cdx23-ensemble-v1',
-    });
+    const job = mvsepKey
+      ? await prepareMvsepBackground({ source, userId: user.id, store, retry: body.retry === true, apiKey: mvsepKey })
+      : await prepareDialogueBackground({
+          source, userId: user.id, store, retry: body.retry === true,
+          apiKey: useAudioShake ? process.env.AUDIOSHAKE_API_KEY?.trim() : process.env.CINEMATIC_API_KEY?.trim(),
+          apiBase: useAudioShake ? 'https://api.audioshake.ai' : process.env.CINEMATIC_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8011',
+          engine: useAudioShake ? 'audioshake-dme-v1' : 'cinematic-cdx23-ensemble-v1',
+        });
     return Response.json(job, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return Response.json({ error: (error as Error).message || 'Ses hazırlanamadı.' }, { status: 503 });
