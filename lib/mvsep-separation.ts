@@ -36,6 +36,14 @@ export async function prepareMvsepBackground({
     const path = `${base}/${attempt}.json`;
     let job = await store.read(path);
     if (job?.status === 'ready') return job;
+    // Older deployments queried the remote-download hash as a separation hash.
+    // Reuse that MVSEP job instead of consuming another free separation slot.
+    if (job?.taskId && !job.remoteTaskId &&
+        (job.status === 'processing' ||
+         (job.status === 'failed' && /File or File Hash not found/i.test(job.error || '')))) {
+      job = { ...job, status: 'processing', remoteTaskId: job.taskId, taskId: undefined, error: undefined, retryable: undefined };
+      await store.write(path, job);
+    }
     if (job?.status === 'failed') {
       if (retry && job.retryable) continue;
       return job;
@@ -67,7 +75,7 @@ export async function prepareMvsepBackground({
         await store.write(path, failed);
         return failed;
       }
-      job = { ...job, status: 'processing', taskId: result.data.hash };
+      job = { ...job, status: 'processing', remoteTaskId: result.data.hash };
       await store.write(path, job);
       return job;
     }
@@ -77,8 +85,29 @@ export async function prepareMvsepBackground({
       }
       return job;
     }
-    if (!job.taskId) throw new Error('MVSEP işlem kimliği bulunamadı.');
-    const response = await fetcher(`${API_BASE}/separation/get?hash=${encodeURIComponent(job.taskId)}`, {
+    if (!job.remoteTaskId) throw new Error('MVSEP uzaktan dosya işlem kimliği bulunamadı.');
+    if (!job.taskId) {
+      const remoteResponse = await fetcher(`${API_BASE}/separation/get-remote?hash=${encodeURIComponent(job.remoteTaskId)}`, {
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!remoteResponse.ok) throw new Error(`MVSEP video indirme durumu alınamadı (${remoteResponse.status}).`);
+      const remote = await remoteResponse.json() as MvsepResult;
+      if (remote.status === 'failed' || remote.status === 'not_found' || remote.success === false) {
+        const failed: SeparationJob = {
+          ...job, status: 'failed', retryable: true,
+          error: remote.data?.message || 'MVSEP videoyu indiremedi. Yeniden deneyin.',
+        };
+        await store.write(path, failed);
+        return failed;
+      }
+      if (remote.status !== 'done') return job;
+      if (!remote.data?.hash) throw new Error('MVSEP indirilen videonun ayırma kimliğini döndürmedi.');
+      job = { ...job, taskId: remote.data.hash };
+      await store.write(path, job);
+    }
+    const separationHash = job.taskId;
+    if (!separationHash) throw new Error('MVSEP ses ayırma işlem kimliği bulunamadı.');
+    const response = await fetcher(`${API_BASE}/separation/get?hash=${encodeURIComponent(separationHash)}`, {
       signal: AbortSignal.timeout(30000),
     });
     if (!response.ok) throw new Error(`MVSEP işlem durumu alınamadı (${response.status}).`);
