@@ -1070,6 +1070,10 @@ export default function EditorPage() {
       setVocalError('En fazla iki ses dosyası seçin; her biri 100 MB altında olmalı.');
       return;
     }
+    if (selected.some((file) => /speech|dialog|vocal|konuşma/i.test(file.name))) {
+      setVocalError('Konuşma dosyasını seçmeyin; Music ve Effects dosyalarını yükleyin.');
+      return;
+    }
     const job = videoJobRef.current;
     audioPreparationRef.current?.controller.abort();
     setIsRemovingVocals(false);
