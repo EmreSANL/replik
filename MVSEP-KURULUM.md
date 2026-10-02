@@ -9,4 +9,4 @@
 
 Ücretsiz kayıtlı planın sınırı MVSEP'e göre 10 dakikalık / 100 MB dosya, günde 50 ayırma ve aynı anda tek iştir. Sıra yoğunluğunda işlem bekleyebilir. Uygulama DnR v3'ün tek SCNet modelini kullanır, konuşmayı ayırır ve müzik ile efekt dosyalarını birleştirerek sahneye kaydeder.
 
-API anahtarı henüz eklenmediyse editördeki **Ücretsiz bulut seçeneği** alanından videoyu MVSEP sitesinde ayırıp Music ve Effects dosyalarını birlikte seçebilirsiniz. Bu yol için API anahtarı gerekmez.
+Editörde video yüklendikten sonra ayırma otomatik başlar. Ayrı Music ve Effects dosyaları seçmek gerekmez. API anahtarı yoksa otomatik ayırma başlatılamaz; `MVSEP_API_KEY` yalnızca Vercel sunucu ortamında saklanmalıdır.

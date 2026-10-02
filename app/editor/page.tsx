@@ -45,7 +45,7 @@ import {
   deleteCustomScene,
 } from '@/lib/scenes';
 import { useWhisper } from '@/lib/use-whisper';
-import { combineBackgroundStems, prepareSceneBackground } from '@/lib/vocal-remover';
+import { prepareSceneBackground } from '@/lib/vocal-remover';
 import { adjustCueTiming, hasCueOverlap } from '@/lib/timeline';
 import { formatTimecode } from '@/lib/timecode';
 import { VideoTrimDialog } from '@/components/video-trim-dialog';
@@ -82,7 +82,6 @@ export default function EditorPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const instrumentalAudioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const backgroundInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const cueListRef = useRef<HTMLDivElement>(null);
   const [pendingVideo, setPendingVideo] = useState<File | null>(null);
@@ -108,8 +107,6 @@ export default function EditorPage() {
   const [vocalError, setVocalError] = useState('');
   const [vocalNotice, setVocalNotice] = useState('');
   const [isRemovingVocals, setIsRemovingVocals] = useState<boolean>(false);
-  const [isImportingBackground, setIsImportingBackground] = useState(false);
-  const [vocalProgress, setVocalProgress] = useState<number>(0);
   const [vocalStage, setVocalStage] = useState<string>('');
   const [audioMode, setAudioMode] = useState<'original' | 'instrumental'>(
     'instrumental',
@@ -860,13 +857,11 @@ export default function EditorPage() {
     setIsRemovingVocals(true);
     setVocalError('');
     setVocalNotice('');
-    setVocalProgress(10);
     setVocalStage('Arka plan sesi hazırlanıyor...');
     try {
-      const result = await prepareSceneBackground(source, (stage, percent) => {
+      const result = await prepareSceneBackground(source, (stage) => {
         if (videoJobRef.current !== job) return;
         setVocalStage(stage);
-        setVocalProgress(percent);
       }, { retry, signal: controller.signal });
       if (videoJobRef.current !== job) return;
       setInstrumentalUrl(result.url);
@@ -892,7 +887,6 @@ export default function EditorPage() {
       pendingSceneSaveRef.current = null;
       audioPreparationRef.current?.controller.abort();
       setIsRemovingVocals(false);
-      setIsImportingBackground(false);
       setAudioMode('original');
       sourceFileRef.current = file;
       setVocalError('');
@@ -1059,49 +1053,10 @@ export default function EditorPage() {
     void prepareBackground(videoUrl, videoJobRef.current, true);
   }, [videoUrl, isUploadingToSupabase, showToast, prepareBackground]);
 
-  const handleImportBackground = useCallback(async (files: FileList | null) => {
-    const selected = Array.from(files || []);
-    if (!selected.length) return;
-    if (!videoUrl || !videoUrl.startsWith('https://') || isUploadingToSupabase) {
-      setVocalError('Önce video yüklemesinin tamamlanmasını bekleyin.');
-      return;
-    }
-    if (selected.length > 2 || selected.some((file) => !file.type.startsWith('audio/') || file.size > 100 * 1024 * 1024)) {
-      setVocalError('En fazla iki ses dosyası seçin; her biri 100 MB altında olmalı.');
-      return;
-    }
-    if (selected.some((file) => /speech|dialog|vocal|konuşma/i.test(file.name))) {
-      setVocalError('Konuşma dosyasını seçmeyin; Music ve Effects dosyalarını yükleyin.');
-      return;
-    }
-    const job = videoJobRef.current;
-    audioPreparationRef.current?.controller.abort();
-    setIsRemovingVocals(false);
-    setIsImportingBackground(true);
-    setVocalError('');
-    setVocalNotice('Müzik ve efekt dosyaları hazırlanıp sahneye yükleniyor...');
-    try {
-      const audio = await combineBackgroundStems(selected);
-      if (audio.size > 120 * 1024 * 1024) throw new Error('Birleştirilmiş ses 120 MB sınırını aşıyor. Daha kısa bir video deneyin.');
-      if (videoJobRef.current !== job) return;
-      const { url } = await uploadVideoToSupabase(audio, 'background.wav');
-      if (videoJobRef.current !== job) return;
-      setInstrumentalUrl(url);
-      setAudioMode('instrumental');
-      setVocalNotice('Konuşmasız ses hazır. Orijinal sesle karşılaştırıp dinleyin; ardından sahneyi kaydedin.');
-      showToast('Müzik ve efekt sesi sahneye eklendi.');
-    } catch (error) {
-      if (videoJobRef.current !== job) return;
-      setVocalError((error as Error).message || 'Ses dosyaları yüklenemedi.');
-    } finally {
-      if (videoJobRef.current === job) setIsImportingBackground(false);
-    }
-  }, [videoUrl, isUploadingToSupabase, showToast]);
-
   // Sahne Yükle (Hem Supabase / Meme hem de Hazır Oyun Sahneleri)
   const loadScene = useCallback(
     (sc: Scene) => {
-      videoJobRef.current += 1;
+      const job = ++videoJobRef.current;
       pendingSceneSaveRef.current = null;
       sourceFileRef.current = null;
       originalFileRef.current = null;
@@ -1157,14 +1112,15 @@ export default function EditorPage() {
         setSelectedCueId(loadedCues[0].id);
       }
 
-      // Opening or editing a saved scene never starts another separation job.
+      // Resume the durable MVSEP job when a saved scene is opened again.
       audioPreparationRef.current?.controller.abort();
       setIsRemovingVocals(false);
-      setIsImportingBackground(false);
       setIsUploadingToSupabase(false);
       setInstrumentalUrl(sc.instrumental || '');
       setAudioMode(sc.instrumental ? 'instrumental' : 'original');
-      if (!sc.instrumental) setVocalNotice('Bu sahnenin arka plan sesi henüz hazır değil. Ses hazırlamayı başlatın.');
+      if (!sc.instrumental && sc.video.includes('/storage/v1/object/public/videos/uploads/')) {
+        void prepareBackground(sc.video, job);
+      }
 
       setIsEditingExisting(true);
       setEditingSceneTitle(sc.title);
@@ -1178,7 +1134,7 @@ export default function EditorPage() {
 
       showToast(`"${sc.title}" sahnesi düzenleme için yüklendi!`);
     },
-    [supabaseScenes, showToast],
+    [supabaseScenes, showToast, prepareBackground],
   );
 
   // Sıfırdan Yeni Sahneye Geç
@@ -1186,7 +1142,6 @@ export default function EditorPage() {
     videoJobRef.current += 1;
     pendingSceneSaveRef.current = null;
     audioPreparationRef.current?.controller.abort();
-    setIsImportingBackground(false);
     sourceFileRef.current = null;
     originalFileRef.current = null;
     if (localVideoUrlRef.current) URL.revokeObjectURL(localVideoUrlRef.current);
@@ -1263,7 +1218,6 @@ export default function EditorPage() {
     pendingSceneSaveRef.current = null;
     hasLoadedUrlScene.current = true;
     audioPreparationRef.current?.controller.abort();
-    setIsImportingBackground(false);
     sourceFileRef.current = null;
     originalFileRef.current = null;
     videoRef.current?.pause();
@@ -1619,7 +1573,7 @@ export default function EditorPage() {
           <button
             type="button"
             onClick={() => handleSaveScene(false)}
-            disabled={isSavingScene || isImportingBackground}
+            disabled={isSavingScene}
             title={isUploadingToSupabase ? 'Tıklayın; video yüklendiğinde sahne kaydedilir.' : undefined}
             className="px-5 py-2 rounded-xl text-xs sm:text-sm font-extrabold bg-[#F5E636] hover:bg-[#F5E636] text-[#090909] flex items-center gap-2 shadow-lg shadow-[#F5E636]/15 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -1665,7 +1619,6 @@ export default function EditorPage() {
                       <Loader2 size={14} className="animate-spin" />
                       {vocalStage || 'Arka plan sesi hazırlanıyor...'}
                     </span>
-                    <span>%{vocalProgress}</span>
                   </div>
                 )}
                 {whisper.isProcessing && (
@@ -1911,35 +1864,6 @@ export default function EditorPage() {
                   </div>
                 )}
                 {vocalNotice && <div role="status" className="rounded-xl border border-[#AEA932] bg-[#1A1A17] px-3 py-2 text-xs text-[#E4DE8B]">{vocalNotice}</div>}
-
-                <div className="rounded-xl border border-[#383832] bg-[#1A1A17] px-3 py-3 text-xs text-[#B8B8AE]">
-                  <p className="font-bold text-[#F4F4E9]">Ücretsiz bulut seçeneği</p>
-                  <p className="mt-1">Videoyu MVSEP&apos;te “DnR v3 (speech, music, effects)” ile ayırın. Çıkan Music ve Effects dosyalarını birlikte seçin; konuşma dosyasını seçmeyin.</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <a href="https://mvsep.com/en/" target="_blank" rel="noopener noreferrer" className="rounded-lg border border-[#383832] px-2.5 py-1.5 text-[#F5E636] hover:bg-[#22221E]">MVSEP&apos;i aç ↗</a>
-                    <input
-                      ref={backgroundInputRef}
-                      type="file"
-                      accept="audio/*,.mp3,.wav,.m4a"
-                      multiple
-                      className="hidden"
-                      aria-label="Müzik ve efekt seslerini seç"
-                      onChange={(event) => {
-                        void handleImportBackground(event.target.files);
-                        event.target.value = '';
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => backgroundInputRef.current?.click()}
-                      disabled={isImportingBackground || isUploadingToSupabase || !videoUrl}
-                      className="flex items-center gap-1.5 rounded-lg bg-[#F5E636] px-2.5 py-1.5 font-bold text-[#090909] disabled:opacity-50"
-                    >
-                      {isImportingBackground ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                      {isImportingBackground ? 'Yükleniyor...' : 'Müzik + efekt dosyalarını yükle'}
-                    </button>
-                  </div>
-                </div>
 
                 {/* GÖRSEL ÇOK KATMANLI (MULTI-TRACK) ZAMAN ÇİZELGESİ KUTUSU */}
                 <div
