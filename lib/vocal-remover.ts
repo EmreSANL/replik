@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-export type VocalRemovalProgress = (stage: string, percent: number) => void;
+export type VocalRemovalProgress = (stage: string) => void;
 
 export function audioBufferToWav(
   buffer: AudioBuffer,
@@ -114,7 +114,7 @@ export async function prepareSceneBackground(
   options: { retry?: boolean; signal?: AbortSignal } = {},
 ): Promise<{ url: string }> {
   if (!videoUrl.startsWith('https://')) throw new Error('Önce video yüklemesinin tamamlanmasını bekleyin.');
-  const deadline = Date.now() + 15 * 60 * 1000;
+  const deadline = Date.now() + 60 * 60 * 1000;
   while (Date.now() < deadline) {
     options.signal?.throwIfAborted();
     const { data: { session } } = await supabase.auth.getSession();
@@ -133,17 +133,25 @@ export async function prepareSceneBackground(
           : `Ses hazırlama sunucusundan geçersiz yanıt alındı (${response.status}). Sunucu kayıtlarını kontrol edin.`,
       );
     }
-    const job = await response.json() as { status?: string; error?: string; instrumentalUrl?: string };
+    const job = await response.json() as {
+      status?: string; error?: string; instrumentalUrl?: string;
+      phase?: 'downloading' | 'queued' | 'separating'; queuePosition?: number;
+    };
     if (!response.ok || job.status === 'failed') throw new Error(job.error || 'Arka plan sesi hazırlanamadı.');
     if (job.status === 'ready' && job.instrumentalUrl) {
-      onProgress?.('Arka plan sesi hazır ve kaydedildi.', 100);
+      onProgress?.('Arka plan sesi hazır ve kaydedildi.');
       return { url: job.instrumentalUrl };
     }
     if (job.status !== 'starting' && job.status !== 'processing') throw new Error('Ses ayırma servisinden geçersiz yanıt alındı.');
-    onProgress?.(job.status === 'starting' ? 'Ses hazırlama başlatılıyor...' : 'Konuşma ayrılıyor; müzik ve efekt kanalı hazırlanıyor...', job.status === 'starting' ? 20 : 60);
+    const queue = Number.isInteger(job.queuePosition) && job.queuePosition! > 0
+      ? ` (${job.queuePosition}. sırada)` : '';
+    onProgress?.(job.status === 'starting' ? 'MVSEP işi başlatılıyor...'
+      : job.phase === 'downloading' ? `MVSEP videoyu indiriyor${queue}...`
+      : job.phase === 'queued' ? `MVSEP ayırma kuyruğunda${queue}...`
+      : 'MVSEP konuşma, müzik ve efektleri ayırıyor...');
     await new Promise<void>((resolve, reject) => {
       const done = () => { options.signal?.removeEventListener('abort', cancel); resolve(); };
-      const timer = setTimeout(done, 3000);
+      const timer = setTimeout(done, 10000);
       const cancel = () => { clearTimeout(timer); reject(new DOMException('İşlem iptal edildi.', 'AbortError')); };
       options.signal?.addEventListener('abort', cancel, { once: true });
       if (options.signal?.aborted) cancel();

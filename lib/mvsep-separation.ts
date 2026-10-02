@@ -10,8 +10,9 @@ type MvsepResult = {
   status?: string;
   message?: unknown;
   errors?: unknown;
-  data?: { hash?: string; message?: string; files?: MvsepFile[] };
+  data?: { hash?: string; message?: string; files?: MvsepFile[]; current_order?: number };
 };
+type MvsepHistory = { success?: boolean; data?: { hash?: string; job_exists?: boolean }[] };
 
 function createError(result: MvsepResult, status: number, apiKey: string, source: string): string {
   const details = result.errors;
@@ -37,6 +38,22 @@ function downloadUrl(file: MvsepFile): string {
   return url.href;
 }
 
+function isSeparationHash(hash: string): boolean {
+  return /^\d{14}-[a-z0-9]+-/i.test(hash);
+}
+
+async function findCompletedSeparation(source: string, apiKey: string, fetcher: typeof fetch): Promise<string | undefined> {
+  const filename = new URL(source).pathname.split('/').pop()?.toLowerCase().replace(/_/g, '-');
+  if (!filename) return undefined;
+  const url = `${API_BASE}/app/separation_history?api_token=${encodeURIComponent(apiKey)}&limit=20`;
+  const response = await fetcher(url, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) return undefined;
+  const history = await response.json() as MvsepHistory;
+  if (!history.success || !Array.isArray(history.data)) return undefined;
+  return history.data.find((item) => item.job_exists !== false && item.hash && isSeparationHash(item.hash) &&
+    item.hash.toLowerCase().endsWith(`-${filename}`))?.hash;
+}
+
 export async function prepareMvsepBackground({
   source, userId, apiKey, store, retry = false, fetcher = fetch, now = Date.now,
 }: {
@@ -55,7 +72,21 @@ export async function prepareMvsepBackground({
     if (job?.status === 'ready') return job;
     // Older deployments queried the remote-download hash as a separation hash.
     // Reuse that MVSEP job instead of consuming another free separation slot.
-    if (job?.taskId && !job.remoteTaskId &&
+    if (job?.remoteTaskId && !job.taskId && isSeparationHash(job.remoteTaskId)) {
+      job = { ...job, taskId: job.remoteTaskId, remoteTaskId: undefined };
+      await store.write(path, job);
+    }
+    if (job?.taskId && isSeparationHash(job.taskId) && job.status === 'failed' &&
+        /File or File Hash not found/i.test(job.error || '')) {
+      job = { ...job, status: 'processing', phase: 'queued', error: undefined, retryable: undefined };
+      await store.write(path, job);
+    }
+    if (job?.remoteTaskId && job.status === 'failed' &&
+        /File or File Hash not found/i.test(job.error || '')) {
+      job = { ...job, status: 'processing', phase: 'downloading', error: undefined, retryable: undefined };
+      await store.write(path, job);
+    }
+    if (job?.taskId && !job.remoteTaskId && !isSeparationHash(job.taskId) &&
         (job.status === 'processing' ||
          (job.status === 'failed' && /File or File Hash not found/i.test(job.error || '')))) {
       job = { ...job, status: 'processing', remoteTaskId: job.taskId, taskId: undefined, error: undefined, retryable: undefined };
@@ -108,7 +139,9 @@ export async function prepareMvsepBackground({
         await store.write(path, failed);
         return failed;
       }
-      job = { ...job, status: 'processing', remoteTaskId: result.data.hash };
+      job = isSeparationHash(result.data.hash)
+        ? { ...job, status: 'processing', phase: 'queued', taskId: result.data.hash }
+        : { ...job, status: 'processing', phase: 'downloading', remoteTaskId: result.data.hash };
       await store.write(path, job);
       return job;
     }
@@ -118,14 +151,29 @@ export async function prepareMvsepBackground({
       }
       return job;
     }
-    if (!job.remoteTaskId) throw new Error('MVSEP uzaktan dosya işlem kimliği bulunamadı.');
-    if (!job.taskId) {
+    if (!job.taskId && !job.remoteTaskId) throw new Error('MVSEP işlem kimliği bulunamadı.');
+    if (!job.taskId && job.remoteTaskId) {
       const remoteResponse = await fetcher(`${API_BASE}/separation/get-remote?hash=${encodeURIComponent(job.remoteTaskId)}`, {
         signal: AbortSignal.timeout(30000),
       });
       if (!remoteResponse.ok) throw new Error(`MVSEP video indirme durumu alınamadı (${remoteResponse.status}).`);
       const remote = await remoteResponse.json() as MvsepResult;
-      if (remote.status === 'failed' || remote.status === 'not_found' || remote.success === false) {
+      if (remote.status !== 'done' &&
+          (remote.status === 'failed' || remote.status === 'not_found' || now() - job.createdAt > 120000) &&
+          now() - (job.lastHistoryCheckAt || 0) >= 60000) {
+        job = { ...job, lastHistoryCheckAt: now() };
+        await store.write(path, job);
+        try {
+          const recoveredHash = await findCompletedSeparation(source, apiKey, fetcher);
+          if (recoveredHash) {
+            job = { ...job, phase: 'queued', remoteTaskId: undefined, taskId: recoveredHash };
+            await store.write(path, job);
+          }
+        } catch {
+          // History is a recovery path. Keep polling the original remote job.
+        }
+      }
+      if (!job.taskId && (remote.status === 'failed' || remote.status === 'not_found' || remote.success === false)) {
         const failed: SeparationJob = {
           ...job, status: 'failed', retryable: true,
           error: remote.data?.message || 'MVSEP videoyu indiremedi. Yeniden deneyin.',
@@ -133,10 +181,12 @@ export async function prepareMvsepBackground({
         await store.write(path, failed);
         return failed;
       }
-      if (remote.status !== 'done') return job;
-      if (!remote.data?.hash) throw new Error('MVSEP indirilen videonun ayırma kimliğini döndürmedi.');
-      job = { ...job, taskId: remote.data.hash };
-      await store.write(path, job);
+      if (!job.taskId) {
+        if (remote.status !== 'done') return { ...job, phase: 'downloading', queuePosition: remote.data?.current_order };
+        if (!remote.data?.hash) throw new Error('MVSEP indirilen videonun ayırma kimliğini döndürmedi.');
+        job = { ...job, phase: 'queued', taskId: remote.data.hash };
+        await store.write(path, job);
+      }
     }
     const separationHash = job.taskId;
     if (!separationHash) throw new Error('MVSEP ses ayırma işlem kimliği bulunamadı.');
@@ -153,7 +203,11 @@ export async function prepareMvsepBackground({
       await store.write(path, failed);
       return failed;
     }
-    if (result.status !== 'done') return job;
+    if (result.status !== 'done') return {
+      ...job,
+      phase: result.status === 'waiting' ? 'queued' : 'separating',
+      queuePosition: result.data?.current_order,
+    };
     const files = result.data?.files || [];
     const music = files.find((file) => /music/i.test(file.download || ''));
     const effects = files.find((file) => /effects|sfx|fx\b/i.test(file.download || ''));
