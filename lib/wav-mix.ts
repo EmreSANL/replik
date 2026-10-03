@@ -8,7 +8,9 @@ function readPcmWav(bytes: ArrayBuffer): PcmWav {
   let channels = 0;
   let sampleRate = 0;
   let bits = 0;
-  let samples: Int16Array | undefined;
+  let blockAlign = 0;
+  let dataStart = -1;
+  let dataSize = 0;
   for (let offset = 12; offset + 8 <= view.byteLength;) {
     const size = view.getUint32(offset + 4, true);
     const start = offset + 8;
@@ -18,16 +20,46 @@ function readPcmWav(bytes: ArrayBuffer): PcmWav {
       format = view.getUint16(start, true);
       channels = view.getUint16(start + 2, true);
       sampleRate = view.getUint32(start + 4, true);
+      blockAlign = view.getUint16(start + 12, true);
       bits = view.getUint16(start + 14, true);
-    } else if (id === 0x64617461) {
-      if (size % 2) throw new Error('MVSEP WAV örnekleri bozuk.');
-      samples = new Int16Array(size / 2);
-      for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(start + i * 2, true);
+      if (format === 0xfffe) {
+        // WAVE_FORMAT_EXTENSIBLE: the subtype GUID identifies PCM or IEEE float.
+        if (size < 40 || view.getUint16(start + 16, true) < 22 ||
+            view.getUint32(start + 28, false) !== 0x00001000 ||
+            view.getUint32(start + 32, false) !== 0x800000aa ||
+            view.getUint32(start + 36, false) !== 0x00389b71) {
+          throw new Error('MVSEP desteklenmeyen genişletilmiş WAV biçimi döndürdü.');
+        }
+        format = view.getUint32(start + 24, true);
+      }
+    } else if (id === 0x64617461 && dataStart < 0) {
+      dataStart = start;
+      dataSize = size;
     }
     offset = start + size + (size % 2);
   }
-  if (format !== 1 || bits !== 16 || ![1, 2].includes(channels) || !sampleRate || !samples?.length) {
-    throw new Error('MVSEP 16 bit PCM WAV dosyası döndürmedi.');
+  const sampleBytes = bits / 8;
+  if (!((format === 1 && [16, 24, 32].includes(bits)) ||
+        (format === 3 && [32, 64].includes(bits))) ||
+      ![1, 2].includes(channels) || !sampleRate ||
+      blockAlign !== channels * sampleBytes || dataStart < 0 ||
+      dataSize === 0 || dataSize % blockAlign !== 0) {
+    throw new Error(`MVSEP desteklenmeyen WAV biçimi döndürdü (kod ${format}, ${bits} bit, ${channels} kanal).`);
+  }
+  const samples = new Int16Array(dataSize / sampleBytes);
+  for (let i = 0; i < samples.length; i++) {
+    const offset = dataStart + i * sampleBytes;
+    if (format === 1 && bits === 16) samples[i] = view.getInt16(offset, true);
+    else if (format === 1 && bits === 24) {
+      const value = (view.getUint8(offset) | view.getUint8(offset + 1) << 8 |
+        view.getUint8(offset + 2) << 16) << 8 >> 8;
+      samples[i] = value >> 8;
+    } else if (format === 1) samples[i] = view.getInt32(offset, true) >> 16;
+    else {
+      const value = bits === 32 ? view.getFloat32(offset, true) : view.getFloat64(offset, true);
+      const clamped = Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0;
+      samples[i] = Math.round(clamped < 0 ? clamped * 32768 : clamped * 32767);
+    }
   }
   return { sampleRate, channels, samples };
 }
