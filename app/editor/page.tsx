@@ -1116,9 +1116,10 @@ export default function EditorPage() {
       audioPreparationRef.current?.controller.abort();
       setIsRemovingVocals(false);
       setIsUploadingToSupabase(false);
-      setInstrumentalUrl(sc.instrumental || '');
-      setAudioMode(sc.instrumental ? 'instrumental' : 'original');
-      if (!sc.instrumental && sc.video.includes('/storage/v1/object/public/videos/uploads/')) {
+      const oldMvsepAudio = Boolean(sc.instrumental?.includes('/mvsep-dnr-v3-scnet-v1_'));
+      setInstrumentalUrl(oldMvsepAudio ? '' : sc.instrumental || '');
+      setAudioMode(!oldMvsepAudio && sc.instrumental ? 'instrumental' : 'original');
+      if ((!sc.instrumental || oldMvsepAudio) && sc.video.includes('/storage/v1/object/public/videos/uploads/')) {
         void prepareBackground(sc.video, job);
       }
 

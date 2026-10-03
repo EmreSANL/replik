@@ -7,6 +7,6 @@
 5. [Replik düzeltme isteğini](https://github.com/EmreSANL/replik/pull/1) inceleyip `main` dalına birleştirin. Yeni `main` dağıtımının Production'da hazır olmasını bekleyin; ayar değişiklikleri eski dağıtımlara uygulanmaz.
 6. Editörde kısa bir video yükleyip ses ayırmanın sonuçlandığını deneyin; aynı video için tekrar tekrar iş açılmaz.
 
-Ücretsiz kayıtlı planın sınırı MVSEP'e göre 10 dakikalık / 100 MB dosya, günde 50 ayırma ve aynı anda tek iştir. Sıra yoğunluğunda işlem bekleyebilir. Uygulama DnR v3'ün tek SCNet modelini kullanır, konuşmayı ayırır ve müzik ile efekt dosyalarını birleştirerek sahneye kaydeder.
+Ücretsiz kayıtlı planın sınırı MVSEP'e göre 10 dakikalık / 100 MB dosya, günde 50 ayırma ve aynı anda tek iştir. Sıra yoğunluğunda işlem bekleyebilir. Uygulama önce DnR v3 ile konuşmayı ayırır ve müzik ile efektleri birleştirir. Ardından BS Roformer ile bu karışımdaki şarkı vokalini ayırıp yalnızca enstrümantal sonucu sahneye kaydeder. Bu iki MVSEP işi her yeni video için bir kez açılır; aynı video ve kayıtlı eski DnR sonucu yeniden kullanılır.
 
 Editörde video yüklendikten sonra ayırma otomatik başlar. Ayrı Music ve Effects dosyaları seçmek gerekmez. API anahtarı yoksa otomatik ayırma başlatılamaz; `MVSEP_API_KEY` yalnızca Vercel sunucu ortamında saklanmalıdır.
