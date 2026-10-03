@@ -350,6 +350,7 @@ export default function Studio({
 
   useEffect(() => {
     mounted.current = true;
+    const attempts = playbackAttempt;
     let refreshing = false;
     const refresh = async () => {
       if (refreshing) return;
@@ -371,7 +372,7 @@ export default function Studio({
     const t = setInterval(refresh, 1500);
     return () => {
       mounted.current = false;
-      playbackAttempt.current++;
+      attempts.current++;
       clearInterval(t);
       if (subtitleInterval.current) clearInterval(subtitleInterval.current);
       sources.current.forEach((s) => {
