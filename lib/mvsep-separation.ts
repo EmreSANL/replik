@@ -4,7 +4,7 @@ import { mixPcmWav } from './wav-mix';
 const API_BASE = 'https://de.mvsep.com/api';
 const ENGINE = 'mvsep-dnr-v3-scnet-v1';
 
-type MvsepFile = { download?: string; url?: string };
+type MvsepFile = { type?: string; download?: string; url?: string };
 type MvsepResult = {
   success?: boolean;
   status?: string;
@@ -209,8 +209,10 @@ export async function prepareMvsepBackground({
       queuePosition: result.data?.current_order,
     };
     const files = result.data?.files || [];
-    const music = files.find((file) => /music/i.test(file.download || ''));
-    const effects = files.find((file) => /effects|sfx|fx\b/i.test(file.download || ''));
+    const music = files.find((file) => file.type?.toLowerCase() === 'music') ||
+      files.find((file) => /_music\.wav$/i.test(file.download || ''));
+    const effects = files.find((file) => /^(effects|sfx)$/i.test(file.type || '')) ||
+      files.find((file) => /_(effects|sfx)\.wav$/i.test(file.download || ''));
     if (!music || !effects) throw new Error('MVSEP müzik ve efekt dosyalarını döndürmedi.');
     const [musicResponse, effectsResponse] = await Promise.all([
       fetcher(downloadUrl(music), { signal: AbortSignal.timeout(60000) }),
