@@ -24,6 +24,7 @@ import {
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
 import { scheduleBackgroundDucking } from '@/lib/dubbing-mix';
+import { startFinalMedia, isPlaybackPermissionError } from '@/lib/final-playback';
 import {
   decodeMediaAudioBuffer,
 } from '@/lib/vocal-remover';
@@ -156,6 +157,7 @@ export default function Studio({
     roomRequestVersion = useRef(0),
     sources = useRef<AudioBufferSourceNode[]>([]),
     seenPlay = useRef(0),
+    playbackAttempt = useRef(0),
     playStop = useRef<ReturnType<typeof setTimeout> | null>(null),
     exportStop = useRef<ReturnType<typeof setTimeout> | null>(null),
     exportRecorder = useRef<MediaRecorder | null>(null),
@@ -226,10 +228,6 @@ export default function Studio({
             .webkitAudioContext;
         ctx.current = new AudioCtx();
       }
-      if (ctx.current.state === 'suspended') {
-        await ctx.current.resume().catch(() => {});
-      }
-
       const instKey = `__scene_instrumental__:${scene.id}`;
       // Rooms only load the background already prepared and saved in the editor.
       if (!scene.instrumental) {
@@ -342,7 +340,11 @@ export default function Studio({
   }, [isMuted]);
 
   async function prepare() {
-    await loadAudio();
+    const loading = loadAudio();
+    // The ready button is a user gesture; unlock future synchronized playback
+    // without making file preparation wait on the browser's permission promise.
+    void ctx.current?.resume().catch(() => {});
+    await loading;
     await act('ready', { ready: !me.ready });
   }
 
@@ -369,6 +371,7 @@ export default function Studio({
     const t = setInterval(refresh, 1500);
     return () => {
       mounted.current = false;
+      playbackAttempt.current++;
       clearInterval(t);
       if (subtitleInterval.current) clearInterval(subtitleInterval.current);
       sources.current.forEach((s) => {
@@ -401,6 +404,7 @@ export default function Studio({
   }
 
   function stopPlayback() {
+    playbackAttempt.current++;
     sources.current.forEach((s) => {
       try {
         s.stop();
@@ -417,11 +421,13 @@ export default function Studio({
     setPlaying(false);
   }
 
-  async function playFinal(late = 0, destination?: AudioNode) {
+  async function playFinal(late = 0, destination?: AudioNode, userInitiated = true) {
     const v = video.current;
     if (!v) return;
     stopPlayback();
+    const attempt = playbackAttempt.current;
     setAutoplayPrompt(false);
+    setError('');
 
     try {
       if (!ctx.current || ctx.current.state === 'closed') {
@@ -431,14 +437,16 @@ export default function Studio({
             .webkitAudioContext;
         ctx.current = new AudioCtx();
       }
-      if (ctx.current.state === 'suspended') {
-        await ctx.current.resume().catch(() => {});
-      }
+      v.currentTime = scene.start + late;
+      // Start within the click, before loading/decoding can lose user activation.
+      await startFinalMedia(ctx.current, v, userInitiated);
+      if (attempt !== playbackAttempt.current || !mounted.current) return;
 
       if (!(await loadAudio())) {
-        setAutoplayPrompt(true);
+        if (attempt === playbackAttempt.current) stopPlayback();
         return;
       }
+      if (attempt !== playbackAttempt.current || !mounted.current) return;
 
       const audio = ctx.current;
 
@@ -458,11 +466,9 @@ export default function Studio({
 
       v.currentTime = scene.start + late;
       v.muted = true; // Video sound is silenced; players' dubbed tracks are heard
-
-      const playPromise = v.play();
-      if (playPromise !== undefined) {
-        await playPromise;
-      }
+      // Loading may outlast the muted preview, so ensure it is still playing.
+      await v.play();
+      if (attempt !== playbackAttempt.current || !mounted.current) return;
 
       const now = audio ? audio.currentTime : 0;
 
@@ -577,9 +583,14 @@ export default function Studio({
         Math.max(0, scene.duration - late) * 1000,
       );
     } catch (err) {
+      if (attempt !== playbackAttempt.current || !mounted.current) return;
       console.warn('playFinal error:', err);
-      setAutoplayPrompt(true);
-      setPlaying(false);
+      stopPlayback();
+      if (isPlaybackPermissionError(err)) {
+        setAutoplayPrompt(true);
+      } else {
+        setError(err instanceof Error ? err.message : 'Dublaj oynatılamadı. Tekrar dene.');
+      }
     }
   }
 
@@ -622,7 +633,7 @@ export default function Studio({
       seenPlay.current = targetPlayAt;
       clearInterval(tick);
       setCountdown(0);
-      void scheduledPlay(0);
+      void scheduledPlay(0, undefined, false);
     }, remaining);
 
     return () => {
