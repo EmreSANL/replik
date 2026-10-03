@@ -1,6 +1,9 @@
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import type { Cue, Room, Scene } from './scenes';
 import { scheduleBackgroundDucking } from './dubbing-mix';
+import { resumePlaybackAudio } from './final-playback';
+import { videoExportFormat, detectVideoExportFormat } from './video-export-format';
+import { seekExportVideo } from './video-export-seek';
 
 export interface ExportMp4Options {
   room: Room;
@@ -8,6 +11,7 @@ export interface ExportMp4Options {
   cues: Cue[];
   buffers: Map<string, AudioBuffer>;
   onProgress?: (percent: number, stage: string) => void;
+  audioContext?: AudioContext;
 }
 
 /**
@@ -149,6 +153,7 @@ export async function generateDubbedMp4Blob({
   cues,
   buffers,
   onProgress,
+  audioContext,
 }: ExportMp4Options): Promise<Blob> {
   onProgress?.(5, 'Dublaj sesleri birleştiriliyor...');
   const mixedAudioBuffer = await renderMixedDubbingAudio(scene, room, cues, buffers);
@@ -225,7 +230,12 @@ export async function generateDubbedMp4Blob({
     const mp4Mime = getSupportedMp4MimeType();
 
     // 1. YÖNTEM: Tarayıcı donanımsal MP4 MediaRecorder destekliyorsa veya WebCodecs ile MP4 Muxer
-    if (!mp4Mime && typeof window !== 'undefined' && 'VideoEncoder' in window) {
+    const videoConfig = { codec: 'avc1.42001f', width, height, bitrate: 3_500_000, framerate: 25 };
+    const audioConfig = { codec: 'mp4a.40.2', numberOfChannels: 2, sampleRate: mixedAudioBuffer.sampleRate, bitrate: 160_000 };
+    const codecsSupported = !mp4Mime && 'VideoEncoder' in window && 'AudioEncoder' in window &&
+      (await VideoEncoder.isConfigSupported(videoConfig).catch(() => ({ supported: false }))).supported &&
+      (await AudioEncoder.isConfigSupported(audioConfig).catch(() => ({ supported: false }))).supported;
+    if (codecsSupported) {
       // WebCodecs + mp4-muxer ile saf .mp4 üretimi (MediaRecorder video/mp4 desteklemeyen tarayıcılar için)
       const target = new ArrayBufferTarget();
       const hasAudioEncoder = 'AudioEncoder' in window;
@@ -281,19 +291,24 @@ export async function generateDubbedMp4Blob({
             interleaved[i * 2] = left[i];
             interleaved[i * 2 + 1] = right[i];
           }
-          const audioData = new AudioData({
-            format: 'f32',
-            sampleRate: mixedAudioBuffer.sampleRate,
-            numberOfFrames: left.length,
-            numberOfChannels: 2,
-            timestamp: 0,
-            data: interleaved,
-          });
-          audioEncoder.encode(audioData);
-          audioData.close();
+          // Feed bounded AAC packets instead of one scene-sized AudioData allocation.
+          for (let offset = 0; offset < left.length; offset += 1024) {
+            const frames = Math.min(1024, left.length - offset);
+            const audioData = new AudioData({
+              format: 'f32', sampleRate: mixedAudioBuffer.sampleRate,
+              numberOfFrames: frames, numberOfChannels: 2,
+              timestamp: Math.round(offset / mixedAudioBuffer.sampleRate * 1_000_000),
+              data: interleaved.subarray(offset * 2, (offset + frames) * 2),
+            });
+            audioEncoder.encode(audioData);
+            audioData.close();
+            if (audioEncoder.encodeQueueSize > 64) await audioEncoder.flush();
+          }
           await audioEncoder.flush();
+          audioEncoder.close();
         } catch (audioEncErr) {
-          console.warn('WebCodecs AAC fallback:', audioEncErr);
+          videoEncoder.close();
+          throw new Error(`Dublaj sesi videoya eklenemedi: ${(audioEncErr as Error).message}`);
         }
       }
 
@@ -301,15 +316,7 @@ export async function generateDubbedMp4Blob({
       const totalFrames = Math.max(1, Math.floor(scene.duration * fps));
       for (let f = 0; f < totalFrames; f++) {
         const t = scene.start + f / fps;
-        exportVid.currentTime = t;
-        await new Promise<void>((res) => {
-          const onSeek = () => {
-            exportVid.removeEventListener('seeked', onSeek);
-            res();
-          };
-          exportVid.addEventListener('seeked', onSeek);
-          setTimeout(onSeek, 80);
-        });
+        await seekExportVideo(exportVid, t);
         drawCurrentFrame();
         const frame = new VideoFrame(canvas, {
           timestamp: Math.round((f / fps) * 1_000_000),
@@ -317,6 +324,7 @@ export async function generateDubbedMp4Blob({
         });
         videoEncoder.encode(frame, { keyFrame: f % 25 === 0 });
         frame.close();
+        if (videoEncoder.encodeQueueSize > 8) await videoEncoder.flush();
         onProgress?.(
           Math.min(98, 20 + Math.round(((f + 1) / totalFrames) * 78)),
           `MP4 kareleri işleniyor (%${Math.round(((f + 1) / totalFrames) * 100)})...`,
@@ -324,6 +332,7 @@ export async function generateDubbedMp4Blob({
       }
 
       await videoEncoder.flush();
+      videoEncoder.close();
       muxer.finalize();
       const mp4Blob = new Blob([target.buffer], { type: 'video/mp4' });
       onProgress?.(100, 'MP4 Hazır!');
@@ -334,10 +343,9 @@ export async function generateDubbedMp4Blob({
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const exportAudioCtx = new AudioCtx();
-    if (exportAudioCtx.state === 'suspended') {
-      await exportAudioCtx.resume();
-    }
+    if (typeof MediaRecorder === 'undefined') throw new Error('Bu tarayıcı video indirmeyi desteklemiyor. Güncel bir tarayıcıyla tekrar dene.');
+    const exportAudioCtx = audioContext || new AudioCtx();
+    await resumePlaybackAudio(exportAudioCtx);
 
     const dest = exportAudioCtx.createMediaStreamDestination();
     const audioSource = exportAudioCtx.createBufferSource();
@@ -349,10 +357,11 @@ export async function generateDubbedMp4Blob({
 
     const chosenMime =
       mp4Mime ||
-      ['video/webm;codecs=h264,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((t) =>
+      ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'].find((t) =>
         MediaRecorder.isTypeSupported(t),
       ) ||
       '';
+    if (!chosenMime) throw new Error('Bu tarayıcı video oluşturmayı desteklemiyor. Güncel bir tarayıcıyla tekrar dene.');
 
     const recorder = new MediaRecorder(stream, {
       ...(chosenMime ? { mimeType: chosenMime } : {}),
@@ -365,15 +374,7 @@ export async function generateDubbedMp4Blob({
       if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
-    exportVid.currentTime = scene.start;
-    await new Promise<void>((res) => {
-      const onSeek = () => {
-        exportVid.removeEventListener('seeked', onSeek);
-        res();
-      };
-      exportVid.addEventListener('seeked', onSeek);
-      setTimeout(onSeek, 150);
-    });
+    await seekExportVideo(exportVid, scene.start);
 
     let rafId = 0;
     const renderLoop = () => {
@@ -386,7 +387,7 @@ export async function generateDubbedMp4Blob({
     const progressTimer = setInterval(() => {
       const elapsed = Date.now() - startWall;
       const pct = Math.min(98, 20 + Math.round((elapsed / durationMs) * 78));
-      onProgress?.(pct, `MP4 Kaydediliyor (%${Math.min(99, Math.round((elapsed / durationMs) * 100))})...`);
+      onProgress?.(pct, `Video kaydediliyor (%${Math.min(99, Math.round((elapsed / durationMs) * 100))})...`);
     }, 200);
 
     await new Promise<void>((resolve, reject) => {
@@ -394,21 +395,21 @@ export async function generateDubbedMp4Blob({
         clearInterval(progressTimer);
         cancelAnimationFrame(rafId);
         stream.getTracks().forEach((t) => t.stop());
-        void exportAudioCtx.close().catch(() => {});
+        if (!audioContext) void exportAudioCtx.close().catch(() => {});
         resolve();
       };
       recorder.onerror = (err) => {
         clearInterval(progressTimer);
         cancelAnimationFrame(rafId);
         stream.getTracks().forEach((t) => t.stop());
-        void exportAudioCtx.close().catch(() => {});
+        if (!audioContext) void exportAudioCtx.close().catch(() => {});
         reject(new Error(`Kayıt hatası: ${(err as unknown as Error)?.message || 'Bilinmeyen hata'}`));
       };
 
-      renderLoop();
-      recorder.start(250);
-      audioSource.start(0);
-      void exportVid.play().catch(() => {});
+      void exportVid.play().then(() => {
+        renderLoop();
+        recorder.start(250);
+        audioSource.start(0);
 
       setTimeout(() => {
         if (recorder.state === 'recording') {
@@ -419,10 +420,19 @@ export async function generateDubbedMp4Blob({
           recorder.stop();
         }
       }, durationMs);
+      }).catch((error) => {
+        clearInterval(progressTimer);
+        cancelAnimationFrame(rafId);
+        stream.getTracks().forEach((track) => track.stop());
+        if (!audioContext) void exportAudioCtx.close().catch(() => {});
+        reject(error);
+      });
     });
 
-    const finalBlob = new Blob(chunks, { type: 'video/mp4' });
-    onProgress?.(100, 'MP4 Hazır!');
+    const format = videoExportFormat(recorder.mimeType || chosenMime);
+    const finalBlob = new Blob(chunks, { type: format.contentType });
+    if (!finalBlob.size) throw new Error('Video dosyası boş oluşturuldu. Tekrar dene.');
+    onProgress?.(100, 'Video Hazır!');
     return finalBlob;
   } finally {
     exportVid.pause();
@@ -434,13 +444,31 @@ export async function generateDubbedMp4Blob({
   }
 }
 
-export async function exportDubbedMp4(options: ExportMp4Options): Promise<void> {
+export async function exportDubbedMp4(options: ExportMp4Options): Promise<string> {
   const blob = await generateDubbedMp4Blob(options);
-  triggerMp4Download(blob, `replik-${options.room.code}.mp4`);
+  const filename = `replik-${options.room.code}.${videoExportFormat(blob.type).extension}`;
+  triggerMp4Download(blob, filename);
+  return filename;
+}
+
+/** Already published videos remain downloadable even if old voice takes were deleted. */
+export async function downloadPublishedDub(videoUrl: string, code: string): Promise<string> {
+  const localUrl = await fetchCleanVideoBlobUrl(videoUrl);
+  try {
+    const response = await fetch(localUrl);
+    if (!response.ok) throw new Error('Yayınlanan video indirilemedi. Tekrar dene.');
+    const blob = await response.blob();
+    const format = await detectVideoExportFormat(blob);
+    const filename = `replik-${code}.${format.extension}`;
+    triggerMp4Download(new Blob([blob], { type: format.contentType }), filename);
+    return filename;
+  } finally {
+    if (localUrl !== videoUrl && localUrl.startsWith('blob:')) URL.revokeObjectURL(localUrl);
+  }
 }
 
 function triggerMp4Download(blob: Blob, filename: string) {
-  const safeName = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+  const safeName = filename;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.style.display = 'none';

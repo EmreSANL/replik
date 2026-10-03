@@ -9,6 +9,11 @@ function timed<T>(promise: Promise<T>, ms: number, error: Error): Promise<T> {
 }
 
 /** Invoke both browser APIs before yielding the click's user activation. */
+export function resumePlaybackAudio(audio: AudioContext, timeoutMs = 3000): Promise<void> {
+  return timed(audio.state === 'running' ? Promise.resolve() : audio.resume(), timeoutMs,
+    new DOMException('Tarayıcı ses izni bekliyor. İşlem düğmesine tekrar bas.', 'NotAllowedError'));
+}
+
 export async function startFinalMedia(
   audio: AudioContext,
   video: HTMLVideoElement,

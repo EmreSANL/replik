@@ -20,6 +20,7 @@ import {
   type Player,
   type ActivityItem,
 } from './scenes';
+import { videoExportFormat } from './video-export-format';
 
 export type PlayerWithToken = Player & {
   token: string;
@@ -720,7 +721,7 @@ export async function cleanupStaleUnpublishedRooms(): Promise<void> {
 
 /**
  * Dublajlanan MP4 videoyu Supabase Storage'a (`videos` bucket) yükler,
- * geçici ses parçalarını siler ve Supabase PostgreSQL (`public.published_dubs`) tablosuna kaydeder.
+ * Supabase PostgreSQL (`public.published_dubs`) tablosuna kaydeder; tekrar izleme ve indirme için ses parçalarını korur.
  */
 export async function publishRoomDubbingToSupabase(
   room: Room,
@@ -733,7 +734,9 @@ export async function publishRoomDubbingToSupabase(
 ): Promise<PublishedDub> {
   const user = await requireAuthenticatedUser();
   const cleanCode = room.code.toUpperCase().trim();
-  const fileName = `published/${user.id}/replik_${cleanCode}_${Date.now()}.mp4`;
+  if (!mp4Blob.size) throw new Error('Boş video yayınlanamaz. Videoyu tekrar oluştur.');
+  const format = videoExportFormat(mp4Blob.type);
+  const fileName = `published/${user.id}/replik_${cleanCode}_${Date.now()}.${format.extension}`;
 
   // 1. Birleştirilmiş MP4 videoyu Supabase Storage'a yükle
   const { data: uploadData, error: uploadError } = await supabase.storage
@@ -741,7 +744,7 @@ export async function publishRoomDubbingToSupabase(
     .upload(fileName, mp4Blob, {
       cacheControl: '31536000',
       upsert: false,
-      contentType: 'video/mp4',
+      contentType: format.contentType,
     });
 
   if (uploadError || !uploadData) {
@@ -751,7 +754,7 @@ export async function publishRoomDubbingToSupabase(
   const { data: pubUrlData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
   const videoUrl = pubUrlData.publicUrl;
   const now = Date.now();
-  const dubId = `${cleanCode}_${now}`;
+  const dubId = `${cleanCode}_${user.id}`;
 
   const newEntry: PublishedDub = {
     id: dubId,
@@ -788,23 +791,25 @@ export async function publishRoomDubbingToSupabase(
   );
 
   if (dbError) {
-    console.warn('published_dubs veritabanı kayıt uyarısı:', dbError);
+    // Only remove the new unpublished upload; keep every original voice recording.
+    await supabase.storage.from('videos').remove([uploadData.path]).catch(() => {});
+    throw new Error(`Dublaj akışa kaydedilemedi: ${dbError.message}. Ses kayıtların korunuyor; tekrar deneyebilirsin.`);
   }
 
-  // 3. Geçici parça ses dosyalarını (recordings/{code}/*) Supabase Storage'dan sil
-  await removeRoomStorageRecordings(cleanCode, room.recordings || []);
-
-  // 4. Odayı "published" olarak işaretle
+  // Preserve original tracks, including updates from other players, when marking the room.
   try {
-    await supabase
-      .from('game_rooms')
-      .update({
-        status: 'published',
-        recordings: [{ player: '__published_mp4__', segment: -1, url: videoUrl }],
-        updated_at: new Date().toISOString(),
-      })
-      .eq('code', cleanCode);
-  } catch {}
+    await updateGameRoom(cleanCode, async (row) => {
+      row.status = 'published';
+      row.recordings = [
+        ...(row.recordings || []).filter((recording) => recording.player !== '__published_mp4__'),
+        { player: '__published_mp4__', segment: -1, url: videoUrl },
+      ];
+      return true;
+    });
+  } catch (error) {
+    // The feed entry is already persisted. Do not misreport a successful publication.
+    console.warn('Dublaj yayınlandı; oda yayın durumu güncellenemedi:', error);
+  }
 
   return newEntry;
 }
@@ -1044,4 +1049,3 @@ export async function deletePublishedDubFromSupabase(
 
   return await getPublishedDubsFromSupabase();
 }
-

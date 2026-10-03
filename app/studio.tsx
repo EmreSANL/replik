@@ -24,7 +24,7 @@ import {
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
 import { scheduleBackgroundDucking } from '@/lib/dubbing-mix';
-import { startFinalMedia, isPlaybackPermissionError } from '@/lib/final-playback';
+import { startFinalMedia, isPlaybackPermissionError, resumePlaybackAudio } from '@/lib/final-playback';
 import {
   decodeMediaAudioBuffer,
 } from '@/lib/vocal-remover';
@@ -218,6 +218,16 @@ export default function Studio({
   }, [room.status, room.code, room.scene, me?.segments?.length]);
 
   // Final aşamasına geçildiğinde sesleri arka planda otomatik yükle
+  function getPlaybackAudioContext() {
+    if (!ctx.current || ctx.current.state === 'closed') {
+      const AudioCtx = window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      ctx.current = new AudioCtx();
+      masterGain.current = null;
+    }
+    return ctx.current;
+  }
+
   async function loadAudio(): Promise<boolean> {
     setAudioLoading(true);
     try {
@@ -693,7 +703,8 @@ export default function Studio({
 
     setPublishing(true);
     try {
-      const ok = await loadAudio();
+      const exportAudio = getPlaybackAudioContext();
+      const [ok] = await Promise.all([loadAudio(), resumePlaybackAudio(exportAudio)]);
       if (!ok) {
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
@@ -704,6 +715,7 @@ export default function Studio({
         scene,
         cues,
         buffers: buffers.current,
+        audioContext: exportAudio,
         onProgress: (pct) => {
           if (mounted.current) {
             setPublishProgress(Math.round(pct * 0.85));
@@ -733,7 +745,7 @@ export default function Studio({
         setPublishProgress(100);
         setIsPublished(true);
         isPublishedRef.current = true;
-        setNotice('Dublaj ana sayfada yayınlandı. Geçici kayıt parçaları temizlendi.');
+        setNotice('Dublaj akışta yayınlandı. Videoyu indirmeye ve tekrar izlemeye devam edebilirsin.');
       }
     } catch (e) {
       if (mounted.current) {
@@ -758,17 +770,26 @@ export default function Studio({
 
     setExporting(true);
     try {
-      const ok = await loadAudio();
+      const publishedVideo = room.recordings?.find((recording) => recording.player === '__published_mp4__');
+      if (publishedVideo?.url) {
+        const { downloadPublishedDub } = await import('@/lib/mp4-exporter');
+        const filename = await downloadPublishedDub(publishedVideo.url, room.code);
+        if (mounted.current) setNotice(`${filename} indirmesi başlatıldı.`);
+        return;
+      }
+      const exportAudio = getPlaybackAudioContext();
+      const [ok] = await Promise.all([loadAudio(), resumePlaybackAudio(exportAudio)]);
       if (!ok) {
         throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
       }
 
       const { exportDubbedMp4 } = await import('@/lib/mp4-exporter');
-      await exportDubbedMp4({
+      const filename = await exportDubbedMp4({
         room,
         scene,
         cues,
         buffers: buffers.current,
+        audioContext: exportAudio,
         onProgress: (pct) => {
           if (mounted.current) {
             setExportProgress(pct);
@@ -777,7 +798,7 @@ export default function Studio({
       });
 
       if (mounted.current) {
-        setNotice(`replik-${room.code}.mp4 başarıyla indirildi!`);
+        setNotice(`${filename} indirmesi başlatıldı.`);
         setTimeout(() => {
           if (mounted.current) setNotice('');
         }, 4000);
@@ -1847,12 +1868,12 @@ export default function Studio({
                 {exporting ? (
                   <>
                     <Loader2 size={17} className="spin-icon" />
-                    MP4 Hazırlanıyor… %{exportProgress}
+                    Video Hazırlanıyor… %{exportProgress}
                   </>
                 ) : (
                   <>
                     <Download size={17} />
-                    Dublajı MP4 olarak indir
+                    Dublaj videosunu indir
                   </>
                 )}
               </button>
