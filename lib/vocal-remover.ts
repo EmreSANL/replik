@@ -52,22 +52,45 @@ export function audioBufferToWav(
 
 async function fetchMediaBlob(source: File | Blob | string): Promise<Blob> {
   if (typeof source !== 'string') return source;
+  let lastError: Error = new Error('Ses dosyası indirilemedi.');
+  const readResponse = async (response: Response) => {
+    if (!response.ok) throw new Error(`Ses dosyası indirilemedi (HTTP ${response.status}).`);
+    const type = response.headers.get('content-type') || '';
+    if (/text\/html|application\/json/i.test(type)) throw new Error('Ses dosyası yerine bir hata sayfası alındı.');
+    const bytes = await response.arrayBuffer();
+    if (!bytes.byteLength) throw new Error('Ses dosyası boş.');
+    return new Blob([bytes], { type });
+  };
   try {
-    const response = await fetch(source, { mode: 'cors' });
-    if (response.ok) return await response.blob();
-  } catch {
+    return await readResponse(await fetch(source, { mode: 'cors', signal: AbortSignal.timeout(60000) }));
+  } catch (error) {
+    lastError = error instanceof Error ? error : lastError;
     // Fallback to proxy if direct CORS fails
   }
   if (!source.startsWith('blob:') && !source.startsWith('data:')) {
-    const proxyRes = await fetch(
-      `/api/video-proxy?url=${encodeURIComponent(source)}`,
-    );
-    if (proxyRes.ok) return await proxyRes.blob();
+    try {
+      return await readResponse(await fetch(`/api/video-proxy?url=${encodeURIComponent(source)}`, {
+        signal: AbortSignal.timeout(60000),
+      }));
+    } catch (error) {
+      lastError = error instanceof Error ? error : lastError;
+    }
   }
-  throw new Error('Video dosyası okunamadı.');
+  throw lastError;
 }
 
-export async function decodeMediaAudioBuffer(
+const audioDecodesInFlight = new Map<string, Promise<AudioBuffer>>();
+
+export function decodeMediaAudioBuffer(source: File | Blob | string): Promise<AudioBuffer> {
+  if (typeof source !== 'string') return decodeMediaAudio(source);
+  const existing = audioDecodesInFlight.get(source);
+  if (existing) return existing;
+  const pending = decodeMediaAudio(source).finally(() => audioDecodesInFlight.delete(source));
+  audioDecodesInFlight.set(source, pending);
+  return pending;
+}
+
+async function decodeMediaAudio(
   source: File | Blob | string,
 ): Promise<AudioBuffer> {
   const media = await fetchMediaBlob(source);
