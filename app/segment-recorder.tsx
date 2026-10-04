@@ -14,6 +14,7 @@ import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
 import { prepareVoiceRecording } from '@/lib/voice-recording';
 import { startSegmentReplay, syncSegmentReplay } from '@/lib/segment-playback';
+import { segmentRecordingProgress } from '@/lib/segment-recording';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 
@@ -221,7 +222,7 @@ export default function SegmentRecorder({
   }
   const handleTime = useEffectEvent(() => {
     const v = video.current;
-    if (!v) return;
+    if (!v || recording) return;
     setPosition(v.currentTime - scene.start);
     if (previewEnd.current !== null && v.currentTime >= previewEnd.current) {
       stop();
@@ -652,23 +653,23 @@ export default function SegmentRecorder({
         })();
       };
       recorder.current = r;
-      // Orijinal konuşma kapalıdır; yalnızca ayrıştırılmış müzik ve efektler duyulur.
+      // Hold the cue's opening frame while microphone and backing audio continue.
+      v.pause();
       v.muted = true;
+      previewEnd.current = null;
       if (backing) backing.volume = 1;
+      const recStartedAt = performance.now();
       r.start(200);
-      await Promise.all([
-        v.play(),
-        backing && (backing.src || readyInstrumentalUrl) ? backing.play().catch(() => {}) : Promise.resolve(),
-      ]);
+      if (backing && (backing.src || readyInstrumentalUrl)) {
+        void backing.play().catch(() => {});
+      }
       if (!mounted.current) return;
       setRecording(true);
       setPosition(current.start);
-      previewEnd.current = scene.start + end;
-      const recStartedAt = Date.now();
-      const clipDuration = Math.max(0.25, end - current.start);
       timer.current = setInterval(() => {
-        const elapsed = (Date.now() - recStartedAt) / 1000;
-        setPosition(Math.min(end, v.currentTime - scene.start));
+        const elapsed = (performance.now() - recStartedAt) / 1000;
+        const progress = segmentRecordingProgress(current.start, end, elapsed);
+        setPosition(progress.position);
         if (analyser && timeDomain) {
           analyser.getByteTimeDomainData(timeDomain);
           let maxDev = 0;
@@ -676,7 +677,7 @@ export default function SegmentRecorder({
             const dev = Math.abs(timeDomain[i] - 128) / 128;
             if (dev > maxDev) maxDev = dev;
           }
-          const barIdx = Math.min(63, Math.max(0, Math.floor((elapsed / clipDuration) * 64)));
+          const barIdx = Math.min(63, Math.floor(progress.fraction * 64));
           const boosted = Math.max(0.28, Math.min(0.96, Math.pow(maxDev * 4.2, 0.52)));
           for (let k = 0; k <= barIdx; k++) {
             if (liveBars[k] === 0) {
@@ -686,19 +687,12 @@ export default function SegmentRecorder({
           liveBars[barIdx] = Math.max(liveBars[barIdx], boosted);
           setWaves((w) => ({ ...w, [id]: [...liveBars] }));
         }
-        if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - v.currentTime) > 0.18) {
-          backing.currentTime = v.currentTime;
+        const backingTime = scene.start + progress.position;
+        if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - backingTime) > 0.18) {
+          backing.currentTime = backingTime;
         }
-        if (
-          v.currentTime - scene.start >= end - 0.05 ||
-          v.ended ||
-          v.paused ||
-          elapsed >= clipDuration + 0.15
-        ) {
+        if (progress.complete) {
           stop();
-          if (Number.isFinite(v.duration) && v.duration > 0) {
-            v.currentTime = Math.min(v.duration, scene.start + end);
-          }
         }
       }, 25);
     } catch (e) {
