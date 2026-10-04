@@ -5,6 +5,7 @@ import { resumePlaybackAudio } from './final-playback';
 import { videoExportFormat, detectVideoExportFormat } from './video-export-format';
 import { seekExportVideo } from './video-export-seek';
 import { finalizeVideoContainer } from './video-export-container';
+import { preparePublishedVideo } from './published-video';
 
 export interface ExportMp4Options {
   room: Room;
@@ -456,18 +457,11 @@ export async function exportDubbedMp4(options: ExportMp4Options): Promise<string
 
 /** Already published videos remain downloadable even if old voice takes were deleted. */
 export async function downloadPublishedDub(videoUrl: string, code: string): Promise<string> {
-  const localUrl = await fetchCleanVideoBlobUrl(videoUrl);
-  try {
-    const response = await fetch(localUrl);
-    if (!response.ok) throw new Error('Yayınlanan video indirilemedi. Tekrar dene.');
-    const blob = await finalizeVideoContainer(await response.blob());
-    const format = await detectVideoExportFormat(blob);
-    const filename = `replik-${code}.${format.extension}`;
-    triggerMp4Download(new Blob([blob], { type: format.contentType }), filename);
-    return filename;
-  } finally {
-    if (localUrl !== videoUrl && localUrl.startsWith('blob:')) URL.revokeObjectURL(localUrl);
-  }
+  const blob = await preparePublishedVideo(videoUrl);
+  const format = await detectVideoExportFormat(blob);
+  const filename = `replik-${code}.${format.extension}`;
+  triggerMp4Download(new Blob([blob], { type: format.contentType }), filename);
+  return filename;
 }
 
 function triggerMp4Download(blob: Blob, filename: string) {
