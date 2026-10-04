@@ -96,3 +96,27 @@ export function mixPcmWav(music: ArrayBuffer, effects: ArrayBuffer): Blob {
   }
   return new Blob([bytes], { type: 'audio/wav' });
 }
+
+/** Decode PCM WAV without depending on a browser's installed media decoders. */
+export function decodePcmWavAudioBuffer(bytes: ArrayBuffer, context: Pick<BaseAudioContext, 'createBuffer'>): AudioBuffer {
+  const pcm = readPcmWav(bytes);
+  const frames = pcm.samples.length / pcm.channels;
+  const output = context.createBuffer(pcm.channels, frames, pcm.sampleRate);
+  for (let channel = 0; channel < pcm.channels; channel++) {
+    const values = output.getChannelData(channel);
+    for (let frame = 0; frame < frames; frame++) {
+      values[frame] = pcm.samples[frame * pcm.channels + channel] / 32768;
+    }
+  }
+  return output;
+}
+
+export async function decodeMediaAudioBytes(bytes: ArrayBuffer, context: Pick<BaseAudioContext, 'createBuffer' | 'decodeAudioData'>): Promise<AudioBuffer> {
+  try {
+    return await context.decodeAudioData(bytes.slice(0));
+  } catch (error) {
+    const header = new DataView(bytes);
+    if (bytes.byteLength < 12 || header.getUint32(0, false) !== 0x52494646 || header.getUint32(8, false) !== 0x57415645) throw error;
+    return decodePcmWavAudioBuffer(bytes, context);
+  }
+}
