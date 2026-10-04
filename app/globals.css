@@ -5419,8 +5419,6 @@ audio {
 .dub-video-backdrop { position: absolute; inset: 0; background-position: center; background-size: cover; filter: blur(28px) brightness(.27); transform: scale(1.15); }
 .dub-video-shell video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
 .dub-video-shell::after { display: none; }
-.dub-video-status { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; color: #f5f5eb; background: #141414bb; }
-.dub-video-status button { border: 0; border-radius: 8px; padding: 10px 16px; background: #F5E636; color: #111; font-weight: 700; }
 .dub-video-controls { position: absolute; z-index: 2; right: 12px; bottom: 12px; display: flex; gap: 6px; pointer-events: auto; }
 .dub-video-controls button, .dub-big-play { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #ffffff55; border-radius: 50%; background: #0e0e0eaa; color: #fff; }
 .dub-big-play { position: absolute; z-index: 2; top: 50%; left: 50%; width: 65px; height: 65px; transform: translate(-50%, -50%); background: var(--bbank-yellow); color: #111; border: none; }
@@ -5434,6 +5432,13 @@ audio {
 .dub-action-rail button:hover { background: #383833; transform: translateY(-2px); }
 .dub-action-rail button.is-liked { background: var(--bbank-coral); color: #111; }
 .dub-action-rail button span { position: absolute; bottom: -18px; width: max-content; font-size: 11px; }
+.dub-download-menu { position: fixed; margin: 0; z-index: 1000; max-width: 292px; padding: 12px; border: 1px solid #44443c; border-radius: 12px; background: #20201b; color: #f5f5eb; box-shadow: 0 10px 40px #0009; }
+.dub-download-menu button { display: inline-flex; align-items: center; gap: 8px; padding: 10px; border: 0; border-radius: 8px; background: #F5E636; color: #111; font-weight: 800; }
+.dub-download-menu .dub-download-close { margin-left: 4px; background: transparent; color: #f5f5eb; }
+.dub-download-menu output { display: block; margin-top: 10px; font-size: 13px; }
+.dub-download-error { position: absolute; right: 8px; bottom: 8px; max-width: 240px; padding: 12px; border-radius: 8px; background: #20201b; color: #f5f5eb; font-size: 13px; }
+.dub-download-spinner { animation: dub-download-spin 1s linear infinite; }
+@keyframes dub-download-spin { to { transform: rotate(360deg); } }
 .dub-feed-navigation { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 10; pointer-events: none; }
 .dub-feed-navigation > span { display: none; }
 .dub-feed-navigation > div { display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
