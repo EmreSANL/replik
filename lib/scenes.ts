@@ -322,6 +322,28 @@ export function getPlayerCharacterMap(
   return roleToPlayer;
 }
 
+// Draw once at game start and persist these roles. Cue ownership must stay
+// deterministic when other players load the room or a recording is submitted.
+export function randomPlayerRoles(
+  sceneId: number,
+  playerCount: number,
+  customList?: Scene[],
+  random: () => number = Math.random,
+): number[] {
+  const roles = Array.from(new Set(sceneCues(sceneId, customList).map(
+    cue => typeof cue.roleIndex === 'number' && cue.roleIndex >= 0 ? cue.roleIndex : 0,
+  )));
+  // Keep unique placeholder slots when there are fewer characters than players.
+  for (let role = 0; roles.length < playerCount; role++) {
+    if (!roles.includes(role)) roles.push(role);
+  }
+  for (let index = roles.length - 1; index > 0; index--) {
+    const other = Math.floor(random() * (index + 1));
+    [roles[index], roles[other]] = [roles[other], roles[index]];
+  }
+  return roles.slice(0, playerCount);
+}
+
 export function playerCues(
   sceneId: number,
   playerIndex: number,
@@ -355,4 +377,3 @@ export function timeLabel(seconds: number) {
   const secs = totalSec % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
-
