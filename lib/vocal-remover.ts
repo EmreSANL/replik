@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { decodeMediaAudioBytes } from './wav-mix';
 
 export type VocalRemovalProgress = (stage: string) => void;
 
@@ -80,7 +81,7 @@ export async function decodeMediaAudioBuffer(
   const context = new AudioContextClass();
   try {
     const arrayBuf = await media.arrayBuffer();
-    const decoded = await context.decodeAudioData(arrayBuf.slice(0));
+    const decoded = await decodeMediaAudioBytes(arrayBuf, context);
     if (!decoded.length) throw new Error('Videoda ses bulunamadı.');
     return decoded;
   } finally {

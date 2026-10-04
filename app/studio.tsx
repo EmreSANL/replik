@@ -24,6 +24,7 @@ import {
 import SegmentRecorder from './segment-recorder';
 import { formatTimecode } from '@/lib/timecode';
 import { scheduleBackgroundDucking } from '@/lib/dubbing-mix';
+import { decodeMediaAudioBytes } from '@/lib/wav-mix';
 import { startFinalMedia, isPlaybackPermissionError, resumePlaybackAudio } from '@/lib/final-playback';
 import {
   decodeMediaAudioBuffer,
@@ -228,7 +229,7 @@ export default function Studio({
     return ctx.current;
   }
 
-  async function loadAudio(): Promise<boolean> {
+  async function loadAudio(): Promise<{ ok: true } | { ok: false; error: Error }> {
     setAudioLoading(true);
     try {
       if (!ctx.current || ctx.current.state === 'closed') {
@@ -250,12 +251,13 @@ export default function Studio({
       }
 
       // 1. Öncelikle odadaki tüm kayıtları (room.recordings) doğrudan önbelleğe al
-      const directRecs = (room.recordings || []).map((rec) => ({
+      const directRecs = (room.recordings || []).filter((rec) => rec.player !== '__published_mp4__').map((rec) => ({
         key: `${rec.player}:${rec.segment}`,
         cueKey: `cue:${rec.segment}`,
         segment: rec.segment,
         playerId: rec.player,
         directUrl: rec.url,
+        required: true,
         fallbackUrl: `${api}/audio/${rec.player}?segment=${rec.segment}`,
       }));
 
@@ -268,6 +270,7 @@ export default function Studio({
               segment: id,
               playerId: p.id,
               directUrl: null as string | null,
+              required: true,
               fallbackUrl: `${api}/audio/${p.id}?segment=${id}`,
             }))
           : [
@@ -277,6 +280,7 @@ export default function Studio({
                 segment: null as number | null,
                 playerId: p.id,
                 directUrl: null as string | null,
+                required: cues.length === 0 && p.audio,
                 fallbackUrl: `${api}/audio/${p.id}`,
               },
             ],
@@ -307,10 +311,10 @@ export default function Studio({
                   ? {}
                   : { Authorization: `Bearer ${session.token}` },
             });
-            if (!r.ok) return;
+            if (!r.ok) throw new Error(`Ses dosyası yüklenemedi (HTTP ${r.status}).`);
             const buf = await r.arrayBuffer();
-            if (buf.byteLength === 0) return;
-            const decoded = await ctx.current!.decodeAudioData(buf);
+            if (buf.byteLength === 0) throw new Error('Ses dosyası boş.');
+            const decoded = await decodeMediaAudioBytes(buf, ctx.current!);
             buffers.current.set(track.key, decoded);
             bufferUrls.current.set(track.key, audioUrl);
             if (track.cueKey) {
@@ -318,16 +322,21 @@ export default function Studio({
             }
           } catch (err) {
             console.warn('Track load warning:', track.key, err);
+            if (track.required) {
+              const player = room.players.find((item) => item.id === track.playerId);
+              throw new Error(`${player?.name || 'Oyuncu'} ses kaydı yüklenemedi: ${err instanceof Error ? err.message : 'Dosya okunamadı.'}`);
+            }
           }
         }),
       );
       setAudioLoaded(true);
-      return true;
+      setError('');
+      return { ok: true };
     } catch (e) {
       console.warn('Audio preload warning:', e);
       setAudioLoaded(false);
       setError((e as Error).message || 'Arka plan sesi yüklenemedi.');
-      return false;
+      return { ok: false, error: e instanceof Error ? e : new Error('Arka plan sesi yüklenemedi.') };
     } finally {
       setAudioLoading(false);
     }
@@ -338,7 +347,7 @@ export default function Studio({
     if (room.status === 'final') {
       void loadAudio();
     }
-  }, [room.status, recordingsVersion]);
+  }, [room.status, recordingsVersion, scene.id, scene.instrumental]);
 
   useEffect(() => {
     if (masterGain.current && ctx.current) {
@@ -453,7 +462,8 @@ export default function Studio({
       await startFinalMedia(ctx.current, v, userInitiated);
       if (attempt !== playbackAttempt.current || !mounted.current) return;
 
-      if (!(await loadAudio())) {
+      const loaded = await loadAudio();
+      if (!loaded.ok) {
         if (attempt === playbackAttempt.current) stopPlayback();
         return;
       }
@@ -705,8 +715,8 @@ export default function Studio({
     try {
       const exportAudio = getPlaybackAudioContext();
       const [ok] = await Promise.all([loadAudio(), resumePlaybackAudio(exportAudio)]);
-      if (!ok) {
-        throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
+      if (!ok.ok) {
+        throw ok.error;
       }
 
       const { generateDubbedMp4Blob } = await import('@/lib/mp4-exporter');
@@ -779,8 +789,8 @@ export default function Studio({
       }
       const exportAudio = getPlaybackAudioContext();
       const [ok] = await Promise.all([loadAudio(), resumePlaybackAudio(exportAudio)]);
-      if (!ok) {
-        throw new Error('Ses dosyaları yüklenemedi. Lütfen "Sesleri Tekrar Yükle" butonuna basıp tekrar deneyin.');
+      if (!ok.ok) {
+        throw ok.error;
       }
 
       const { exportDubbedMp4 } = await import('@/lib/mp4-exporter');
