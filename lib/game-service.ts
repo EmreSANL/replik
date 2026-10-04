@@ -14,7 +14,7 @@ import {
   getSceneById,
   getCustomScenes,
   playerCues,
-  getPlayerCharacterMap,
+  randomPlayerRoles,
   type Scene,
   type Room,
   type Player,
@@ -421,34 +421,15 @@ export async function executeGameRoomAction(
         throw new Error('Başlamadan önce odadaki tüm oyuncular hazır olmalı.');
       }
 
-      // 1 Karakter = 1 Oyuncu kuralına göre her oyuncuya ana karakterini ata
-      const remoteScenesForStart = await getScenesFromSupabase().catch(() => []);
-      const customListForStart =
-        remoteScenesForStart.length > 0 ? remoteScenesForStart : undefined;
-      const initialPrefs = row.players.map((p) => p.role);
-      const charToPlayerMap = getPlayerCharacterMap(
+      // Draw fresh roles for every round, independently of lobby join order.
+      const assignedRoles = randomPlayerRoles(
         row.scene,
         row.players.length,
-        customListForStart,
-        initialPrefs,
+        [preparedScene],
       );
 
-      const usedRoles = new Set<number>();
       row.players.forEach((p, pIdx) => {
-        // Bu oyuncuya atanan karakterlerden ilkini ana rolü olarak kaydet
-        let assignedRole = -1;
-        charToPlayerMap.forEach((ownerIdx, roleIdx) => {
-          if (ownerIdx === pIdx && assignedRole === -1 && !usedRoles.has(roleIdx)) {
-            assignedRole = roleIdx;
-          }
-        });
-        if (assignedRole === -1) {
-          let fallback = 0;
-          while (usedRoles.has(fallback)) fallback++;
-          assignedRole = fallback;
-        }
-        p.role = assignedRole;
-        usedRoles.add(assignedRole);
+        p.role = assignedRoles[pIdx];
         // Kayıt aşaması için hazır durumunu ve segmentleri sıfırla
         p.ready = 0;
         p.audio = false;
