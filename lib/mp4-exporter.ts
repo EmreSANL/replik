@@ -4,6 +4,7 @@ import { scheduleBackgroundDucking } from './dubbing-mix';
 import { resumePlaybackAudio } from './final-playback';
 import { videoExportFormat, detectVideoExportFormat } from './video-export-format';
 import { seekExportVideo } from './video-export-seek';
+import { finalizeVideoContainer } from './video-export-container';
 
 export interface ExportMp4Options {
   room: Room;
@@ -432,8 +433,10 @@ export async function generateDubbedMp4Blob({
     const format = videoExportFormat(recorder.mimeType || chosenMime);
     const finalBlob = new Blob(chunks, { type: format.contentType });
     if (!finalBlob.size) throw new Error('Video dosyası boş oluşturuldu. Tekrar dene.');
+    onProgress?.(99, 'Videonun süre ve sarma bilgileri hazırlanıyor...');
+    const seekableBlob = await finalizeVideoContainer(finalBlob);
     onProgress?.(100, 'Video Hazır!');
-    return finalBlob;
+    return seekableBlob;
   } finally {
     exportVid.pause();
     exportVid.removeAttribute('src');
@@ -457,7 +460,7 @@ export async function downloadPublishedDub(videoUrl: string, code: string): Prom
   try {
     const response = await fetch(localUrl);
     if (!response.ok) throw new Error('Yayınlanan video indirilemedi. Tekrar dene.');
-    const blob = await response.blob();
+    const blob = await finalizeVideoContainer(await response.blob());
     const format = await detectVideoExportFormat(blob);
     const filename = `replik-${code}.${format.extension}`;
     triggerMp4Download(new Blob([blob], { type: format.contentType }), filename);
