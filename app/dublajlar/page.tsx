@@ -32,6 +32,7 @@ import {
 import { useAuth } from '@/components/auth-provider';
 import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
 import { ReplikSiteHeader } from '@/components/replik-site-header';
+import { FeedVideoDownload } from '@/components/feed-video-download';
 
 type SortBy = 'latest' | 'popular' | 'discussed' | 'liked';
 const sortTabs: { id: SortBy; label: string }[] = [
@@ -70,6 +71,8 @@ export default function DublajlarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedInView, setFeedInView] = useState(false);
+  const [downloadMenu, setDownloadMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const closeDownloadMenu = useCallback(() => setDownloadMenu(null), []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
@@ -180,7 +183,7 @@ export default function DublajlarPage() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement) return;
       if (e.key === 'ArrowDown' || e.key === ' ') {
         e.preventDefault();
         if (activeIndex < visibleDubs.length - 1) scrollTo(activeIndex + 1);
@@ -424,6 +427,13 @@ export default function DublajlarPage() {
                             else videoRefs.current.delete(dub.id);
                           }}
                           src={dub.videoUrl}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            setDownloadMenu({ id: dub.id,
+                              x: Math.max(8, Math.min(event.clientX || rect.left + 20, window.innerWidth - 300)),
+                              y: Math.max(8, Math.min(event.clientY || rect.top + 20, window.innerHeight - 130)) });
+                          }}
                           poster={dub.posterUrl || undefined}
                           muted={muted}
                           playsInline
@@ -517,6 +527,8 @@ export default function DublajlarPage() {
                             {copiedId === dub.id ? 'Kopyalandı' : 'Paylaş'}
                           </span>
                         </button>
+                        <FeedVideoDownload source={dub.videoUrl} code={dub.roomCode}
+                          menu={downloadMenu?.id === dub.id ? downloadMenu : null} onClose={closeDownloadMenu} />
                         {isOwner && (
                           <button
                             type="button"

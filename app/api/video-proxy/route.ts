@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
+  const range = req.headers.get('range');
+  if (range) {
+    const match = /^bytes=(\d+)-(\d+)$/.exec(range);
+    if (!match || !Number.isSafeInteger(Number(match[2])) || Number(match[2]) < Number(match[1])
+      || Number(match[2]) - Number(match[1]) + 1 > 3 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Invalid video range' }, { status: 400 });
+    }
+  }
   const url = req.nextUrl.searchParams.get('url');
   if (!url) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
@@ -28,6 +36,7 @@ export async function GET(req: NextRequest) {
     const upstream = await fetch(parsedUrl.toString(), {
       headers: {
         Accept: 'video/*,audio/*;q=0.8',
+        ...(range ? { Range: range } : {}),
       },
     });
 
@@ -39,14 +48,23 @@ export async function GET(req: NextRequest) {
     }
 
     const contentType = upstream.headers.get('content-type') || 'video/mp4';
+    if (range && upstream.status !== 206 && Number(upstream.headers.get('content-length')) > 3 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Upstream does not support bounded video reads' }, { status: 502 });
+    }
     const arrayBuffer = await upstream.arrayBuffer();
+    if (range && arrayBuffer.byteLength > 3 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Upstream video range is too large' }, { status: 502 });
+    }
 
     return new NextResponse(arrayBuffer, {
-      status: 200,
+      status: upstream.status === 206 ? 206 : 200,
       headers: {
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': range ? 'no-store' : 'public, max-age=3600',
+        'Vary': 'Range',
+        ...(upstream.headers.get('content-range') ? { 'Content-Range': upstream.headers.get('content-range')! } : {}),
+        'Accept-Ranges': 'bytes',
       },
     });
   } catch (err) {
