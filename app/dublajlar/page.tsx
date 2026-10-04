@@ -65,6 +65,13 @@ export default function DublajlarPage() {
   );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [muted, setMuted] = useState(true);
+  const [volume, setVolume] = useState(100);
+  const lastAudibleVolume = useRef(100);
+  const audibleVolume = muted ? 0 : volume;
+  const toggleMute = useCallback(() => {
+    if (volume === 0) setVolume(lastAudibleVolume.current);
+    setMuted(current => !current);
+  }, [volume]);
   const [pausedId, setPausedId] = useState<string | null>(null);
   const [commentsId, setCommentsId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -163,6 +170,12 @@ export default function DublajlarPage() {
     };
   }, [visibleDubs.length]);
   useEffect(() => {
+    videoRefs.current.forEach(video => {
+      video.volume = volume / 100;
+      video.muted = muted;
+    });
+  }, [volume, muted, visibleDubs]);
+  useEffect(() => {
     videoRefs.current.forEach((video, id) => {
       video.muted = muted;
       if (
@@ -191,12 +204,12 @@ export default function DublajlarPage() {
         e.preventDefault();
         if (activeIndex > 0) scrollTo(activeIndex - 1);
       } else if (e.key === 'm' || e.key === 'M') {
-        setMuted((current) => !current);
+        toggleMute();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeIndex, visibleDubs.length]);
+  }, [activeIndex, visibleDubs.length, toggleMute]);
   const commentsDub = dubs.find((dub) => dub.id === commentsId);
   const totalLikes = dubs.reduce((sum, dub) => sum + (dub.likes || 0), 0);
 
@@ -479,17 +492,29 @@ export default function DublajlarPage() {
                               <Pause size={18} fill="currentColor" />
                             )}
                           </button>
-                          <button
-                            type="button"
-                            aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-                            onClick={() => setMuted((current) => !current)}
-                          >
-                            {muted ? (
-                              <VolumeX size={20} />
-                            ) : (
-                              <Volume2 size={20} />
-                            )}
-                          </button>
+                          <div className="dub-volume-control">
+                            <button
+                              type="button"
+                              aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+                              onClick={toggleMute}
+                            >
+                              {muted ? (
+                                <VolumeX size={20} />
+                              ) : (
+                                <Volume2 size={20} />
+                              )}
+                            </button>
+                            <input type="range" min={0} max={100} step={1}
+                              aria-label="Ses seviyesi" aria-valuetext={`${audibleVolume}%`}
+                              value={audibleVolume}
+                              onChange={event => {
+                                const nextVolume = Number(event.currentTarget.value);
+                                if (nextVolume > 0) lastAudibleVolume.current = nextVolume;
+                                setVolume(nextVolume);
+                                setMuted(nextVolume === 0);
+                              }} />
+                            <output className="dub-volume-value" aria-hidden="true">{audibleVolume}%</output>
+                          </div>
                         </div>
                       </div>
                       <div className="dub-action-rail">
