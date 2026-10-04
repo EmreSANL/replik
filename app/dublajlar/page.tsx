@@ -32,7 +32,6 @@ import {
 import { useAuth } from '@/components/auth-provider';
 import { ReplikLoadingScreen } from '@/components/replik-loading-screen';
 import { ReplikSiteHeader } from '@/components/replik-site-header';
-import { PreparedFeedVideo } from '@/components/prepared-feed-video';
 
 type SortBy = 'latest' | 'popular' | 'discussed' | 'liked';
 const sortTabs: { id: SortBy; label: string }[] = [
@@ -71,8 +70,6 @@ export default function DublajlarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedInView, setFeedInView] = useState(false);
-  const [preparedVersion, setPreparedVersion] = useState(0);
-  const onVideoPrepared = useCallback(() => setPreparedVersion(value => value + 1), []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
@@ -165,7 +162,6 @@ export default function DublajlarPage() {
   useEffect(() => {
     videoRefs.current.forEach((video, id) => {
       video.muted = muted;
-      if (!video.getAttribute('src')) return;
       if (
         !feedInView ||
         id !== currentActiveId ||
@@ -175,7 +171,7 @@ export default function DublajlarPage() {
         video.pause();
       else void video.play().catch(() => setPausedId(id));
     });
-  }, [currentActiveId, muted, pausedId, commentsId, visibleDubs, feedInView, preparedVersion]);
+  }, [currentActiveId, muted, pausedId, commentsId, visibleDubs, feedInView]);
 
   const activeIndex = Math.max(
     0,
@@ -421,15 +417,13 @@ export default function DublajlarPage() {
                           />
                         )}
                         {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                        <PreparedFeedVideo
-                          videoRef={(element) => {
+                        <video
+                          ref={(element) => {
                             if (element)
                               videoRefs.current.set(dub.id, element);
                             else videoRefs.current.delete(dub.id);
                           }}
-                          source={dub.videoUrl}
-                          prepare={Math.abs(index - activeIndex) <= 1}
-                          onPrepared={onVideoPrepared}
+                          src={dub.videoUrl}
                           poster={dub.posterUrl || undefined}
                           muted={muted}
                           playsInline
