@@ -13,6 +13,7 @@ import {
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
 import { prepareVoiceRecording } from '@/lib/voice-recording';
+import { startSegmentReplay, syncSegmentReplay } from '@/lib/segment-playback';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
 
@@ -186,7 +187,6 @@ export default function SegmentRecorder({
     mounted = useRef(true),
     urls = useRef<string[]>([]),
     loaded = useRef(new Set<number>()),
-    savedAudio = useRef<HTMLAudioElement>(null),
     segmentAudio = useRef<HTMLAudioElement | null>(null),
     instrumentalAudio = useRef<HTMLAudioElement | null>(null);
   const api = `/api/rooms/${room.code}/audio/${session.id}`;
@@ -211,7 +211,6 @@ export default function SegmentRecorder({
       segmentAudio.current.pause();
       segmentAudio.current.currentTime = 0;
     }
-    savedAudio.current?.pause();
     setPreviewing(false);
     setListeningOriginal(false);
     setPlayingSegment(null);
@@ -388,7 +387,6 @@ export default function SegmentRecorder({
   async function preview() {
     setError('');
     setBusy(true);
-    savedAudio.current?.pause();
     stop();
     try {
       const v = await seek(scene.start + current.start);
@@ -426,7 +424,6 @@ export default function SegmentRecorder({
       stop();
       return;
     }
-    savedAudio.current?.pause();
     stop();
     const c = cues.find((item) => Number(item.id) === Number(id));
     if (!c) return;
@@ -447,12 +444,15 @@ export default function SegmentRecorder({
           urls.current.push(audioUrl);
           setSavedUrls((prev) => ({ ...prev, [id]: audioUrl }));
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Kayıt yüklenemedi. Tekrar dene.');
       }
       setBusy(false);
     }
-    if (!audioUrl) return;
+    if (!audioUrl) {
+      setError('Kayıt yüklenemedi. Tekrar dene.');
+      return;
+    }
 
     setSelected(id);
     setPlayingSegment(id);
@@ -460,30 +460,29 @@ export default function SegmentRecorder({
     setError('');
 
     try {
-      // Kendi sesimizi dinlerken VİDEO OYNATILMAZ ve arka plan müziği çalmaz!
-      if (video.current) {
-        video.current.pause();
-        video.current.currentTime = scene.start + c.start;
-      }
+      const v = await seek(scene.start + c.start);
+      if (!mounted.current) return;
       if (instrumentalAudio.current) {
         instrumentalAudio.current.pause();
       }
 
       const a = segmentAudio.current;
-      if (a) {
-        a.src = audioUrl;
-        a.currentTime = 0;
-        setPosition(c.start);
-        await a.play();
-      }
+      if (!a) throw new Error('Kayıt oynatıcısı hazır değil. Tekrar dene.');
+      a.src = audioUrl;
+      a.currentTime = 0;
+      setPosition(c.start);
+      previewEnd.current = scene.start + c.end;
+      await startSegmentReplay(v, a);
+      if (!mounted.current) { v.pause(); a.pause(); return; }
 
       timer.current = setInterval(() => {
-        if (!a || !mounted.current) return;
+        if (!mounted.current) return;
         const currentPos = Math.min(c.end, c.start + a.currentTime);
         setPosition(currentPos);
-        if (a.ended || a.currentTime >= c.end - c.start) {
+        if (syncSegmentReplay(v, a, scene.start + c.start, c.end - c.start)) {
           stop();
           setPosition(c.start);
+          v.currentTime = scene.start + c.start;
         }
       }, 25);
     } catch (e) {
@@ -496,7 +495,6 @@ export default function SegmentRecorder({
   async function record() {
     setError('');
     setBusy(true);
-    savedAudio.current?.pause();
     stop();
     try {
       const backing = instrumentalAudio.current;
@@ -720,7 +718,6 @@ export default function SegmentRecorder({
   async function save(targetId = selected, targetBlob = take?.blob) {
     if (!targetBlob) return;
     stop();
-    savedAudio.current?.pause();
     setBusy(true);
     setError('');
     try {
@@ -1103,17 +1100,10 @@ export default function SegmentRecorder({
               {(take || savedUrls[selected]) && (
                 <div className="cue-review">
                   <span>Replik {Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1} Kaydın</span>
-                  {/* oxlint-disable-next-line jsx-a11y/media-has-caption */}
-                  <audio
-                    controls
-                    ref={savedAudio}
-                    src={take?.url ?? savedUrls[selected]}
-                    aria-label="Kaydını dinle"
-                    onPlay={() => {
-                      video.current?.pause();
-                      instrumentalAudio.current?.pause();
-                    }}
-                  />
+                  <button className="secondary" onClick={() => void playSegment(selected)} disabled={locked}>
+                    {playingSegment === selected ? <Square size={16} /> : <Play size={16} />}
+                    {playingSegment === selected ? 'Durdur' : 'Kaydını izle ve dinle'}
+                  </button>
                   <button
                     className="secondary"
                     onClick={() => {
@@ -1421,11 +1411,15 @@ export default function SegmentRecorder({
                     whiteSpace: 'nowrap',
                     margin: 0,
                   }}
-                  onClick={previewing ? stop : preview}
+                  onClick={() => {
+                    if (previewing || playingSegment !== null) stop();
+                    else if (take || savedUrls[selected] || isSaved) void playSegment(selected);
+                    else void preview();
+                  }}
                   disabled={locked}
                 >
-                  {previewing ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
-                  {previewing ? 'Durdur' : 'Tekrar izle'}
+                  {previewing || playingSegment !== null ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
+                  {previewing || playingSegment !== null ? 'Durdur' : 'Tekrar izle'}
                 </button>
               </div>
             )}
