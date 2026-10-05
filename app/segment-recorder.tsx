@@ -176,6 +176,8 @@ export default function SegmentRecorder({
   const completed = mine.filter((c) => me.segments?.includes(c.id)).length;
   const take = takes[selected];
   const isSaved = Boolean(me.segments?.includes(selected));
+  const hasRecording = Boolean(take || savedUrls[selected] || isSaved);
+  const replayActive = hasRecording ? playingSegment !== null : previewing;
   const selectedNumber = Math.max(0, cues.findIndex((c) => Number(c.id) === Number(selected))) + 1;
   const [listeningOriginal, setListeningOriginal] = useState(false);
   const locked = busy || recording || countdown > 0 || listeningOriginal;
@@ -403,6 +405,7 @@ export default function SegmentRecorder({
       v.volume = 1.0;
       await v.play();
     } catch (e) {
+      stop();
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -1376,7 +1379,7 @@ export default function SegmentRecorder({
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0, 1fr) auto',
                   gap: '10px',
-                  alignItems: 'stretch',
+                  alignItems: 'start',
                   marginTop: '4px',
                 }}
               >
@@ -1399,6 +1402,7 @@ export default function SegmentRecorder({
                       ? 'Yeniden seslendir'
                       : 'Şimdi seslendir'}
                 </button>
+                <div style={{ display: 'grid', gap: '8px' }}>
                 <button
                   type="button"
                   className="secondary"
@@ -1411,15 +1415,29 @@ export default function SegmentRecorder({
                     margin: 0,
                   }}
                   onClick={() => {
-                    if (previewing || playingSegment !== null) stop();
-                    else if (take || savedUrls[selected] || isSaved) void playSegment(selected);
+                    if (replayActive) stop();
+                    else if (hasRecording) void playSegment(selected);
                     else void preview();
                   }}
                   disabled={locked}
                 >
-                  {previewing || playingSegment !== null ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
-                  {previewing || playingSegment !== null ? 'Durdur' : take || savedUrls[selected] || isSaved ? 'Tekrar dinle' : 'Tekrar izle'}
+                  {replayActive ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
+                  {replayActive ? 'Durdur' : hasRecording ? 'Tekrar dinle' : 'Tekrar izle'}
                 </button>
+                {hasRecording && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ padding: '0 22px', minHeight: '52px', whiteSpace: 'nowrap', margin: 0 }}
+                    title="Seçili repliğin orijinal kesitini izle"
+                    onClick={() => { if (previewing) stop(); else void preview(); }}
+                    disabled={locked}
+                  >
+                    {previewing ? <Square size={16} /> : <Play size={16} />}{' '}
+                    {previewing ? 'İzlemeyi durdur' : 'Tekrar izle'}
+                  </button>
+                )}
+                </div>
               </div>
               {completed >= mine.length && mine.length > 0 && (
                 <div className="cue-finish" style={{ marginTop: '16px' }}>
