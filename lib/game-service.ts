@@ -116,8 +116,8 @@ async function recordingScenes(): Promise<Scene[]> {
   return Array.from(merged.values());
 }
 
-/** Stored audio, rather than a separate ready click, determines completion. */
-function completeRecordings(row: GameRoomRow, customScenes: Scene[]): boolean {
+/** Validate saved takes without treating a final upload as player confirmation. */
+function refreshRecordingProgress(row: GameRoomRow, customScenes: Scene[]): boolean {
   if (row.status !== 'recording' || !customScenes.some((scene) => Number(scene.id) === Number(row.scene))) return false;
   const preferredRoles = row.players.map((player) => player.role);
   row.players.forEach((player, index) => {
@@ -127,14 +127,19 @@ function completeRecordings(row: GameRoomRow, customScenes: Scene[]): boolean {
       .map((recording) => Number(recording.segment)));
     player.segments = Array.from(segments);
     player.audio = assigned.every((cue) => segments.has(Number(cue.id)));
-    player.ready = player.audio ? 1 : 0;
+    player.ready = assigned.length === 0 ? 1 : player.audio ? player.ready : 0;
   });
-  if (!row.players.length || !row.players.every((player) => player.audio)) return false;
+  return true;
+}
+
+function completeRecordings(row: GameRoomRow, customScenes: Scene[]): boolean {
+  if (!refreshRecordingProgress(row, customScenes)) return false;
+  if (!row.players.length || !row.players.every((player) => player.audio && player.ready === 1)) return false;
   row.status = 'final';
   row.play_at = Date.now() + 3000;
   row.activities = [{
     id: crypto.randomUUID(),
-    text: 'Tüm replikler kaydedildi! Büyük Final başlıyor! 🎬',
+    text: 'Tüm oyuncular Bitti dedi! Büyük Final başlıyor! 🎬',
     time: Date.now(),
     type: 'system' as const,
   }, ...(row.activities || [])].slice(0, 30);
@@ -374,9 +379,21 @@ export async function executeGameRoomAction(
     };
 
     if (action === 'ready' || action === 'recording_ready') {
+      if (action === 'recording_ready' && row.status !== 'recording') {
+        throw new Error('Kayıt aşaması sona ermiş.');
+      }
       const isReadyRequested = extra.ready !== undefined ? Boolean(extra.ready) : true;
       if (row.status === 'recording') {
-        completeRecordings(row, await recordingScenes());
+        const customScenes = await recordingScenes();
+        if (!refreshRecordingProgress(row, customScenes)) {
+          throw new Error('Sahne replikleri yüklenemedi. Lütfen tekrar deneyin.');
+        }
+        if (isReadyRequested && !player.audio) {
+          throw new Error('Bitti demeden önce tüm repliklerini kaydetmelisin.');
+        }
+        player.ready = isReadyRequested ? 1 : 0;
+        addLog(`${player.name} ${player.ready ? 'dublajını bitirdi.' : 'dublajını düzenlemeye devam ediyor.'}`, 'ready');
+        completeRecordings(row, customScenes);
       } else {
         player.ready = isReadyRequested ? 1 : 0;
         addLog(
@@ -442,14 +459,17 @@ export async function executeGameRoomAction(
       const remoteScenes = await getScenesFromSupabase().catch(() => []);
       const customList = remoteScenes.length > 0 ? remoteScenes : undefined;
       const preferredRoles = row.players.map((p) => p.role);
+      if (row.status === 'recording' && !refreshRecordingProgress(row, customList || [])) {
+        throw new Error('Sahne replikleri yüklenemedi. Lütfen tekrar deneyin.');
+      }
       const notReadyPlayers = row.players.filter((p, idx) => {
         const pAssigned = playerCues(row.scene, idx, row.players.length, customList, preferredRoles);
         const pSegs = new Set(p.segments || []);
         const isComplete = pAssigned.length > 0 ? pAssigned.every((c) => pSegs.has(c.id)) : true;
-        return !isComplete || p.ready !== 1;
+        return !isComplete || !p.audio || p.ready !== 1;
       });
 
-      if (notReadyPlayers.length > 0 && !extra.force && !player.host) {
+      if (notReadyPlayers.length > 0) {
         throw new Error(`Diğer oyuncuların dublajı devam ediyor: ${notReadyPlayers.map((p) => p.name).join(', ')} henüz hazır değil.`);
       }
 
@@ -537,6 +557,8 @@ export async function saveAudioRecording(
       (recording) => !(recording.player === playerId && Number(recording.segment) === segNum),
     );
     row.recordings.push({ player: playerId, segment: segNum, url: publicUrl });
+    // A replacement take must be reviewed and confirmed again.
+    row.players[playerIndex].ready = 0;
     row.activities = [{
       id: crypto.randomUUID(),
       text: `${row.players[playerIndex].name} bir replik seslendirdi (Bölüm ${segNum + 1}) ✓`,
