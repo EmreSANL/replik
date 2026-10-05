@@ -660,11 +660,13 @@ export default function SegmentRecorder({
         })();
       };
       recorder.current = r;
-      // Hold the cue's opening frame while microphone and backing audio continue.
+      // Show the scene during a first take; corrections keep its opening frame.
       v.pause();
       v.muted = true;
       previewEnd.current = null;
       if (backing) backing.volume = 1;
+      if (!isRetake) await v.play();
+      if (!mounted.current) { v.pause(); return; }
       const recStartedAt = performance.now();
       r.start(200);
       if (backing && (backing.src || readyInstrumentalUrl)) {
@@ -695,6 +697,9 @@ export default function SegmentRecorder({
           setWaves((w) => ({ ...w, [id]: [...liveBars] }));
         }
         const backingTime = scene.start + progress.position;
+        if (!isRetake && !v.seeking && !v.paused && Math.abs(v.currentTime - backingTime) > 0.18) {
+          v.currentTime = backingTime;
+        }
         if (backing && !backing.seeking && !backing.paused && Math.abs(backing.currentTime - backingTime) > 0.18) {
           backing.currentTime = backingTime;
         }
