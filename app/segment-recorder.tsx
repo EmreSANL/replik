@@ -13,7 +13,7 @@ import {
 import type { Session } from './studio';
 import { saveAudioRecording, getAudioRecordingUrl, executeGameRoomAction } from '@/lib/game-service';
 import { prepareVoiceRecording } from '@/lib/voice-recording';
-import { startSegmentReplay, syncSegmentReplay } from '@/lib/segment-playback';
+import { startSegmentReplay, segmentReplayFinished } from '@/lib/segment-playback';
 import { segmentRecordingProgress } from '@/lib/segment-recording';
 
 type Take = { blob: Blob; url: string; peaks: number[] };
@@ -222,7 +222,7 @@ export default function SegmentRecorder({
   }
   const handleTime = useEffectEvent(() => {
     const v = video.current;
-    if (!v || recording) return;
+    if (!v || recording || playingSegment !== null) return;
     setPosition(v.currentTime - scene.start);
     if (previewEnd.current !== null && v.currentTime >= previewEnd.current) {
       stop();
@@ -472,7 +472,7 @@ export default function SegmentRecorder({
       a.src = audioUrl;
       a.currentTime = 0;
       setPosition(c.start);
-      previewEnd.current = scene.start + c.end;
+      previewEnd.current = null;
       await startSegmentReplay(v, a);
       if (!mounted.current) { v.pause(); a.pause(); return; }
 
@@ -480,7 +480,7 @@ export default function SegmentRecorder({
         if (!mounted.current) return;
         const currentPos = Math.min(c.end, c.start + a.currentTime);
         setPosition(currentPos);
-        if (syncSegmentReplay(v, a, scene.start + c.start, c.end - c.start)) {
+        if (segmentReplayFinished(a, c.end - c.start)) {
           stop();
           setPosition(c.start);
           v.currentTime = scene.start + c.start;
@@ -494,6 +494,7 @@ export default function SegmentRecorder({
     }
   }
   async function record() {
+    const isRetake = Boolean(takes[selected] || savedUrls[selected] || me.segments?.includes(selected));
     setError('');
     setBusy(true);
     stop();
@@ -521,33 +522,35 @@ export default function SegmentRecorder({
         return;
       }
 
-      // 1. ADIM: İlk başta replik yapılacak kısım videonun ORİJİNAL SESİYLE oynatılsın
+      // Play the original only for a first take; corrections go straight to countdown.
       const v = await seek(scene.start + current.start);
       if (!mounted.current) return;
       if (instrumentalAudio.current) {
         instrumentalAudio.current.pause();
       }
-      setListeningOriginal(true);
-      setPosition(current.start);
-      v.muted = false;
-      v.volume = 1.0;
-      await v.play();
+      if (!isRetake) {
+        setListeningOriginal(true);
+        setPosition(current.start);
+        v.muted = false;
+        v.volume = 1.0;
+        await v.play();
 
-      await new Promise<void>((resolve) => {
-        const checkOriginalEnd = setInterval(() => {
-          if (!mounted.current || !video.current) {
-            clearInterval(checkOriginalEnd);
-            resolve();
-            return;
-          }
-          setPosition(video.current.currentTime - scene.start);
-          if (video.current.currentTime >= scene.start + current.end || video.current.paused) {
-            clearInterval(checkOriginalEnd);
-            video.current.pause();
-            resolve();
-          }
-        }, 25);
-      });
+        await new Promise<void>((resolve) => {
+          const checkOriginalEnd = setInterval(() => {
+            if (!mounted.current || !video.current) {
+              clearInterval(checkOriginalEnd);
+              resolve();
+              return;
+            }
+            setPosition(video.current.currentTime - scene.start);
+            if (video.current.currentTime >= scene.start + current.end || video.current.paused) {
+              clearInterval(checkOriginalEnd);
+              video.current.pause();
+              resolve();
+            }
+          }, 25);
+        });
+      }
 
       if (!mounted.current) {
         media.getTracks().forEach((t) => t.stop());
@@ -1096,7 +1099,7 @@ export default function SegmentRecorder({
                   <span>Replik {Math.max(0, mine.findIndex((c) => Number(c.id) === Number(selected))) + 1} Kaydın</span>
                   <button className="secondary" onClick={() => void playSegment(selected)} disabled={locked}>
                     {playingSegment === selected ? <Square size={16} /> : <Play size={16} />}
-                    {playingSegment === selected ? 'Durdur' : 'Kaydını izle ve dinle'}
+                    {playingSegment === selected ? 'Durdur' : 'Kaydını dinle'}
                   </button>
                   <button
                     className="secondary"
@@ -1413,7 +1416,7 @@ export default function SegmentRecorder({
                   disabled={locked}
                 >
                   {previewing || playingSegment !== null ? <Square size={16} /> : <RotateCcw size={16} />}{' '}
-                  {previewing || playingSegment !== null ? 'Durdur' : 'Tekrar izle'}
+                  {previewing || playingSegment !== null ? 'Durdur' : take || savedUrls[selected] || isSaved ? 'Tekrar dinle' : 'Tekrar izle'}
                 </button>
               </div>
             )}
