@@ -499,6 +499,10 @@ export default function SegmentRecorder({
     setBusy(true);
     stop();
     try {
+      if (me.ready === 1) {
+        const updated = await executeGameRoomAction(room.code, session.token, 'recording_ready', { ready: false });
+        onRoom(updated);
+      }
       const backing = instrumentalAudio.current;
       const readyInstrumentalUrl = ensureInstrumentalReady();
       if (backing && readyInstrumentalUrl && backing.src !== readyInstrumentalUrl) {
@@ -924,7 +928,7 @@ export default function SegmentRecorder({
 
       <div className="cue-editor">
         {/* Eğer oyuncu tüm repliklerini tamamladıysa Canlı Hazır & Turn Tracker Paneli göster */}
-        {completed >= mine.length && !recording && !countdown && !listeningOriginal ? (
+        {me.ready === 1 && completed >= mine.length && !recording && !countdown && !listeningOriginal ? (
           (() => {
             const preferredRoles = room.players.map((p) => p.role);
             const readyPlayersCount = room.players.filter((p, pIdx) => {
@@ -1022,7 +1026,7 @@ export default function SegmentRecorder({
                 </div>
 
                 {/* Final Sahnesine Geç Butonu */}
-                {me.host === 1 && (
+                {me.host === 1 && isAllPlayersReady && (
                   <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
@@ -1030,19 +1034,13 @@ export default function SegmentRecorder({
                       disabled={busy}
                       style={{ width: '100%' }}
                       onClick={async () => {
-                        if (!isAllPlayersReady && room.players.length > 1) {
-                          const ok = window.confirm(
-                            'Tüm oyuncular henüz dublajlarını tamamlamadı. Yine de finali başlatmak istiyor musunuz?',
-                          );
-                          if (!ok) return;
-                        }
                         setBusy(true);
                         try {
                           const finalRoom = await executeGameRoomAction(
                             room.code,
                             session.token,
                             'finish',
-                            { force: true },
+                            {},
                           );
                           onRoom(finalRoom);
                         } catch (e) {
@@ -1052,9 +1050,7 @@ export default function SegmentRecorder({
                         }
                       }}
                     >
-                      {isAllPlayersReady || room.players.length === 1
-                        ? 'Final Sahnesine Geç 🎬'
-                        : 'Oda Kurucusu: Finali Şimdi Başlat'}
+                      Final Sahnesine Geç 🎬
                     </button>
                   </div>
                 )}
@@ -1369,6 +1365,7 @@ export default function SegmentRecorder({
                 </button>
               </>
             ) : (
+              <>
               <div
                 style={{
                   display: 'grid',
@@ -1419,6 +1416,32 @@ export default function SegmentRecorder({
                   {previewing || playingSegment !== null ? 'Durdur' : take || savedUrls[selected] || isSaved ? 'Tekrar dinle' : 'Tekrar izle'}
                 </button>
               </div>
+              {completed >= mine.length && mine.length > 0 && (
+                <div className="cue-finish" style={{ marginTop: '16px' }}>
+                  <p>Tüm repliklerin kaydedildi. Son repliğini de dinleyip düzeltebilirsin. Hazır olduğunda Bitti’ye bas.</p>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={locked || previewing || playingSegment !== null || Object.keys(takes).length > 0}
+                    onClick={async () => {
+                      stop();
+                      setBusy(true);
+                      setError('');
+                      try {
+                        const updated = await executeGameRoomAction(room.code, session.token, 'recording_ready', { ready: true });
+                        onRoom(updated);
+                      } catch (error) {
+                        setError(error instanceof Error ? error.message : 'Bitirme işlemi kaydedilemedi. Tekrar dene.');
+                      } finally {
+                        if (mounted.current) setBusy(false);
+                      }
+                    }}
+                  >
+                    <Check size={18} /> Bitti
+                  </button>
+                </div>
+              )}
+              </>
             )}
           </>
         )}
