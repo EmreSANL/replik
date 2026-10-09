@@ -159,7 +159,7 @@ export async function prepareSceneBackground(
     }
     const job = await response.json() as {
       status?: string; error?: string; instrumentalUrl?: string;
-      phase?: 'downloading' | 'queued' | 'separating'; queuePosition?: number;
+      phase?: 'downloading' | 'queued' | 'separating' | 'vocals'; queuePosition?: number;
     };
     if (!response.ok || job.status === 'failed') throw new Error(job.error || 'Arka plan sesi hazırlanamadı.');
     if (job.status === 'ready' && job.instrumentalUrl) {
@@ -169,7 +169,8 @@ export async function prepareSceneBackground(
     if (job.status !== 'starting' && job.status !== 'processing') throw new Error('Ses ayırma servisinden geçersiz yanıt alındı.');
     const queue = Number.isInteger(job.queuePosition) && job.queuePosition! > 0
       ? ` (${job.queuePosition}. sırada)` : '';
-    onProgress?.(job.status === 'starting' ? 'MVSEP işi başlatılıyor...'
+    onProgress?.(job.phase === 'vocals' ? `MVSEP şarkı vokalini ayırıyor${queue}...`
+      : job.status === 'starting' ? 'MVSEP işi başlatılıyor...'
       : job.phase === 'downloading' ? `MVSEP videoyu indiriyor${queue}...`
       : job.phase === 'queued' ? `MVSEP ayırma kuyruğunda${queue}...`
       : 'MVSEP konuşma, müzik ve efektleri ayırıyor...');

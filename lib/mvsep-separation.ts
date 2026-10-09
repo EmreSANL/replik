@@ -3,6 +3,7 @@ import { mixPcmWav } from './wav-mix';
 
 const API_BASE = 'https://de.mvsep.com/api';
 const ENGINE = 'mvsep-dnr-v3-scnet-v1';
+const VOCAL_ENGINE = 'mvsep-bs-roformer-vocals-v1';
 
 type MvsepFile = { type?: string; download?: string; url?: string };
 type MvsepResult = {
@@ -54,8 +55,8 @@ async function findCompletedSeparation(source: string, apiKey: string, fetcher: 
     item.hash.toLowerCase().endsWith(`-${filename}`))?.hash;
 }
 
-export async function prepareMvsepBackground({
-  source, userId, apiKey, store, retry = false, fetcher = fetch, now = Date.now,
+export async function prepareMvsepStage({
+  source, userId, apiKey, store, retry = false, fetcher = fetch, now = Date.now, mode,
 }: {
   source: string;
   userId: string;
@@ -64,8 +65,10 @@ export async function prepareMvsepBackground({
   retry?: boolean;
   fetcher?: typeof fetch;
   now?: () => number;
+  mode: 'dialogue' | 'vocals';
 }): Promise<SeparationJob> {
-  const base = await separationKey(source, userId, ENGINE);
+  const engine = mode === 'dialogue' ? ENGINE : VOCAL_ENGINE;
+  const base = await separationKey(source, userId, engine);
   for (let attempt = 0; attempt < 20; attempt++) {
     const path = `${base}/${attempt}.json`;
     let job = await store.read(path);
@@ -118,9 +121,9 @@ export async function prepareMvsepBackground({
       const form = new FormData();
       form.set('api_token', apiKey);
       form.set('url', source);
-      form.set('sep_type', '56');
-      form.set('add_opt1', '0'); // SCNet Large; the free plan excludes ensemble models.
-      form.set('output_format', '1'); // 16-bit WAV for the lossless Music + Effects mix.
+      form.set('sep_type', mode === 'dialogue' ? '56' : '40');
+      form.set('add_opt1', mode === 'dialogue' ? '0' : '81'); // SCNet Large, then BS Roformer vocals/instrumental.
+      form.set('output_format', '1'); // Request lossless WAV; the decoder also handles MVSEP's float output.
       form.set('is_demo', '0');
       let response: Response;
       try {
@@ -209,21 +212,55 @@ export async function prepareMvsepBackground({
       queuePosition: result.data?.current_order,
     };
     const files = result.data?.files || [];
-    const music = files.find((file) => file.type?.toLowerCase() === 'music') ||
-      files.find((file) => /_music\.wav$/i.test(file.download || ''));
-    const effects = files.find((file) => /^(effects|sfx)$/i.test(file.type || '')) ||
-      files.find((file) => /_(effects|sfx)\.wav$/i.test(file.download || ''));
-    if (!music || !effects) throw new Error('MVSEP müzik ve efekt dosyalarını döndürmedi.');
-    const [musicResponse, effectsResponse] = await Promise.all([
-      fetcher(downloadUrl(music), { signal: AbortSignal.timeout(60000) }),
-      fetcher(downloadUrl(effects), { signal: AbortSignal.timeout(60000) }),
-    ]);
-    if (!musicResponse.ok || !effectsResponse.ok) throw new Error('MVSEP ses dosyaları indirilemedi. Tekrar kontrol edin.');
-    const audio = mixPcmWav(await musicResponse.arrayBuffer(), await effectsResponse.arrayBuffer());
-    const instrumentalUrl = await store.saveAudio(`instrumentals/${userId}/${ENGINE}_${base.split('/').pop()}_${attempt}.wav`, audio);
+    let audio: Blob;
+    if (mode === 'dialogue') {
+      const music = files.find((file) => file.type?.toLowerCase() === 'music') ||
+        files.find((file) => /_music\.wav$/i.test(file.download || ''));
+      const effects = files.find((file) => /^(effects|sfx)$/i.test(file.type || '')) ||
+        files.find((file) => /_(effects|sfx)\.wav$/i.test(file.download || ''));
+      if (!music || !effects) throw new Error('MVSEP müzik ve efekt dosyalarını döndürmedi.');
+      const [musicResponse, effectsResponse] = await Promise.all([
+        fetcher(downloadUrl(music), { signal: AbortSignal.timeout(60000) }),
+        fetcher(downloadUrl(effects), { signal: AbortSignal.timeout(60000) }),
+      ]);
+      if (!musicResponse.ok || !effectsResponse.ok) throw new Error('MVSEP ses dosyaları indirilemedi. Tekrar kontrol edin.');
+      audio = mixPcmWav(await musicResponse.arrayBuffer(), await effectsResponse.arrayBuffer());
+    } else {
+      const instrumental = files.find((file) => /^(instrumental|instrum)$/i.test(file.type || '')) ||
+        files.find((file) => /_(instrumental|instrum)\.wav$/i.test(file.download || ''));
+      if (!instrumental) throw new Error('MVSEP vokalsiz müzik dosyasını döndürmedi.');
+      const instrumentalResponse = await fetcher(downloadUrl(instrumental), { signal: AbortSignal.timeout(60000) });
+      if (!instrumentalResponse.ok) throw new Error('MVSEP vokalsiz müzik dosyası indirilemedi. Tekrar kontrol edin.');
+      audio = await instrumentalResponse.blob();
+      if (audio.size <= 44 || await audio.slice(0, 4).text() !== 'RIFF' ||
+          await audio.slice(8, 12).text() !== 'WAVE') {
+        throw new Error('MVSEP geçerli vokalsiz WAV dosyası döndürmedi.');
+      }
+    }
+    const instrumentalUrl = await store.saveAudio(`instrumentals/${userId}/${engine}_${base.split('/').pop()}_${attempt}.wav`, audio);
     const ready: SeparationJob = { ...job, status: 'ready', instrumentalUrl };
     await store.write(path, ready);
     return ready;
   }
   throw new Error('Bu video için yeniden deneme sınırına ulaşıldı.');
+}
+
+export async function prepareMvsepBackground(options: {
+  source: string;
+  userId: string;
+  apiKey: string;
+  store: SeparationStore;
+  retry?: boolean;
+  fetcher?: typeof fetch;
+  now?: () => number;
+}): Promise<SeparationJob> {
+  const dialogue = await prepareMvsepStage({ ...options, mode: 'dialogue' });
+  if (dialogue.status !== 'ready' || !dialogue.instrumentalUrl) return dialogue;
+  // DnR removes spoken dialogue, but singing can remain in its Music stem.
+  // Run a vocal/instrumental model on the saved Music + SFX mix. The separate
+  // durable key also upgrades previously completed DnR jobs without repeating them.
+  const vocals = await prepareMvsepStage({ ...options, source: dialogue.instrumentalUrl, mode: 'vocals' });
+  return vocals.status === 'starting' || vocals.status === 'processing'
+    ? { ...vocals, phase: 'vocals' }
+    : vocals;
 }

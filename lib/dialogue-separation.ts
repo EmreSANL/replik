@@ -2,7 +2,7 @@
 export type SeparationJob = {
   status: 'starting' | 'processing' | 'ready' | 'failed';
   createdAt: number;
-  phase?: 'downloading' | 'queued' | 'separating';
+  phase?: 'downloading' | 'queued' | 'separating' | 'vocals';
   queuePosition?: number;
   lastHistoryCheckAt?: number;
   taskId?: string;
